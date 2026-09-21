@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How Does the OpenGL Pipeline Process Data? - opengl</title>
+    <meta name="description" content="The OpenGL graphics pipeline transforms raw 3D vertex data into rendered 2D pixels displayed on a screen through a sequence of discrete, ordered stages. This processing flow combines programmable shaders—where developers run custom code—with fixed-fu">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-does-the-open-gl-pipeline-process-data">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How Does the OpenGL Pipeline Process Data? - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-does-the-open-gl-pipeline-process-data" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The OpenGL graphics pipeline transforms raw 3D vertex data into rendered 2D pixels displayed on a screen through a sequence of discrete, ordered stages. This processing flow combines programmable shaders—where developers run custom code—with fixed-fu" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-does-the-opengl-pipeline-process-data">How Does the OpenGL
+Pipeline Process Data?</h1>
+<p>The OpenGL graphics pipeline transforms raw 3D vertex data into
+rendered 2D pixels displayed on a screen through a sequence of discrete,
+ordered stages. This processing flow combines programmable shaders—where
+developers run custom code—with fixed-function hardware operations such
+as clipping, primitive assembly, and rasterization. Understanding how
+coordinate spaces shift and how data interpolates across surfaces is
+fundamental to mastering modern real-time rendering.</p>
+<h2 id="vertex-specification-and-input-assembly">Vertex Specification
+and Input Assembly</h2>
+<p>The pipeline begins with vertex data supplied by the CPU. Developers
+define per-vertex attributes—such as positions, normals, texture
+coordinates, and colors—within client memory and upload them to GPU
+memory using Vertex Buffer Objects (VBOs). Vertex Array Objects (VAOs)
+store the state configurations that describe the layout and format of
+these buffers, allowing the GPU to interpret the binary streams. During
+the input assembly phase, OpenGL collects these raw vertex definitions
+and organizes them according to a chosen primitive type, such as points,
+lines, or triangles.</p>
+<h2 id="vertex-shader">Vertex Shader</h2>
+<p>The vertex shader is the first programmable stage of the OpenGL
+pipeline. It executes once for every individual vertex passed from the
+input assembly. The primary objective of the vertex shader is to
+transform a vertex's position from local object space into clip space
+using model, view, and projection matrices:</p>
+<p><span class="math display">\[\mathbf{v}_{\text{clip}} = \mathbf{P}
+\cdot \mathbf{V} \cdot \mathbf{M} \cdot
+\mathbf{v}_{\text{local}}\]</span></p>
+<p>Beyond positional transformations, vertex shaders calculate or pass
+through arbitrary attributes such as transformed surface normals, light
+vectors, and UV coordinates for subsequent stages. The output position
+must be assigned to the built-in output variable, which prepares the
+vertex for viewport clipping.</p>
+<h2 id="optional-stages-tessellation-and-geometry-shaders">Optional
+Stages: Tessellation and Geometry Shaders</h2>
+<p>Following the vertex shader, OpenGL provides two optional
+programmable processing stages:</p>
+<ul>
+<li><strong>Tessellation:</strong> Composed of the Tessellation Control
+Shader, the fixed-function Tessellation Primitive Generator, and the
+Tessellation Evaluation Shader. This stage dynamically subdivides simple
+primitives (patches) into finer geometric detail directly on the GPU,
+commonly used for terrain rendering and continuous level-of-detail
+systems.</li>
+<li><strong>Geometry Shader:</strong> Operates on complete geometric
+primitives (a single point, line segment, or triangle along with
+optional adjacency information). It can discard incoming primitives or
+emit entirely new ones, enabling algorithms such as shadow volume
+generation, procedural geometry extrusion, and point-to-quad billboard
+expansion.</li>
+</ul>
+<h2 id="primitive-assembly-and-clipping">Primitive Assembly and
+Clipping</h2>
+<p>Once vertices exit the geometry stage (or vertex stage if optional
+shaders are omitted), the pipeline reassembles vertices into full
+primitives. OpenGL then performs clipping against the viewing frustum
+defined by the homogeneous clip space coordinates. Any primitive
+completely outside the frustum volume is discarded, while primitives
+intersecting the boundaries are clipped, generating new boundary
+vertices where edges cross frustum planes.</p>
+<p>Following clipping, the fixed-function hardware performs perspective
+division by dividing the homogeneous coordinates <span
+class="math inline">\((x, y, z)\)</span> by the component <span
+class="math inline">\(w\)</span>:</p>
+<p><span class="math display">\[\begin{pmatrix} x_{\text{ndc}} \\
+y_{\text{ndc}} \\ z_{\text{ndc}} \end{pmatrix} = \begin{pmatrix} x / w
+\\ y / w \\ z / w \end{pmatrix}\]</span></p>
+<p>This maps all visible coordinates into Normalized Device Coordinates
+(NDC), occupying a cube ranging from -1.0 to 1.0 along all three axes.
+Finally, the viewport transformation maps these coordinates onto the
+actual 2D pixel coordinates of the target window.</p>
+<h2 id="rasterization">Rasterization</h2>
+<p>The rasterization stage converts continuous geometric primitives into
+discrete, screen-aligned fragments. A fragment contains all the
+necessary data required to generate a final pixel, including window
+coordinates, depth values, and interpolated vertex attributes. During
+this phase, the GPU determines which fragment centers lie within the
+boundaries of each primitive.</p>
+<p>Attributes output by the preceding vertex or geometry shaders are
+smoothly interpolated across the primitive's surface using
+perspective-correct interpolation. This ensures that values such as UV
+coordinates, colors, and normal vectors match physical perspective
+distortion as surfaces recede into the distance.</p>
+<h2 id="fragment-shader">Fragment Shader</h2>
+<p>The fragment shader is the final programmable stage in the pipeline,
+executing once for every fragment generated by the rasterizer. Its
+fundamental task is calculating the fragment's final color and,
+optionally, overriding its depth value.</p>
+<p>In this stage, developers implement lighting models (such as
+Blinn-Phong or physically based rendering formulas), sample textures
+using interpolated UV coordinates, compute surface normal mapping, and
+handle transparency calculations. The output is typically one or more
+color vectors routed to the target framebuffer.</p>
+<h2 id="per-sample-operations-and-the-framebuffer">Per-Sample Operations
+and the Framebuffer</h2>
+<p>Before a fragment's calculated color is written to the destination
+buffer, it must pass a series of fixed-function tests and blending steps
+known as per-sample operations:</p>
+<ul>
+<li><strong>Pixel Ownership Test:</strong> Determines whether the pixel
+is currently visible on screen or obscured by another desktop
+window.</li>
+<li><strong>Scissor Test:</strong> Discards fragments outside a
+developer-defined rectangular sub-region of the viewport.</li>
+<li><strong>Alpha/Stencil Test:</strong> Compares a reference value
+against the stencil buffer to mask specific rendering areas, useful for
+portals, outlines, and decals.</li>
+<li><strong>Depth Test:</strong> Compares the fragment’s depth value
+(<span class="math inline">\(z\)</span>) against the value stored in the
+depth buffer (Z-buffer). If the new fragment is farther away than the
+existing depth value, it is discarded, preventing occluded surfaces from
+rendering over foreground elements.</li>
+<li><strong>Blending:</strong> If depth and stencil tests pass, the
+fragment color is either written directly to the color buffer or blended
+with the existing pixel color using mathematical blending equations
+(essential for semi-transparent surfaces).</li>
+</ul>
+<p>Once these tests conclude, the processed fragment updates the color,
+depth, and stencil buffers, ready to be presented on the screen during
+the frame swap.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            utterancesScript.setAttribute('theme', localStorage.getItem('theme') === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

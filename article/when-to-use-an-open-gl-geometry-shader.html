@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>When to Use an OpenGL Geometry Shader? - opengl</title>
+    <meta name="description" content="An OpenGL geometry shader sits between the vertex shader and rasterization stage, offering the unique ability to discard incoming primitives or dynamically generate new ones such as points, lines, and triangles on the fly. While modern graphics pipelines">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/when-to-use-an-open-gl-geometry-shader">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="When to Use an OpenGL Geometry Shader? - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/when-to-use-an-open-gl-geometry-shader" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="An OpenGL geometry shader sits between the vertex shader and rasterization stage, offering the unique ability to discard incoming primitives or dynamically generate new ones such as points, lines, and triangles on the fly. While modern graphics pipelines" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="when-to-use-an-opengl-geometry-shader">When to Use an OpenGL
+Geometry Shader?</h1>
+<p>An OpenGL geometry shader sits between the vertex shader and
+rasterization stage, offering the unique ability to discard incoming
+primitives or dynamically generate new ones such as points, lines, and
+triangles on the fly. While modern graphics pipelines often prioritize
+compute shaders or hardware tessellation for intense mesh generation,
+geometry shaders remain valuable for specific runtime rendering tasks.
+Developers primarily employ them for techniques such as billboarding,
+flat wireframe overlays, point sprite expansion, single-pass layered
+rendering for cubemaps, and procedural silhouette generation.</p>
+<h2 id="billboarding-and-point-sprite-expansion">Billboarding and Point
+Sprite Expansion</h2>
+<p>A common application of geometry shaders is turning simple points
+into screen-aligned quads or billboards. Instead of passing four
+distinct vertices per particle from the CPU—which increases vertex
+buffer size and bandwidth consumption—a developer passes a single vertex
+containing a position and particle metadata (such as size, color, or
+lifetime). The geometry shader accepts this point primitive and emits
+two connected triangles spanning the requested dimensions, automatically
+oriented toward the camera. This drastically reduces the data sent over
+the PCIe bus for particle systems, volumetric fire, smoke, and dynamic
+weather effects.</p>
+<h2
+id="single-pass-layered-rendering-and-omnidirectional-shadows">Single-Pass
+Layered Rendering and Omnidirectional Shadows</h2>
+<p>Rendering environment maps or omnidirectional point light shadow maps
+traditionally requires rendering the scene six separate times—once for
+each face of a cubemap. With an OpenGL geometry shader, developers can
+utilize the built-in <code>gl_Layer</code> output variable to achieve
+single-pass layered rendering. The shader receives triangles from the
+scene, clones them across up to six distinct projection matrices
+corresponding to each cube face, and routes each emitted primitive to
+the appropriate cubemap face in a single draw call. This drastically
+cuts CPU driver overhead and batch management costs.</p>
+<h2 id="wireframe-overlay-and-analytical-anti-aliasing">Wireframe
+Overlay and Analytical Anti-Aliasing</h2>
+<p>Rendering a clean wireframe over solid geometry historically required
+rendering geometry twice (once filled and once using
+<code>glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)</code>) or utilizing
+clumsy texture seams. A geometry shader simplifies this by calculating
+barycentric coordinates for each incoming triangle. As the shader emits
+the three vertices of a triangle, it assigns distinct coordinates—such
+as (1, 0, 0), (0, 1, 0), and (0, 0, 1)—which the fragment shader uses to
+evaluate proximity to an edge. This allows for smooth, anti-aliased
+wireframe lines drawn directly over shaded surfaces in a single pass
+without depth z-fighting.</p>
+<h2 id="dynamic-extrusions-fur-and-normal-visualization">Dynamic
+Extrusions, Fur, and Normal Visualization</h2>
+<p>Because geometry shaders have access to all vertices of a primitive
+simultaneously, they can calculate face normals on the fly. Developers
+frequently use this capability for visual debugging by reading triangle
+vertices, computing their normal, and emitting line primitives outward
+to verify orientation. Beyond debugging, this extrusion capability
+powers procedural effects like hair or fur rendering through layered
+"fins" or "shells," as well as simple shadow volume silhouette
+generation for stencil shadows.</p>
+<h2 id="performance-considerations-and-limitations">Performance
+Considerations and Limitations</h2>
+<p>Despite their flexibility, geometry shaders have notable performance
+caveats. GPU hardware must allocate variable output memory for emitted
+vertices, which can cause stalls in the execution pipeline if shaders
+output an excessive number of vertices (<code>max_vertices</code>). If
+an application requires dense mesh amplification or continuous Level of
+Detail (LOD), hardware tessellation shaders or compute-driven vertex
+processing are typically more efficient. Consequently, developers
+reserve geometry shaders for targeted tasks where lightweight
+amplification, primitive topology transformation, or layered routing
+provide clear architectural savings.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            utterancesScript.setAttribute('theme', localStorage.getItem('theme') === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

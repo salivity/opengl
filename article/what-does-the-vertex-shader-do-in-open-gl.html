@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>What Does the Vertex Shader Do in OpenGL? - opengl</title>
+    <meta name="description" content="The vertex shader is the first programmable stage in the modern OpenGL graphics pipeline, responsible for processing individual vertices one at a time. Its primary job is to transform 3D model coordinates into clip space, calculate per-vertex attributes">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/what-does-the-vertex-shader-do-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="What Does the Vertex Shader Do in OpenGL? - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/what-does-the-vertex-shader-do-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The vertex shader is the first programmable stage in the modern OpenGL graphics pipeline, responsible for processing individual vertices one at a time. Its primary job is to transform 3D model coordinates into clip space, calculate per-vertex attributes" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="what-does-the-vertex-shader-do-in-opengl">What Does the Vertex
+Shader Do in OpenGL?</h1>
+<p>The vertex shader is the first programmable stage in the modern
+OpenGL graphics pipeline, responsible for processing individual vertices
+one at a time. Its primary job is to transform 3D model coordinates into
+clip space, calculate per-vertex attributes such as normals, texture
+coordinates, and colors, and pass processed data downstream to later
+pipeline stages like the rasterizer and fragment shader.</p>
+<h2 id="coordinate-space-transformations">Coordinate Space
+Transformations</h2>
+<p>The most critical task performed by a vertex shader is transforming
+geometry through several coordinate spaces. Raw vertex data typically
+enters the shader defined in local object space (or model space). The
+vertex shader applies transformation matrices to position the geometry
+within the 3D scene and prepare it for rendering:</p>
+<ul>
+<li><strong>Model Transformation:</strong> Scales, rotates, and
+translates the vertex from its local coordinate system into the global
+world space.</li>
+<li><strong>View Transformation:</strong> Reorients world-space
+coordinates relative to the camera's position and orientation, producing
+view space (or camera space).</li>
+<li><strong>Projection Transformation:</strong> Applies an orthographic
+or perspective projection matrix to transform view coordinates into
+homogeneous clip coordinates.</li>
+</ul>
+<p>The culmination of this mathematical transformation is assigned
+directly to the built-in output variable <code>gl_Position</code>, which
+defines where the vertex sits within normalized device coordinates (NDC)
+after prospective division.</p>
+<h2 id="attribute-passthrough-and-interpolation-setup">Attribute
+Passthrough and Interpolation Setup</h2>
+<p>In addition to positional data, meshes contain several per-vertex
+attributes that downstream pipeline stages require. The vertex shader
+accepts these inputs—often declared using the <code>in</code>
+qualifier—processes or transforms them, and writes them to output
+variables (<code>out</code> qualifier):</p>
+<ul>
+<li><strong>Texture Coordinates:</strong> Passes UV coordinates directly
+to the fragment shader or adjusts them for tiling, scrolling, or atlas
+offsets.</li>
+<li><strong>Normals and Tangents:</strong> Transforms surface normal
+vectors into world or view space using a normal matrix (the transpose of
+the inverse model-view matrix) so lighting calculations remain
+physically accurate when objects scale non-uniformly.</li>
+<li><strong>Vertex Colors:</strong> Outputs base color channels
+associated with specific vertices, useful in low-poly styling or vertex
+painting workflows.</li>
+</ul>
+<p>Once output from the vertex shader, these attributes are
+automatically interpolated across the primitive surface by
+fixed-function hardware during rasterization.</p>
+<h2 id="procedural-vertex-animation-and-deformation">Procedural Vertex
+Animation and Deformation</h2>
+<p>Because vertex shaders run independently per vertex across thousands
+of GPU cores, they are well-suited for high-performance procedural
+animation and deformation. Instead of re-uploading modified mesh buffers
+from the CPU every frame, the vertex shader can modify vertex
+coordinates dynamically on the GPU:</p>
+<ul>
+<li><strong>Skeletal Mesh Skinning:</strong> Blends vertex positions
+against multiple transformation matrices according to bone weights and
+indices, enabling animated characters.</li>
+<li><strong>Procedural Displacements:</strong> Evaluates mathematical
+functions—such as sine waves for water surfaces or wind simulations for
+vegetation—directly altering vertex heights or offsets in real
+time.</li>
+<li><strong>Morph Targets and Shape Keys:</strong> Linearly interpolates
+between multiple base vertex positions to animate facial expressions and
+organic transitions.</li>
+</ul>
+<h2 id="lighting-and-shading-calculations">Lighting and Shading
+Calculations</h2>
+<p>While per-fragment lighting (such as the standard Blinn-Phong model
+evaluated in fragment shaders) provides superior visual fidelity, vertex
+shaders can perform per-vertex lighting computations (historically
+referred to as Gouraud shading). Computing ambient, diffuse, or specular
+lighting at the vertex level reduces GPU load significantly because
+vertex counts are almost always lower than pixel counts. The resulting
+color values are then smoothly interpolated across the face of the
+rendered polygon.</p>
+<h2 id="point-sprite-sizing">Point Sprite Sizing</h2>
+<p>When rendering <code>GL_POINTS</code>, the vertex shader is
+responsible for dictating the screen-space footprint of each point
+primitive. By assigning a floating-point value to the built-in variable
+<code>gl_PointSize</code> (with <code>GL_PROGRAM_POINT_SIZE</code>
+enabled on the context), the vertex shader dynamically controls point
+dimensions based on distance to the camera, particle lifetimes, or
+custom visual parameters.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            utterancesScript.setAttribute('theme', localStorage.getItem('theme') === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

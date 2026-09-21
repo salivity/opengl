@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How Does an OpenGL Fragment Shader Determine Pixel Color? - opengl</title>
+    <meta name="description" content="The OpenGL fragment shader determines the final color of a pixel by evaluating mathematical models, interpolated vertex attributes, texture data, and light sources for every potential screen pixel, or "fragment." While the shader calculates an initial RG">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-does-an-open-gl-fragment-shader-determine-pixel-color">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How Does an OpenGL Fragment Shader Determine Pixel Color? - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-does-an-open-gl-fragment-shader-determine-pixel-color" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The OpenGL fragment shader determines the final color of a pixel by evaluating mathematical models, interpolated vertex attributes, texture data, and light sources for every potential screen pixel, or "fragment." While the shader calculates an initial RG" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-does-an-opengl-fragment-shader-determine-pixel-color">How
+Does an OpenGL Fragment Shader Determine Pixel Color?</h1>
+<p>The OpenGL fragment shader determines the final color of a pixel by
+evaluating mathematical models, interpolated vertex attributes, texture
+data, and light sources for every potential screen pixel, or "fragment."
+While the shader calculates an initial RGBA color value per fragment,
+that value undergoes several mandatory per-fragment operations—such as
+depth testing, stencil testing, and alpha blending—before the graphics
+processing unit (GPU) officially commits the final pixel to the
+framebuffer.</p>
+<h2 id="the-role-of-the-rasterizer-and-interpolation">The Role of the
+Rasterizer and Interpolation</h2>
+<p>Before a fragment shader executes, the OpenGL graphics pipeline
+transforms 3D geometry into primitive shapes like triangles during the
+vertex and geometry stages. Once primitives are positioned in screen
+space, the rasterizer breaks each primitive down into discrete
+fragments. A fragment represents all the data necessary to update a
+single pixel in the framebuffer.</p>
+<p>The rasterizer performs perspective-correct interpolation on all data
+passed out of the vertex shader, such as UV texture coordinates, surface
+normals, and tangent vectors. If two vertices of a line have red and
+blue values respectively, the rasterizer computes a smooth gradient of
+values for every fragment along that line. The fragment shader receives
+these interpolated inputs as its starting baseline for color
+calculations.</p>
+<h2 id="sampling-textures-and-material-properties">Sampling Textures and
+Material Properties</h2>
+<p>Most 3D models rely on texture mapping to define intricate surface
+details without extra geometry. Within the fragment shader, developers
+declare texture samplers (<code>sampler2D</code>,
+<code>samplerCube</code>) that reference image data stored in GPU
+memory.</p>
+<p>Using the interpolated UV coordinates, the shader samples color
+values from one or more textures:</p>
+<ul>
+<li><strong>Diffuse/Albedo Maps:</strong> Provide the base color and
+pattern of the surface.</li>
+<li><strong>Specular/Roughness Maps:</strong> Define how shiny or rough
+distinct areas of the surface are.</li>
+<li><strong>Normal Maps:</strong> Alter the surface normal vectors per
+fragment to simulate bumps, grooves, and complex physical relief under
+lighting.</li>
+</ul>
+<p>The fragment shader can sample multiple textures simultaneously and
+blend them mathematically based on masks, vertex weights, or procedural
+functions.</p>
+<h2 id="lighting-and-material-calculations">Lighting and Material
+Calculations</h2>
+<p>Raw texture color alone produces flat, lifeless visuals. To create
+realism, the fragment shader computes lighting models by evaluating
+vectors between the fragment position, light sources, surface normals,
+and the camera viewpoint.</p>
+<p>Modern engines implement models ranging from basic empirical
+calculations to physically based rendering (PBR):</p>
+<ul>
+<li><strong>Phong and Blinn-Phong Models:</strong> Calculate color by
+combining three components: ambient (uniform base illumination), diffuse
+(light scattered evenly across rough surfaces), and specular (bright
+highlights reflecting directly into the camera).</li>
+<li><strong>Physically Based Rendering (PBR):</strong> Uses equations
+like the Cook-Torrance microfacet specular shading model alongside
+bidirectional reflectance distribution functions (BRDF). These
+calculations account for energy conservation, surface roughness, and
+metallic reflectance to determine exact light interactions.</li>
+</ul>
+<p>The final color output typically sums the contributions of all
+directional, point, and spotlights affecting the fragment, modulated by
+shadows computed via depth maps.</p>
+<h2 id="post-lighting-effects-and-discard-logic">Post-Lighting Effects
+and Discard Logic</h2>
+<p>Inside the shader code, developers can modify or reject colors before
+outputting a result:</p>
+<ul>
+<li><strong>Alpha Testing and Discarding:</strong> A fragment shader can
+invoke the <code>discard</code> keyword. If an object uses transparent
+cutouts (like foliage or chain-link fences), the shader evaluates the
+texture's alpha value. If it falls below a threshold,
+<code>discard</code> terminates execution for that fragment, ensuring no
+color or depth is written.</li>
+<li><strong>Color Grading and Tone Mapping:</strong> For High Dynamic
+Range (HDR) rendering, colors often exceed the standard 0.0 to 1.0
+range. The shader applies tone mapping curves (such as Reinhard or ACES)
+and gamma correction to map HDR values into standard displayable color
+space.</li>
+</ul>
+<p>At the end of main execution, the shader assigns its computed values
+to an output variable:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec4</span> FragColor<span class="op">;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    FragColor <span class="op">=</span> <span class="dt">vec4</span><span class="op">(</span>finalColor<span class="op">,</span> alpha<span class="op">);</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h2 id="per-sample-operations-and-the-framebuffer">Per-Sample Operations
+and the Framebuffer</h2>
+<p>Writing to <code>FragColor</code> does not immediately update the
+monitor. The fragment must survive a sequence of fixed-function GPU
+tests:</p>
+<ol type="1">
+<li><strong>Scissor and Stencil Tests:</strong> Verify whether the
+fragment falls inside specific render boundaries or passes masking
+conditions defined in the stencil buffer.</li>
+<li><strong>Depth Test:</strong> Compares the fragment's Z-depth against
+the current value in the depth buffer. If an existing object is closer
+to the camera, the new fragment is rejected.</li>
+<li><strong>Blending:</strong> If the fragment passes all tests and has
+an alpha value less than 1.0 (with blending enabled), OpenGL blends the
+fragment's color with the existing pixel color in the framebuffer using
+blend equations like standard alpha compositing.</li>
+<li><strong>Dithering and Logical Operations:</strong> Optional final
+passes apply subtle noise patterns or bitwise logic to reduce color
+banding on displays with limited color depth.</li>
+</ol>
+<p>Once these stages complete, the GPU writes the resulting RGBA value
+directly to the active framebuffer, establishing the visible pixel
+displayed on screen.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            utterancesScript.setAttribute('theme', localStorage.getItem('theme') === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>What Can OpenGL Compute Shaders Do Outside Graphics? - opengl</title>
+    <meta name="description" content="OpenGL compute shaders introduce general-purpose GPU computing (GPGPU) directly into the OpenGL API, decoupling parallel execution from the fixed-function rasterization and graphics pipeline. Rather than being bound to vertices, primitives, or fragments,">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/what-can-open-gl-compute-shaders-do-outside-graphics">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="What Can OpenGL Compute Shaders Do Outside Graphics? - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/what-can-open-gl-compute-shaders-do-outside-graphics" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="OpenGL compute shaders introduce general-purpose GPU computing (GPGPU) directly into the OpenGL API, decoupling parallel execution from the fixed-function rasterization and graphics pipeline. Rather than being bound to vertices, primitives, or fragments," />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="what-can-opengl-compute-shaders-do-outside-graphics">What Can
+OpenGL Compute Shaders Do Outside Graphics?</h1>
+<p>OpenGL compute shaders introduce general-purpose GPU computing
+(GPGPU) directly into the OpenGL API, decoupling parallel execution from
+the fixed-function rasterization and graphics pipeline. Rather than
+being bound to vertices, primitives, or fragments, compute shaders
+operate over an abstract, multi-dimensional grid of execution threads
+called workgroups. This architecture allows developers to perform
+arbitrary data processing, advanced physics simulations, image
+manipulation, and compute-heavy algorithms with random read and write
+access to GPU memory.</p>
+<h2 id="independence-from-the-rendering-pipeline">Independence from the
+Rendering Pipeline</h2>
+<p>Traditional shader stages—such as vertex, tessellation, geometry, and
+fragment shaders—run strictly in a predetermined sequence dictated by
+geometry submission and screen-space rasterization. A vertex shader
+requires vertex attributes, and a fragment shader requires generated
+fragments resulting from primitive rasterization.</p>
+<p>Compute shaders operate completely outside this sequence. They are
+dispatched explicitly using API calls like
+<code>glDispatchCompute</code> or
+<code>glDispatchComputeIndirect</code>, specifying a three-dimensional
+number of workgroups across X, Y, and Z dimensions. There is no
+requirement for framebuffers, vertex arrays, or draw calls to execute
+computational logic. Execution is defined purely by workload dimensions
+rather than geometric data.</p>
+<h2 id="arbitrary-read-and-write-memory-access">Arbitrary Read and Write
+Memory Access</h2>
+<p>Standard fragment shaders are primarily restricted to sampling from
+textures and outputting colors to specific framebuffer attachments.
+Compute shaders, by contrast, utilize advanced memory structures that
+permit arbitrary read-write access to GPU memory:</p>
+<ul>
+<li><strong>Shader Storage Buffer Objects (SSBOs):</strong> SSBOs
+provide shaders with read-write access to large arrays of unstructured
+or structured data. Unlike Uniform Buffer Objects (UBOs), SSBOs can be
+written to dynamically by threads and support memory allocations often
+spanning hundreds of megabytes or several gigabytes.</li>
+<li><strong>Image Load/Store:</strong> Through extensions and core
+features introduced in OpenGL 4.2, compute shaders can read from and
+write to specific texels in arbitrary texture formats using functions
+such as <code>imageLoad</code> and <code>imageStore</code>.</li>
+<li><strong>Atomic Operations:</strong> To safely handle concurrent
+updates across multiple threads, compute shaders support atomic
+operations on integers within SSBOs and textures (such as
+<code>atomicAdd</code>, <code>atomicMin</code>, and
+<code>atomicCompSwap</code>), enabling race-free accumulators, counters,
+and linked lists.</li>
+</ul>
+<h2 id="workgroups-shared-memory-and-synchronization">Workgroups, Shared
+Memory, and Synchronization</h2>
+<p>Compute workloads are structured into local workgroups, which group
+individual execution threads (invocations) together. This hierarchical
+organization unlocks hardware features unavailable in traditional
+rendering stages:</p>
+<ul>
+<li><strong>Local Workgroup Variables:</strong> Variables declared with
+the <code>shared</code> keyword exist in high-speed, on-chip scratchpad
+memory accessible by all invocations within the same local workgroup.
+This shared cache significantly reduces the need to query global VRAM
+repeatedly.</li>
+<li><strong>Execution and Memory Barriers:</strong> Compute shaders
+provide explicit synchronization primitives. Invoking
+<code>barrier()</code> forces all threads within a local workgroup to
+reach the same execution point before proceeding, while functions like
+<code>memoryBarrierShared()</code> and
+<code>memoryBarrierBuffer()</code> ensure memory writes are visible
+across threads before execution continues.</li>
+</ul>
+<h2 id="practical-non-graphics-and-gpgpu-applications">Practical
+Non-Graphics and GPGPU Applications</h2>
+<p>The combination of flexible thread grids, random-access memory, and
+thread communication allows compute shaders to solve tasks that are
+otherwise inefficient or impossible in standard graphic passes:</p>
+<ol type="1">
+<li><strong>Physics and Particle Simulations:</strong> Calculating
+position, velocity, and collision detection for millions of particles or
+rigid bodies directly on the GPU without round-tripping data back to the
+CPU.</li>
+<li><strong>Procedural Geometry and Voxel Generation:</strong>
+Generating terrain meshes, Marching Cubes evaluations, and noise
+functions directly into vertex buffers on device memory.</li>
+<li><strong>General Image Processing:</strong> Executing complex
+filtering passes, such as multi-pass Gaussian blurs, fast Fourier
+transforms (FFT), tone mapping, and histogram generation.</li>
+<li><strong>GPU-Driven Culling and Scene Management:</strong> Performing
+frustum culling, occlusion testing, and Level of Detail (LOD)
+calculations to populate indirect draw commands for subsequent rendering
+passes.</li>
+</ol></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            utterancesScript.setAttribute('theme', localStorage.getItem('theme') === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>
