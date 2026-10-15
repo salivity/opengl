@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GL_RGBA32UI in OpenGL Object Picking Passes - opengl</title>
+    <meta name="description" content="In modern 3D graphics, frame-buffer-based object picking requires a reliable method to render and read back unique identifiers under the cursor. Using the GLRGBA32UI texture format in an OpenGL picking pass establishes a dedicated 128-bit unsigned integer">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/gl-rgba-32-ui-in-open-gl-object-picking-passes">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="GL_RGBA32UI in OpenGL Object Picking Passes - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/gl-rgba-32-ui-in-open-gl-object-picking-passes" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In modern 3D graphics, frame-buffer-based object picking requires a reliable method to render and read back unique identifiers under the cursor. Using the GLRGBA32UI texture format in an OpenGL picking pass establishes a dedicated 128-bit unsigned integer" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="gl_rgba32ui-in-opengl-object-picking-passes">GL_RGBA32UI in
+OpenGL Object Picking Passes</h1>
+<p>In modern 3D graphics, frame-buffer-based object picking requires a
+reliable method to render and read back unique identifiers under the
+cursor. Using the <code>GL_RGBA32UI</code> texture format in an OpenGL
+picking pass establishes a dedicated 128-bit unsigned integer buffer
+capable of storing exact, unnormalized identification data directly on
+the GPU. This article examines the core purposes of utilizing
+<code>GL_RGBA32UI</code>, detailing how it prevents precision loss,
+supports multi-tiered hierarchical object queries, and integrates
+seamlessly with modern OpenGL integer rendering pipelines.</p>
+<h3
+id="elimination-of-floating-point-clamping-and-precision-errors">Elimination
+of Floating-Point Clamping and Precision Errors</h3>
+<p>Standard color attachments commonly use normalized integer or
+floating-point formats, such as <code>GL_RGBA8</code> or
+<code>GL_RGBA16F</code>. In an object picking pass, writing an integer
+ID to these formats requires encoding values into floating-point color
+channels ranging from 0.0 to 1.0. This approach introduces rounding
+errors, color space transformations, and potential precision
+clamping.</p>
+<p><code>GL_RGBA32UI</code> eliminates this issue entirely by treating
+values as true 32-bit unsigned integers (<code>uint</code>). Pixels do
+not undergo conversion, normalization, tone-mapping, or clamping. The
+value written by the fragment shader is bit-for-bit identical to the
+value stored in the buffer, ensuring zero corruption when identifying
+objects among millions of distinct entities.</p>
+<h3
+id="multi-tiered-identification-via-four-32-bit-channels">Multi-Tiered
+Identification via Four 32-Bit Channels</h3>
+<p>A significant advantage of <code>GL_RGBA32UI</code> is its four
+distinct 32-bit channels: Red, Green, Blue, and Alpha. Instead of
+packing multiple data fields into a single channel, complex scenes can
+distribute different layers of metadata across the four independent
+32-bit lanes:</p>
+<ul>
+<li><strong>Red (R):</strong> High-level Entity ID or Actor ID.</li>
+<li><strong>Green (G):</strong> Sub-mesh, component, or material
+index.</li>
+<li><strong>Blue (B):</strong> Instance ID (<code>gl_InstanceID</code>)
+for instanced geometry.</li>
+<li><strong>Alpha (A):</strong> Primitive ID
+(<code>gl_PrimitiveID</code>) to identify specific triangles or
+faces.</li>
+</ul>
+<p>Because each channel can represent up to <span
+class="math inline">\(2^{32} - 1\)</span> unique values (over 4.29
+billion), developers do not need complex bit-shifting operations to pack
+instance, primitive, and object IDs into restricted byte ranges.</p>
+<h3 id="native-shader-integration">Native Shader Integration</h3>
+<p>With <code>GL_RGBA32UI</code>, shaders output unsigned integer
+vectors directly to the framebuffer attachment:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 330 core</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">out</span> <span class="dt">uvec4</span> FragPickData<span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">uint</span> u_ObjectID<span class="op">;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">uint</span> u_SubMeshID<span class="op">;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    FragPickData <span class="op">=</span> <span class="dt">uvec4</span><span class="op">(</span>u_ObjectID<span class="op">,</span> u_SubMeshID<span class="op">,</span> <span class="dt">uint</span><span class="op">(</span><span class="bu">gl_InstanceID</span><span class="op">),</span> <span class="dt">uint</span><span class="op">(</span><span class="bu">gl_PrimitiveID</span><span class="op">));</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>The fragment stage bypasses blending stages when writing to integer
+formats, ensuring that overlapping semi-transparent objects or
+interpolation artifacts do not alter the ID data.</p>
+<h3 id="efficient-pixel-readback">Efficient Pixel Readback</h3>
+<p>Reading the picked data back to the CPU via <code>glReadPixels</code>
+is straightforward and computationally inexpensive. By specifying
+<code>GL_RGBA_INTEGER</code> as the format and
+<code>GL_UNSIGNED_INT</code> as the type, the CPU receives an array of
+raw unsigned 32-bit integers:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>GLuint pixelData<span class="op">[</span><span class="dv">4</span><span class="op">];</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>glReadPixels<span class="op">(</span>mouseX<span class="op">,</span> mouseY<span class="op">,</span> <span class="dv">1</span><span class="op">,</span> <span class="dv">1</span><span class="op">,</span> GL_RGBA_INTEGER<span class="op">,</span> GL_UNSIGNED_INT<span class="op">,</span> pixelData<span class="op">);</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>GLuint objectID    <span class="op">=</span> pixelData<span class="op">[</span><span class="dv">0</span><span class="op">];</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>GLuint subMeshID   <span class="op">=</span> pixelData<span class="op">[</span><span class="dv">1</span><span class="op">];</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>GLuint instanceID  <span class="op">=</span> pixelData<span class="op">[</span><span class="dv">2</span><span class="op">];</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>GLuint primitiveID <span class="op">=</span> pixelData<span class="op">[</span><span class="dv">3</span><span class="op">];</span></span></code></pre></div>
+<p>This direct memory mapping avoids the need for CPU-side decoding,
+un-normalization, or floating-point reconstruction, resulting in a
+robust, high-performance picking pipeline capable of selecting
+fine-grained geometry in dense 3D environments.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

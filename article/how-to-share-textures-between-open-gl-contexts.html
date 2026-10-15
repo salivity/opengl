@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How to Share Textures Between OpenGL Contexts - opengl</title>
+    <meta name="description" content="Sharing texture assets between an off-screen rendering context and a visible display context allows applications to perform heavy asset generation or asynchronous loading in the background without dropping frames on the main rendering thread. Achieving th">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-to-share-textures-between-open-gl-contexts">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How to Share Textures Between OpenGL Contexts - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-to-share-textures-between-open-gl-contexts" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Sharing texture assets between an off-screen rendering context and a visible display context allows applications to perform heavy asset generation or asynchronous loading in the background without dropping frames on the main rendering thread. Achieving th" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-to-share-textures-between-opengl-contexts">How to Share
+Textures Between OpenGL Contexts</h1>
+<p>Sharing texture assets between an off-screen rendering context and a
+visible display context allows applications to perform heavy asset
+generation or asynchronous loading in the background without dropping
+frames on the main rendering thread. Achieving this safely requires
+establishing context sharing during creation, respecting OpenGL's
+single-thread-per-context rule, and utilizing explicit synchronization
+primitives to prevent pipeline race conditions. This guide outlines the
+mechanics of context sharing, synchronization via sync fences, and safe
+resource lifecycle management.</p>
+<h3 id="context-creation-and-association">Context Creation and
+Association</h3>
+<p>OpenGL contexts do not share resources by default. Shared access must
+be established at the operating system or windowing API level when
+creating the off-screen context:</p>
+<ul>
+<li><strong>EGL (Android, Linux Wayland, Embedded):</strong> Pass the
+display context handle to <code>eglCreateContext</code> as the
+<code>share_context</code> parameter.</li>
+<li><strong>WGL (Windows):</strong> Create both contexts and link them
+using <code>wglShareLists(hglrcVisible, hglrcOffscreen)</code>.</li>
+<li><strong>GLX (Linux X11):</strong> Pass the visible context as the
+<code>share_list</code> parameter to <code>glXCreateContext</code> or
+<code>glXCreateNewContext</code>.</li>
+<li><strong>CGL / NSOpenGL (macOS):</strong> Use a shared
+<code>CGLPixelFormatObj</code> or an explicit
+<code>NSOpenGLContext</code> sharing group.</li>
+</ul>
+<p>Once linked, texture objects, buffer objects, and shaders are shared
+across both contexts. However, container objects—specifically
+Framebuffer Objects (FBOs) and Vertex Array Objects (VAOs)—are
+context-local and cannot be shared.</p>
+<h3 id="thread-affinity">Thread Affinity</h3>
+<p>An active OpenGL context can only be bound to a single thread at any
+given time using <code>glMakeCurrent</code> (or its platform
+equivalent). The visible context typically lives on the main render
+thread, driving the display. The off-screen context lives on a
+background worker thread where heavy workloads (e.g., video decoding,
+procedurally generated textures, or texture baking) execute.</p>
+<p>Never attempt to bind the same context across multiple threads
+simultaneously, as this results in undefined behavior and immediate
+driver crashes.</p>
+<h3 id="safe-synchronization-using-sync-objects">Safe Synchronization
+Using Sync Objects</h3>
+<p>OpenGL execution is asynchronous; submitting commands to the
+off-screen context does not mean the GPU has finished processing them.
+Reading a shared texture on the display thread while the worker thread
+is still writing to it causes race conditions and visual artifacts
+(tearing or incomplete rendering).</p>
+<p>To synchronize the two contexts safely without stalling the CPU with
+expensive calls like <code>glFinish()</code>:</p>
+<ol type="1">
+<li><p><strong>Render in the Background:</strong> The off-screen context
+draws to the shared texture (typically attached to a local
+FBO).</p></li>
+<li><p><strong>Insert a GPU Fence:</strong> Immediately after the draw
+call, insert a sync fence into the worker context:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>GLsync syncFence <span class="op">=</span> glFenceSync<span class="op">(</span>GL_SYNC_GPU_COMMANDS_COMPLETE<span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>glFlush<span class="op">();</span> <span class="co">// Ensure the command is sent to the GPU queue immediately</span></span></code></pre></div></li>
+<li><p><strong>Signal the Main Thread:</strong> Pass the
+<code>GLsync</code> handle and the shared texture ID to the main thread
+via a thread-safe message queue.</p></li>
+<li><p><strong>Wait on the Display Thread:</strong> Before the visible
+context samples from the shared texture, instruct the GPU to wait for
+the fence to clear:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>glWaitSync<span class="op">(</span>syncFence<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> GL_TIMEOUT_IGNORED<span class="op">);</span></span></code></pre></div>
+<p><code>glWaitSync</code> causes the GPU’s server pipeline to wait for
+the background operations to complete before executing subsequent
+commands on the visible context, all without blocking the CPU
+thread.</p></li>
+<li><p><strong>Clean Up:</strong> Once the texture is consumed, delete
+the sync object from either context:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>glDeleteSync<span class="op">(</span>syncFence<span class="op">);</span></span></code></pre></div></li>
+</ol>
+<h3 id="resource-deletion-lifecycle">Resource Deletion Lifecycle</h3>
+<p>When deleting shared textures, OpenGL tracks references across all
+sharing contexts. If the off-screen context calls
+<code>glDeleteTextures</code> while the visible context has the texture
+bound or queued for drawing, the name is freed immediately, but the
+underlying GPU memory remains valid until all contexts unbind the
+texture.</p>
+<p>To maintain predictable memory usage, establish clear ownership
+semantics: designate one context (usually the main display context) as
+the owner responsible for the final deletion of shared assets after
+synchronization guarantees that the background context has finished with
+them.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

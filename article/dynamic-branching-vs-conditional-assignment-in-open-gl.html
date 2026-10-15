@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Branching vs Conditional Assignment in OpenGL - opengl</title>
+    <meta name="description" content="Dynamic branching and conditional assignment represent two distinct approaches to flow control in modern OpenGL shaders, each with different performance implications governed by GPU architecture. Because GPUs execute threads in lockstep groups—known as wa">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/dynamic-branching-vs-conditional-assignment-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Dynamic Branching vs Conditional Assignment in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/dynamic-branching-vs-conditional-assignment-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Dynamic branching and conditional assignment represent two distinct approaches to flow control in modern OpenGL shaders, each with different performance implications governed by GPU architecture. Because GPUs execute threads in lockstep groups—known as wa" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamic-branching-vs-conditional-assignment-in-opengl">Dynamic
+Branching vs Conditional Assignment in OpenGL</h1>
+<p>Dynamic branching and conditional assignment represent two distinct
+approaches to flow control in modern OpenGL shaders, each with different
+performance implications governed by GPU architecture. Because GPUs
+execute threads in lockstep groups—known as warps on NVIDIA or
+wavefronts on AMD—branching behaves very differently than it does on a
+CPU. While dynamic branching can skip heavy blocks of code when
+conditions are spatially coherent, divergent execution forces both paths
+to run sequentially. In contrast, conditional assignment avoids
+divergence penalties by evaluating both outcomes and selecting the
+result via predication, making it faster for lightweight logic but
+inefficient for costly computations.</p>
+<h2 id="the-underlying-hardware-mechanics">The Underlying Hardware
+Mechanics</h2>
+<p>Modern GPUs utilize Single Instruction, Multiple Threads (SIMT)
+architectures. Instructions are dispatched to groups of 32 or 64 threads
+at once. When a conditional operation occurs, hardware handles it in one
+of two ways:</p>
+<ol type="1">
+<li><strong>Branch Instructions:</strong> The instruction pointer jumps
+over blocks of code.</li>
+<li><strong>Predication (Conditional Move):</strong> Both sides of the
+condition are calculated, and a predicate bit determines which value is
+written to the destination register.</li>
+</ol>
+<h2 id="dynamic-branching">Dynamic Branching</h2>
+<p>Dynamic branching relies on actual control-flow instructions
+(<code>if</code>/<code>else</code> or <code>switch</code>) where the
+condition depends on runtime data such as uniforms, vertex attributes,
+or sampled textures.</p>
+<h3 id="the-divergence-penalty">The Divergence Penalty</h3>
+<p>Dynamic branching achieves optimal performance only when all threads
+within a warp or wavefront follow the same execution path. When threads
+diverge—some taking the <code>true</code> path and others taking the
+<code>false</code> path—the hardware serializes execution:</p>
+<ul>
+<li>The GPU executes the <code>true</code> path while masking out
+(disabling) the threads taking the <code>false</code> path.</li>
+<li>The GPU then executes the <code>false</code> path while masking out
+the threads that took the <code>true</code> path.</li>
+<li>Total execution time equals the sum of both paths combined, plus the
+overhead of branching logic.</li>
+</ul>
+<h3 id="when-dynamic-branching-is-faster">When Dynamic Branching is
+Faster</h3>
+<p>Dynamic branching is the superior choice when the code within the
+branch is computationally heavy and exhibits high spatial coherence.
+Examples include:</p>
+<ul>
+<li>Skipping expensive lighting loops or shadow map evaluations for
+surfaces facing away from a light source.</li>
+<li>Early exits in raymarching or volumetric rendering.</li>
+<li>Bypassing complex calculations across large continuous screen
+areas.</li>
+</ul>
+<p>Even with occasional edge divergence, skipping dozens of ALU
+instructions or texture fetches across 90% of screen warps yields
+massive net performance gains.</p>
+<h2 id="conditional-assignment">Conditional Assignment</h2>
+<p>Conditional assignment involves evaluating an expression and choosing
+between results using ternary operators (<code>? :</code>), GLSL
+built-ins like <code>mix()</code> combined with <code>step()</code>, or
+simple variable assignments based on flat comparisons.</p>
+<h3 id="predicated-execution">Predicated Execution</h3>
+<p>Modern GPU instruction sets support conditional select operations
+(such as <code>CSEL</code> or <code>CMP</code>). Instead of altering the
+instruction pointer, the GPU computes the values and writes the selected
+result to the target register based on a boolean mask.</p>
+<h3 id="advantages-and-drawbacks">Advantages and Drawbacks</h3>
+<ul>
+<li><strong>No Divergence Overhead:</strong> Threads never
+de-synchronize. Execution time is deterministic and unaffected by
+neighbor threads.</li>
+<li><strong>Wasted Cycles:</strong> Because both sides of the condition
+are evaluated unconditionally, the ALU consumes power and cycles on
+computations that will ultimately be discarded.</li>
+<li><strong>Register Pressure:</strong> Holding temporary values for
+both outcomes simultaneously can increase register usage per thread,
+potentially reducing warp occupancy on the multiprocessor.</li>
+</ul>
+<h2 id="key-technical-considerations">Key Technical Considerations</h2>
+<h3 id="alu-cost-vs-branch-cost">ALU Cost vs. Branch Cost</h3>
+<p>Evaluating a branch requires evaluating a condition, setting
+execution masks, and jumping to instructions. This process carries a
+baseline cost of roughly 2 to 8 cycles depending on the hardware
+architecture. If a branch only protects 2–4 simple ALU instructions
+(such as a basic addition or multiplication), taking a dynamic branch
+often costs more than executing the extra instructions
+unconditionally.</p>
+<h3 id="dependent-texture-fetches-and-derivatives">Dependent Texture
+Fetches and Derivatives</h3>
+<p>Placing texture sampling functions that implicitly compute
+screen-space derivatives (e.g., <code>texture()</code>,
+<code>dFdx()</code>, <code>dFdy()</code>) inside dynamic branches with
+high divergence can result in undefined behavior or severe performance
+degradations. For dynamic branches containing texture lookups, you must
+supply explicit derivatives using <code>textureGrad()</code> or manually
+specify the mipmap level with <code>textureLod()</code>.</p>
+<h3 id="compiler-optimization">Compiler Optimization</h3>
+<p>Modern GLSL drivers and shader compilers actively optimize simple
+<code>if</code>/<code>else</code> blocks. If an <code>if</code> block
+contains only a few simple operations, the compiler will automatically
+flatten the branch into predicated instructions, effectively turning
+dynamic branching into conditional assignment under the hood.</p>
+<h2 id="practical-decision-rules">Practical Decision Rules</h2>
+<ul>
+<li><strong>Use Conditional Assignment (<code>mix</code>,
+<code>? :</code>)</strong> when choosing between simple scalar or vector
+values, executing cheap math (less than 4–8 basic ALU instructions), or
+when inputs are highly random and non-coherent across neighboring
+pixels.</li>
+<li><strong>Use Dynamic Branching
+(<code>if</code>/<code>else</code>)</strong> when enclosing complex
+loops, expensive trigonometric or matrix functions, texture fetches, or
+when the condition remains uniform across large clusters of adjacent
+pixels or vertices.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

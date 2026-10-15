@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Per-Target Blending with GL_ARB_draw_buffers_blend - opengl</title>
+    <meta name="description" content="The GLARBdrawbuffersblend extension enhances the OpenGL pipeline by allowing developers to assign distinct blend equations and blend functions to individual draw buffers attached to a Framebuffer Object (FBO). Prior to this extension, Multiple Render Targ">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/per-target-blending-with-gl-arb-draw-buffers-blend">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Per-Target Blending with GL_ARB_draw_buffers_blend - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/per-target-blending-with-gl-arb-draw-buffers-blend" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The GLARBdrawbuffersblend extension enhances the OpenGL pipeline by allowing developers to assign distinct blend equations and blend functions to individual draw buffers attached to a Framebuffer Object (FBO). Prior to this extension, Multiple Render Targ" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="per-target-blending-with-gl_arb_draw_buffers_blend">Per-Target
+Blending with GL_ARB_draw_buffers_blend</h1>
+<p>The <code>GL_ARB_draw_buffers_blend</code> extension enhances the
+OpenGL pipeline by allowing developers to assign distinct blend
+equations and blend functions to individual draw buffers attached to a
+Framebuffer Object (FBO). Prior to this extension, Multiple Render
+Targets (MRT) were constrained to a single, globally applied blend
+configuration, forcing all attached color attachments to process
+incoming fragments identically. This article explains how the extension
+resolves this limitation, the core API functions it introduces, and how
+it executes separate blending configurations across multiple render
+targets simultaneously.</p>
+<h3 id="the-limitation-of-traditional-mrt-blending">The Limitation of
+Traditional MRT Blending</h3>
+<p>When Multiple Render Targets were originally introduced to OpenGL, a
+fragment shader could write color data to several color buffers
+concurrently using <code>glDrawBuffers</code>. However, the blending
+stage of the pipeline remained largely monolithic:</p>
+<ul>
+<li><code>glBlendFunc</code> and <code>glBlendEquation</code> (including
+their separate RGB/Alpha variants) applied universally to all enabled
+color outputs.</li>
+<li>While <code>GL_EXT_draw_buffers2</code> allowed toggling blending on
+or off per target using <code>glEnablei(GL_BLEND, index)</code>, you
+could not specify different source and destination factors or equations
+for different buffers.</li>
+</ul>
+<p>This restriction created significant bottlenecks in rendering
+techniques like deferred shading or packed G-buffer generation, where
+one target (such as an accumulation buffer) might require additive
+blending, while another target (such as a normal or material ID buffer)
+required standard alpha blending or no blending at all.</p>
+<h3 id="key-indexed-api-functions">Key Indexed API Functions</h3>
+<p><code>GL_ARB_draw_buffers_blend</code> eliminates this limitation by
+introducing indexed versions of the core blend-state commands. Each
+function accepts a <code>buf</code> parameter representing the index of
+the draw buffer to configure:</p>
+<ul>
+<li><p><strong><code>glBlendFunciARB(GLuint buf, GLenum src, GLenum dst)</code></strong><br />
+Sets the source and destination blend factors specifically for the draw
+buffer specified by <code>buf</code>.</p></li>
+<li><p><strong><code>glBlendFuncSeparateiARB(GLuint buf, GLenum srcRGB, GLenum dstRGB, GLenum srcAlpha, GLenum dstAlpha)</code></strong><br />
+Allows independent configuration of the RGB and Alpha source and
+destination blend factors for a designated draw buffer index.</p></li>
+<li><p><strong><code>glBlendEquationiARB(GLuint buf, GLenum mode)</code></strong><br />
+Defines the blend equation (such as <code>GL_FUNC_ADD</code>,
+<code>GL_FUNC_SUBTRACT</code>, <code>GL_MIN</code>, or
+<code>GL_MAX</code>) solely for the specified draw buffer.</p></li>
+<li><p><strong><code>glBlendEquationSeparateiARB(GLuint buf, GLenum modeRGB, GLenum modeAlpha)</code></strong><br />
+Configures different blend equations for the RGB and Alpha components
+for a single target index.</p></li>
+</ul>
+<h3 id="pipeline-execution-and-hardware-interaction">Pipeline Execution
+and Hardware Interaction</h3>
+<p>When a fragment shader executes, its outputs correspond to the
+indices defined by <code>glDrawBuffers</code>. At the per-fragment
+operations stage:</p>
+<ol type="1">
+<li><strong>Enable State Check:</strong> The pipeline determines whether
+blending is enabled for target <span class="math inline">\(i\)</span>
+via <code>glIsEnabled(GL_BLEND, i)</code>.</li>
+<li><strong>State Lookup:</strong> If enabled, the blending hardware
+does not refer to global state registers. Instead, it inspects the
+indexed state table for target <span class="math inline">\(i\)</span> to
+retrieve its unique <code>modeRGB</code>, <code>modeAlpha</code>,
+<code>srcRGB</code>, <code>dstRGB</code>, <code>srcAlpha</code>, and
+<code>dstAlpha</code>.</li>
+<li><strong>Per-Target Evaluation:</strong> The incoming fragment output
+for location <span class="math inline">\(i\)</span> is blended against
+the existing color values in attachment <span
+class="math inline">\(i\)</span> using those specific parameters,
+entirely independent of the operations occurring simultaneously on
+attachment <span class="math inline">\(j\)</span>.</li>
+</ol>
+<h3 id="relationship-with-modern-opengl">Relationship with Modern
+OpenGL</h3>
+<p>The functionality provided by <code>GL_ARB_draw_buffers_blend</code>
+proved essential for modern deferred rendering pipelines and was
+integrated directly into the core specification in OpenGL 4.0. In modern
+OpenGL, the <code>ARB</code> suffix is dropped, making functions like
+<code>glBlendFunci</code> and <code>glBlendEquationSeparatei</code>
+standard parts of the API for fine-grained rasterization control.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

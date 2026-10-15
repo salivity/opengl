@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How GLSL Derivatives Behave With Discard in OpenGL - opengl</title>
+    <meta name="description" content="This article explains how OpenGL handles GLSL derivative functions—such as dFdx, dFdy, and implicit derivatives used in texture sampling—when fragments within a quad are terminated using the discard keyword. Modern GPUs evaluate fragment shaders in parall">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-glsl-derivatives-behave-with-discard-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How GLSL Derivatives Behave With Discard in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-glsl-derivatives-behave-with-discard-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how OpenGL handles GLSL derivative functions—such as dFdx, dFdy, and implicit derivatives used in texture sampling—when fragments within a quad are terminated using the discard keyword. Modern GPUs evaluate fragment shaders in parall" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-glsl-derivatives-behave-with-discard-in-opengl">How GLSL
+Derivatives Behave With Discard in OpenGL</h1>
+<p>This article explains how OpenGL handles GLSL derivative
+functions—such as <code>dFdx</code>, <code>dFdy</code>, and implicit
+derivatives used in texture sampling—when fragments within a quad are
+terminated using the <code>discard</code> keyword. Modern GPUs evaluate
+fragment shaders in parallel 2x2 pixel quads to compute these
+derivatives using finite differences between neighboring pixels. When a
+fragment executes a <code>discard</code> statement, this quad structure
+is disrupted, leading to undefined results, visual artifacts, or
+reliance on hardware-specific helper invocations depending on where the
+derivative is sampled relative to the discard operation.</p>
+<h3 id="the-mechanics-of-2x2-fragment-quads">The Mechanics of 2x2
+Fragment Quads</h3>
+<p>Graphics hardware processes fragment shaders in groups of four pixels
+arranged in a 2x2 grid, known as a quad. GLSL derivative functions
+(<code>dFdx</code>, <code>dFdy</code>, and <code>fwidth</code>)
+calculate the rate of change of a variable across screen space by
+subtracting the values computed in adjacent fragments:</p>
+<ul>
+<li><strong>Horizontal derivative (<code>dFdx</code>):</strong> The
+difference between the left and right fragments in the quad.</li>
+<li><strong>Vertical derivative (<code>dFdy</code>):</strong> The
+difference between the top and bottom fragments in the quad.</li>
+</ul>
+<p>Texture sampling functions that use automatic Level of Detail (LOD)
+selection, such as <code>texture()</code>, rely internally on these same
+derivatives to determine the correct mipmap level.</p>
+<h3 id="discard-and-helper-invocations">Discard and Helper
+Invocations</h3>
+<p>When a fragment invokes <code>discard</code>, it marks that pixel so
+it will not write depth, stencil, or color data to the framebuffer.
+However, the underlying hardware thread cannot always terminate
+immediately if other fragments in the 2x2 quad remain active.</p>
+<p>To keep derivative math functional for surviving neighbors, most GPU
+architectures convert discarded fragments into "helper invocations." A
+helper invocation continues executing instructions in lockstep with
+active fragments to provide the necessary data for finite difference
+calculations, but its outputs are ultimately thrown away before
+rasterization.</p>
+<h3 id="derivatives-evaluated-before-discard">Derivatives Evaluated
+Before <code>discard</code></h3>
+<p>If derivative calculations or standard texture lookups are performed
+<strong>before</strong> the conditional branch leading to
+<code>discard</code>, the behavior is well-defined:</p>
+<ul>
+<li>All four fragments in the quad possess valid data at that point in
+execution.</li>
+<li>Finite differences can be accurately calculated.</li>
+<li>Subsequent discards do not retroactively corrupt earlier
+calculations.</li>
+</ul>
+<h3 id="derivatives-evaluated-after-discard">Derivatives Evaluated After
+<code>discard</code></h3>
+<p>Evaluating derivatives <strong>after</strong> a <code>discard</code>
+statement creates undefined behavior according to the OpenGL and GLSL
+specifications:</p>
+<ol type="1">
+<li><strong>Divergent Execution:</strong> Once <code>discard</code> is
+triggered conditionally, the fragments within the quad diverge. Under
+the GLSL specification, derivative calculations executed within
+non-uniform flow control yield undefined values.</li>
+<li><strong>Stale or Uninitialized Data:</strong> While hardware may
+keep a discarded fragment running as a helper invocation, compilers
+frequently optimize discarded paths by omitting code execution for dead
+lanes. If a discarded fragment skips variable updates that occur after
+the <code>discard</code> call, neighboring active fragments will compute
+differences against stale or uninitialized registers.</li>
+<li><strong>Mipmapping Artifacts:</strong> When <code>texture()</code>
+is called after a <code>discard</code>, the corrupted derivatives
+produce sudden spikes in the calculated LOD. This commonly manifests as
+visible seams, black lines, or abrupt transitions to the
+lowest-resolution mipmap along the boundary where fragments were
+discarded.</li>
+</ol>
+<h3 id="best-practices-to-avoid-undefined-derivatives">Best Practices to
+Avoid Undefined Derivatives</h3>
+<p>To guarantee consistent behavior across different GPU vendors and
+driver implementations when using <code>discard</code>:</p>
+<ul>
+<li><strong>Place Derivatives First:</strong> Compute all screen-space
+derivatives, or perform texture reads that rely on implicit derivatives,
+before any conditional <code>discard</code> logic in the shader.</li>
+<li><strong>Use Explicit LOD Sampling:</strong> If a texture must be
+sampled after a <code>discard</code>, replace implicit sampling
+functions with explicit alternatives such as <code>textureLod()</code>
+or <code>textureGrad()</code>. The <code>textureGrad()</code> function
+allows you to pass precomputed derivatives from an earlier stage in the
+shader where the quad was still intact.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

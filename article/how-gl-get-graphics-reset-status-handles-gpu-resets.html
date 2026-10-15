@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How glGetGraphicsResetStatus Handles GPU Resets - opengl</title>
+    <meta name="description" content="This article explores how the OpenGL function glGetGraphicsResetStatus acts as a communication bridge between the GPU and CPU during hardware hangs and driver recovery events. By implementing a non-blocking query mechanism, OpenGL allows the CPU to detect">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-gl-get-graphics-reset-status-handles-gpu-resets">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How glGetGraphicsResetStatus Handles GPU Resets - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-gl-get-graphics-reset-status-handles-gpu-resets" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explores how the OpenGL function glGetGraphicsResetStatus acts as a communication bridge between the GPU and CPU during hardware hangs and driver recovery events. By implementing a non-blocking query mechanism, OpenGL allows the CPU to detect" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-glgetgraphicsresetstatus-handles-gpu-resets">How
+glGetGraphicsResetStatus Handles GPU Resets</h1>
+<p>This article explores how the OpenGL function
+<code>glGetGraphicsResetStatus</code> acts as a communication bridge
+between the GPU and CPU during hardware hangs and driver recovery
+events. By implementing a non-blocking query mechanism, OpenGL allows
+the CPU to detect whether a GPU Timeout Detection and Recovery (TDR)
+event occurred, identify whether the current application was responsible
+for the fault, and execute a controlled recovery or shutdown sequence
+rather than suffering an unhandled crash.</p>
+<h3 id="the-problem-gpu-hangs-and-os-watchdogs">The Problem: GPU Hangs
+and OS Watchdogs</h3>
+<p>Modern operating systems monitor GPU responsiveness using watchdog
+mechanisms, such as Timeout Detection and Recovery (TDR) on Windows. If
+a complex shader or computational workload occupies the graphics
+processor for too long without yielding control, the operating system
+intervenes by resetting the graphics driver and hardware.</p>
+<p>Historically, this reset instantly severed the connection between the
+CPU and the OpenGL context, leaving all allocated GPU resources in an
+undefined state and causing the CPU application to crash abruptly during
+the next draw call.</p>
+<h3 id="context-configuration-and-the-robustness-mechanism">Context
+Configuration and the Robustness Mechanism</h3>
+<p>The <code>glGetGraphicsResetStatus</code> function is part of the
+OpenGL core specification (introduced via the
+<code>GL_ARB_robustness</code> extension and integrated into core in
+OpenGL 4.5). To use it effectively, the application must opt-in during
+context creation by setting the reset notification strategy
+(<code>GL_RESET_NOTIFICATION_STRATEGY</code>) to
+<code>GL_LOSE_CONTEXT_ON_RESET</code>.</p>
+<p>When configured this way, the graphics driver changes how it responds
+to hardware timeouts:</p>
+<ol type="1">
+<li>Instead of terminating the application process, the driver catches
+the reset event.</li>
+<li>The driver transitions the affected OpenGL context into a disabled,
+"lost" state.</li>
+<li>Subsequent rendering commands are silently discarded by the driver
+(becoming no-ops) to prevent invalid memory operations on the host and
+device.</li>
+</ol>
+<h3 id="how-the-cpu-queries-reset-events">How the CPU Queries Reset
+Events</h3>
+<p>Because the GPU operates asynchronously, the CPU is not interrupted
+by a hardware interrupt when a reset occurs. Instead, notification
+relies on polling via <code>glGetGraphicsResetStatus()</code>.</p>
+<p>When the CPU executes this function, the driver queries internal
+tracking flags managed by the kernel-mode driver. The function returns
+one of several status codes:</p>
+<ul>
+<li><strong><code>GL_NO_ERROR</code></strong>: The GPU is functioning
+normally, and no reset has occurred.</li>
+<li><strong><code>GL_GUILTY_CONTEXT_RESET</code></strong>: A reset
+occurred, and the driver determined that a command stream submitted by
+this specific OpenGL context caused the timeout.</li>
+<li><strong><code>GL_INNOCENT_CONTEXT_RESET</code></strong>: A reset
+occurred due to another running process or context, but the current
+context's execution state was invalidated as collateral damage.</li>
+<li><strong><code>GL_UNKNOWN_CONTEXT_RESET</code></strong>: A reset
+occurred, but the driver cannot assign blame to a specific context.</li>
+</ul>
+<h3 id="recovery-workflow-on-the-cpu">Recovery Workflow on the CPU</h3>
+<p>Once <code>glGetGraphicsResetStatus</code> returns any value other
+than <code>GL_NO_ERROR</code>, the current context is permanently lost
+and cannot be restored. However, the CPU now has the information
+necessary to perform an orderly recovery:</p>
+<ol type="1">
+<li><strong>Detection:</strong> The CPU polls
+<code>glGetGraphicsResetStatus</code> periodically, typically once per
+frame after swapping buffers.</li>
+<li><strong>Resource Deletion:</strong> When a reset is returned, the
+CPU releases all local references, textures, shaders, and framebuffers
+tied to that context.</li>
+<li><strong>Context Re-creation:</strong> The application destroys the
+lost OpenGL context, requests a fresh context from the windowing API,
+reloads assets, and resumes execution seamlessly without requiring a
+process restart.</li>
+</ol></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

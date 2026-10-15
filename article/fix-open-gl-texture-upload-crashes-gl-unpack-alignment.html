@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fix OpenGL Texture Upload Crashes: GL_UNPACK_ALIGNMENT - opengl</title>
+    <meta name="description" content="When uploading image data to the GPU using functions like glTexImage2D, unexpected application crashes and memory segmentation faults often trace back to mismatched memory alignment expectations. OpenGL defaults to a 4-byte row alignment, which causes it">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/fix-open-gl-texture-upload-crashes-gl-unpack-alignment">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Fix OpenGL Texture Upload Crashes: GL_UNPACK_ALIGNMENT - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/fix-open-gl-texture-upload-crashes-gl-unpack-alignment" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="When uploading image data to the GPU using functions like glTexImage2D, unexpected application crashes and memory segmentation faults often trace back to mismatched memory alignment expectations. OpenGL defaults to a 4-byte row alignment, which causes it" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="fix-opengl-texture-upload-crashes-gl_unpack_alignment">Fix
+OpenGL Texture Upload Crashes: GL_UNPACK_ALIGNMENT</h1>
+<p>When uploading image data to the GPU using functions like
+<code>glTexImage2D</code>, unexpected application crashes and memory
+segmentation faults often trace back to mismatched memory alignment
+expectations. OpenGL defaults to a 4-byte row alignment, which causes it
+to read past the end of tightly packed, unpadded image
+buffers—particularly those with single-channel or three-channel (RGB)
+data and non-multiple-of-four widths. Adjusting the
+<code>GL_UNPACK_ALIGNMENT</code> parameter via
+<code>glPixelStorei</code> tells OpenGL the exact byte stride to expect
+per row, preventing invalid memory reads and safeguarding your
+application against crashes.</p>
+<h3 id="the-mechanism-of-row-alignment">The Mechanism of Row
+Alignment</h3>
+<p>When pixel data is transferred from CPU system memory to GPU memory,
+OpenGL does not simply read a continuous stream of raw bytes. Instead,
+it processes data row by row and assumes that the beginning of every row
+of pixels is aligned to a specific byte boundary.</p>
+<p>The parameter controlling this behavior is
+<code>GL_UNPACK_ALIGNMENT</code>. It supports values of 1, 2, 4, or 8
+bytes, with OpenGL defaulting to <strong>4 bytes</strong>.</p>
+<p>This means that by default, OpenGL assumes every new row of pixel
+data starts at a memory address that is a multiple of 4 bytes. If the
+actual byte width of an image row is not divisible by 4, OpenGL assumes
+padding bytes were appended to the end of that row in memory to reach
+the next 4-byte boundary.</p>
+<h3 id="how-the-default-causes-crashes">How the Default Causes
+Crashes</h3>
+<p>The crash occurs due to a buffer over-read (out-of-bounds memory
+access). Consider a tightly packed 24-bit RGB texture (3 bytes per
+pixel) with an odd dimension, such as a width of 3 pixels:</p>
+<ul>
+<li><strong>Actual row size:</strong> 3 pixels × 3 bytes = 9 bytes.</li>
+<li><strong>Allocated buffer:</strong> For a 3×3 image, the host buffer
+is precisely 27 bytes (9 bytes × 3 rows).</li>
+<li><strong>OpenGL's assumption (Alignment = 4):</strong> Because 9 is
+not divisible by 4, OpenGL rounds up each row's stride to the next
+multiple of 4, which is 12 bytes.</li>
+</ul>
+<p>When executing <code>glTexImage2D</code>, OpenGL attempts to
+read:</p>
+<ul>
+<li>Row 0: Bytes 0 to 8 (skipping bytes 9–11 as assumed padding).</li>
+<li>Row 1: Bytes 12 to 20 (skipping bytes 21–23 as assumed
+padding).</li>
+<li>Row 2: Bytes 24 to 32.</li>
+</ul>
+<p>Because the allocated buffer is only 27 bytes long, reading through
+byte 32 causes OpenGL to access unallocated memory past the buffer
+boundary. On modern operating systems, this out-of-bounds access
+triggers a segmentation fault (<code>SIGSEGV</code>) or an access
+violation, abruptly crashing the program.</p>
+<h3 id="preventing-the-crash">Preventing the Crash</h3>
+<p>To prevent out-of-bounds memory reads, you must inform OpenGL when
+your client-side pixel buffer does not contain row padding. This is
+achieved by setting the unpack alignment to 1 byte before uploading the
+texture:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>glPixelStorei<span class="op">(</span>GL_UNPACK_ALIGNMENT<span class="op">,</span> <span class="dv">1</span><span class="op">);</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>glTexImage2D<span class="op">(</span>GL_TEXTURE_2D<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> GL_RGB<span class="op">,</span> width<span class="op">,</span> height<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> GL_RGB<span class="op">,</span> GL_UNSIGNED_BYTE<span class="op">,</span> data<span class="op">);</span></span></code></pre></div>
+<p>Setting <code>GL_UNPACK_ALIGNMENT</code> to <code>1</code> disables
+row padding requirements entirely. OpenGL will read every row as a
+continuous, tightly packed sequence of bytes matching the exact width
+and component size of the source data.</p>
+<h3 id="when-to-modify-gl_unpack_alignment">When to Modify
+GL_UNPACK_ALIGNMENT</h3>
+<ul>
+<li><strong>RGB Images (<code>GL_RGB</code>):</strong> Most image
+loaders (such as <code>stb_image</code>) output tightly packed 3-byte
+RGB arrays. If the image width is not an exact multiple of 4, setting
+alignment to 1 is mandatory to avoid crashes.</li>
+<li><strong>Grayscale / Single-Channel Images (<code>GL_RED</code>,
+<code>GL_LUMINANCE</code>):</strong> Since each pixel is 1 byte, any
+image whose width is not divisible by 4 requires an alignment of 1.</li>
+<li><strong>RGBA Images (<code>GL_RGBA</code>):</strong> Each pixel is 4
+bytes, meaning every row is inherently a multiple of 4 bytes regardless
+of the image width. In this case, the default alignment of 4 works
+safely without modification.</li>
+</ul>
+<p>Because <code>glPixelStorei</code> modifies global OpenGL state,
+setting <code>GL_UNPACK_ALIGNMENT</code> to <code>1</code> ensures that
+arbitrary image dimensions and formats can be safely transferred to the
+GPU without risking memory violations.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

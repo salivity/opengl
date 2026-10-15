@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How OpenGL Extensions Become ARB Approved - opengl</title>
+    <meta name="description" content="This article outlines the lifecycle of an OpenGL extension as it transitions from a proprietary, vendor-specific feature to an official Architecture Review Board (ARB) approved standard. You will learn about the tiers of the OpenGL extension hierarchy, th">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-open-gl-extensions-become-arb-approved">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How OpenGL Extensions Become ARB Approved - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-open-gl-extensions-become-arb-approved" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article outlines the lifecycle of an OpenGL extension as it transitions from a proprietary, vendor-specific feature to an official Architecture Review Board (ARB) approved standard. You will learn about the tiers of the OpenGL extension hierarchy, th" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-opengl-extensions-become-arb-approved">How OpenGL Extensions
+Become ARB Approved</h1>
+<p>This article outlines the lifecycle of an OpenGL extension as it
+transitions from a proprietary, vendor-specific feature to an official
+Architecture Review Board (ARB) approved standard. You will learn about
+the tiers of the OpenGL extension hierarchy, the technical requirements
+for generalization, and the formal review and voting procedures
+conducted by the Khronos Group to ensure cross-vendor compatibility.</p>
+<h3 id="the-opengl-extension-hierarchy">The OpenGL Extension
+Hierarchy</h3>
+<p>OpenGL uses a tiered naming system to indicate the maturity,
+portability, and consensus level of an extension:</p>
+<ul>
+<li><strong>Vendor-Specific (e.g., <code>NV</code>, <code>AMD</code>,
+<code>INTEL</code>):</strong> Developed by a single hardware
+manufacturer to expose proprietary hardware capabilities.</li>
+<li><strong>Multi-Vendor (<code>EXT</code>):</strong> Agreed upon and
+implemented by two or more hardware vendors, but not formally ratified
+as an official standard.</li>
+<li><strong>ARB Approved (<code>ARB</code>):</strong> Formally reviewed,
+standardized, and approved by the Khronos OpenGL Architecture Review
+Board. These represent features expected to be widely supported across
+compliant hardware.</li>
+<li><strong>Core Feature:</strong> An extension integrated directly into
+the baseline OpenGL specification, removing the need for
+extension-specific prefixes.</li>
+</ul>
+<h3 id="step-1-implementation-as-a-vendor-or-ext-extension">Step 1:
+Implementation as a Vendor or EXT Extension</h3>
+<p>The process begins when a hardware manufacturer introduces a new
+rendering technique or hardware capability. The vendor writes an initial
+specification and implements it under their vendor prefix (such as
+<code>GL_NV_...</code>).</p>
+<p>Alternatively, if multiple hardware vendors identify a common need,
+they collaborate to write an <code>EXT</code> extension (such as
+<code>GL_EXT_...</code>). This stage serves as a live testing ground to
+evaluate software developer adoption, API ergonomics, and real-world
+performance without altering the core API.</p>
+<h3 id="step-2-demonstrating-demand-and-portability">Step 2:
+Demonstrating Demand and Portability</h3>
+<p>Before an extension can be considered for ARB status, it must prove
+that it is not tied to an isolated architectural quirk of a single GPU.
+The feature must demonstrate:</p>
+<ul>
+<li><strong>Widespread Developer Adoption:</strong> Substantial interest
+and use from software developers, game engines, or professional
+applications.</li>
+<li><strong>Hardware Generalizability:</strong> The ability to be
+implemented efficiently across multiple distinct GPU architectures from
+different vendors.</li>
+</ul>
+<h3 id="step-3-arb-working-group-proposal-and-redrafting">Step 3: ARB
+Working Group Proposal and Redrafting</h3>
+<p>A member of the Khronos Group formally proposes the feature to the
+OpenGL Working Group. During this phase, the technical specification
+undergoes significant revision:</p>
+<ul>
+<li><strong>Syntax Harmonization:</strong> Vendor-specific function and
+token names are changed to use the <code>_ARB</code> suffix (e.g.,
+<code>glFunctionARB</code>).</li>
+<li><strong>Behavioral Normalization:</strong> Any
+implementation-specific shortcuts or proprietary constraints are
+generalized into vendor-neutral specifications.</li>
+<li><strong>Compatibility Interactions:</strong> The working group
+defines how the new functionality interacts with all existing OpenGL
+state machine rules, extensions, and core features.</li>
+</ul>
+<h3 id="step-4-review-voting-and-publication">Step 4: Review, Voting,
+and Publication</h3>
+<p>The Khronos OpenGL Working Group subjects the revised specification
+to peer review and formal debate. Members address edge cases,
+memory-management rules, and precision requirements.</p>
+<p>Once the specification stabilizes, a formal ballot is held among
+voting members of the working group. If the vote passes, the extension
+receives official ARB ratification and is published in the Khronos
+OpenGL Extension Registry. Hardware vendors then update their drivers to
+expose the <code>GL_ARB_</code> extension.</p>
+<h3 id="step-5-integration-into-core-opengl">Step 5: Integration into
+Core OpenGL</h3>
+<p>While an ARB extension is officially standardized, it remains
+optional for hardware vendors to implement unless it is promoted to the
+core specification. During the preparation of a new baseline OpenGL
+version (such as OpenGL 4.5 or 4.6), the ARB reviews existing ARB
+extensions. Popular, stable, and essential ARB extensions have their
+<code>ARB</code> suffixes removed and are made mandatory requirements
+for any driver claiming compliance with that version of OpenGL.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Post-Transform Vertex Cache in OpenGL Explained - opengl</title>
+    <meta name="description" content="This article explores how the post-transform vertex cache optimizes the OpenGL rendering pipeline when processing indexed meshes. You will learn the mechanics behind this hardware feature, how it eliminates redundant vertex shader executions across shared">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/post-transform-vertex-cache-in-open-gl-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Post-Transform Vertex Cache in OpenGL Explained - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/post-transform-vertex-cache-in-open-gl-explained" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explores how the post-transform vertex cache optimizes the OpenGL rendering pipeline when processing indexed meshes. You will learn the mechanics behind this hardware feature, how it eliminates redundant vertex shader executions across shared" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="post-transform-vertex-cache-in-opengl-explained">Post-Transform
+Vertex Cache in OpenGL Explained</h1>
+<p>This article explores how the post-transform vertex cache optimizes
+the OpenGL rendering pipeline when processing indexed meshes. You will
+learn the mechanics behind this hardware feature, how it eliminates
+redundant vertex shader executions across shared vertices, and the
+direct performance benefits it provides for primitive assembly and GPU
+throughput.</p>
+<h3 id="the-redundancy-problem-in-indexed-meshes">The Redundancy Problem
+in Indexed Meshes</h3>
+<p>In modern 3D graphics, polygonal meshes are typically represented as
+indexed triangle lists using OpenGL functions like
+<code>glDrawElements</code>. Instead of duplicating vertex data for
+every triangle, a single vertex buffer holds unique vertex attributes,
+and an index buffer defines the topology by referencing those
+vertices.</p>
+<p>In a typical closed triangular mesh, each vertex is shared by an
+average of five to six triangles. Without an optimization mechanism, the
+graphics hardware would execute the vertex shader once for every single
+index encountered, transforming the same vertex multiple times. This
+introduces severe arithmetic bottlenecks, increases memory bandwidth
+consumption, and slows down overall primitive processing.</p>
+<h3 id="mechanics-of-the-post-transform-vertex-cache">Mechanics of the
+Post-Transform Vertex Cache</h3>
+<p>The post-transform vertex cache (often referred to as the
+post-transform cache or FIFO/LRU vertex cache) is a dedicated hardware
+buffer located immediately after the vertex processing stage and before
+primitive assembly.</p>
+<p>When the GPU reads an index from the element array buffer, it
+operates through the following steps:</p>
+<ol type="1">
+<li><strong>Index Lookup:</strong> The GPU checks if the vertex index
+currently exists in the post-transform cache.</li>
+<li><strong>Cache Hit:</strong> If the index is present, the GPU
+bypasses the vertex shader entirely and fetches the pre-calculated
+clip-space position, varyings, and attributes directly from the
+cache.</li>
+<li><strong>Cache Miss:</strong> If the index is not present, the vertex
+shader executes for that vertex. The output is forwarded to the
+primitive assembly stage and simultaneously stored in the cache. If the
+cache is full, the oldest or least recently used (LRU) entry is
+evicted.</li>
+</ol>
+<p>Hardware post-transform caches are typically small, historically
+ranging from 16 to 64 entries, designed for low latency and high
+throughput.</p>
+<h3 id="how-it-improves-primitive-processing-speed">How It Improves
+Primitive Processing Speed</h3>
+<p>The post-transform cache significantly accelerates mesh processing
+through three primary mechanisms:</p>
+<ul>
+<li><strong>Drastic Reduction in Vertex Shader Invocations:</strong> In
+an unoptimized pipeline, processing <span
+class="math inline">\(T\)</span> triangles requires <span
+class="math inline">\(3T\)</span> vertex shader executions. With an
+effective post-transform cache, the number of executions approaches the
+actual number of unique vertices (<span
+class="math inline">\(V\)</span>). Because <span class="math inline">\(V
+\approx \frac{T}{2}\)</span> in dense closed meshes, caching can
+eliminate up to 60–70% of total vertex shading calculations.</li>
+<li><strong>Decreased Internal Bandwidth and Register Pressure:</strong>
+Reusing post-transform data directly on-chip prevents intermediate
+varying data from being repeatedly written to and read from internal
+memory, saving critical memory bandwidth for other pipeline stages such
+as rasterization and fragment shading.</li>
+<li><strong>Higher Primitive Assembly Feeding Rate:</strong> Primitive
+assembly requires all three transformed vertices of a triangle to be
+ready before forming a primitive and passing it to clipping and
+rasterization. Fast cache hits ensure that triangles are assembled with
+minimal pipeline stalls, keeping the rasterizer continuously
+saturated.</li>
+</ul>
+<h3 id="maximizing-cache-efficiency-in-opengl">Maximizing Cache
+Efficiency in OpenGL</h3>
+<p>The performance gain delivered by the post-transform cache depends
+entirely on the ordering of indices in the index buffer. Randomly
+ordered indices result in frequent cache misses, degrading performance
+to that of an uncached pipeline.</p>
+<p>To maximize the Average Transform-to-Vertex Ratio (ATVR), developers
+reorder mesh indices using algorithms such as the Forsyth algorithm or
+Tipsify (often implemented through tools like
+<code>meshoptimizer</code>). By sorting triangles so that adjacent
+triangles with shared vertices are rendered in close temporal proximity,
+the GPU achieves near-optimal cache hit rates, unlocking the maximum
+primitive throughput of the hardware.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

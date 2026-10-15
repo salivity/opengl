@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HDR Rendering with Floating-Point Framebuffers in OpenGL - opengl</title>
+    <meta name="description" content="High Dynamic Range (HDR) rendering allows graphical applications to display a wider spectrum of luminance and color detail, accurately replicating scenes with extreme contrasts between bright lights and dark shadows. In traditional rendering pipelines, co">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/hdr-rendering-with-floating-point-framebuffers-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="HDR Rendering with Floating-Point Framebuffers in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/hdr-rendering-with-floating-point-framebuffers-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="High Dynamic Range (HDR) rendering allows graphical applications to display a wider spectrum of luminance and color detail, accurately replicating scenes with extreme contrasts between bright lights and dark shadows. In traditional rendering pipelines, co" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="hdr-rendering-with-floating-point-framebuffers-in-opengl">HDR
+Rendering with Floating-Point Framebuffers in OpenGL</h1>
+<p>High Dynamic Range (HDR) rendering allows graphical applications to
+display a wider spectrum of luminance and color detail, accurately
+replicating scenes with extreme contrasts between bright lights and dark
+shadows. In traditional rendering pipelines, color values are strictly
+clamped to a normalized range of 0.0 to 1.0, flattening intense light
+sources into solid white. OpenGL overcomes this limitation by leveraging
+floating-point framebuffers (FBOs), which store raw light values
+exceeding standard thresholds. This article explains how floating-point
+framebuffers function in OpenGL, their role in preserving color depth,
+and how they integrate into tone-mapping pipelines to produce realistic
+visual output.</p>
+<h3 id="the-limitation-of-standard-integer-buffers">The Limitation of
+Standard Integer Buffers</h3>
+<p>Standard Dynamic Range (SDR) rendering typically relies on default
+framebuffers or textures configured with fixed-point, normalized integer
+formats like <code>GL_RGBA8</code>. Under this setup, each color
+component (red, green, blue, alpha) is allocated 8 bits, providing 256
+discrete values per channel. During fragment shading, any calculated
+light value greater than 1.0 is automatically clamped to 1.0 before
+being stored.</p>
+<p>In scenes featuring powerful light sources, such as direct sunlight
+or glowing explosions, this clamping causes an immediate loss of detail.
+Surrounding geometry rendered with bright highlights loses distinction,
+resulting in uniform patches of white and preventing realistic camera
+exposure simulation.</p>
+<h3 id="how-floating-point-textures-enable-hdr">How Floating-Point
+Textures Enable HDR</h3>
+<p>OpenGL resolves the dynamic range constraint by allowing framebuffers
+to use textures backed by floating-point precision rather than
+normalized integers. The primary internal formats used for HDR
+framebuffers are:</p>
+<ul>
+<li><strong><code>GL_RGBA16F</code></strong>: Half-precision
+floating-point (16 bits per channel). It provides sufficient dynamic
+range and precision for most graphical applications while conserving
+memory bandwidth and cache performance.</li>
+<li><strong><code>GL_RGB16F</code></strong>: Similar to
+<code>GL_RGBA16F</code>, omitting the alpha channel when transparency or
+post-process masking is not required.</li>
+<li><strong><code>GL_RGBA32F</code></strong>: Full-precision
+floating-point (32 bits per channel). It offers maximum precision but at
+significantly higher memory bandwidth and storage costs, typically
+reserved for scientific visualization or specialized compute tasks.</li>
+</ul>
+<p>When an OpenGL Framebuffer Object is bound with a
+<code>GL_RGBA16F</code> color attachment via <code>glTexImage2D</code>,
+fragment shader calculations are preserved directly into the buffer
+without automatic clamping. A bright light that evaluates to a value of
+25.0 remains stored as 25.0.</p>
+<h3 id="the-opengl-hdr-pipeline-workflow">The OpenGL HDR Pipeline
+Workflow</h3>
+<p>Implementing HDR via floating-point framebuffers involves a
+multi-pass rendering process:</p>
+<ol type="1">
+<li><strong>FBO Setup:</strong> A custom framebuffer is generated and
+configured with a floating-point texture attachment using
+<code>glFramebufferTexture2D</code>.</li>
+<li><strong>Scene Pass:</strong> The 3D scene is rendered into this
+custom FBO. Lights are evaluated using physically realistic or
+high-intensity values, writing unconstrained floating-point color data
+to the texture.</li>
+<li><strong>Intermediate Processing (Optional):</strong> Techniques such
+as bloom can sample pixels with values greater than 1.0 to isolate
+bright areas, apply a Gaussian blur, and prepare glowing halos.</li>
+<li><strong>Tone Mapping Pass:</strong> The floating-point color buffer
+is bound as a standard sampler in a subsequent full-screen quad pass. A
+dedicated fragment shader transforms the unbounded values back into the
+displayable [0.0, 1.0] range.</li>
+</ol>
+<h3 id="tone-mapping-and-exposure">Tone Mapping and Exposure</h3>
+<p>Monitors operating in SDR mode cannot display color components above
+1.0. Therefore, the HDR pipeline requires a tone mapping algorithm to
+compress the dynamic range while preserving local contrast and color
+fidelity.</p>
+<p>Tone mapping algorithms range from simple mathematical functions to
+complex filmic operators:</p>
+<ul>
+<li><strong>Reinhard Tone Mapping:</strong> Divides the color by itself
+plus one (<code>color / (color + vec3(1.0))</code>), smoothly
+asymptotically mapping infinite values toward 1.0 while leaving lower
+values relatively unaffected.</li>
+<li><strong>Exposure Tone Mapping:</strong> Simulates a camera sensor
+shutter speed using the formula
+<code>vec3(1.0) - exp(-color * exposure)</code>. Developers can
+dynamically alter the <code>exposure</code> variable to simulate the
+human eye adapting from a dark room to bright outdoor lighting.</li>
+<li><strong>Filmic/ACES Operators:</strong> Industry-standard curve
+transforms that mimic actual cinematic film response, providing
+high-contrast shadows and desaturating highlights as they approach
+maximum brightness.</li>
+</ul>
+<p>After tone mapping is applied in the post-processing shader, the
+final colors are written to the default window buffer
+(<code>GL_FRAMEBUFFER 0</code>) and rendered to the screen.</p>
+<h3 id="summary-of-benefits">Summary of Benefits</h3>
+<p>Leveraging floating-point framebuffers in OpenGL decouples the
+lighting calculations of a rendering engine from the display
+capabilities of the output device. It eliminates luminance clipping
+artifacts, provides the numerical foundation needed for optical effects
+like bloom and depth-of-field, and allows real-time dynamic exposure
+adjustments that mirror human visual adaptation.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

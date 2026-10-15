@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Multisample Resolving with glBlitFramebuffer - opengl</title>
+    <meta name="description" content="Multisample anti-aliasing (MSAA) improves image quality by storing multiple color, depth, or stencil samples per pixel, but these samples must eventually be downsampled into a standard single-sample format for presentation or post-processing. In modern Op">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-multisample-resolving-with-gl-blit-framebuffer">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Multisample Resolving with glBlitFramebuffer - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-multisample-resolving-with-gl-blit-framebuffer" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Multisample anti-aliasing (MSAA) improves image quality by storing multiple color, depth, or stencil samples per pixel, but these samples must eventually be downsampled into a standard single-sample format for presentation or post-processing. In modern Op" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-multisample-resolving-with-glblitframebuffer">OpenGL
+Multisample Resolving with glBlitFramebuffer</h1>
+<p>Multisample anti-aliasing (MSAA) improves image quality by storing
+multiple color, depth, or stencil samples per pixel, but these samples
+must eventually be downsampled into a standard single-sample format for
+presentation or post-processing. In modern OpenGL, this process is known
+as multisample resolving and is performed using
+<code>glBlitFramebuffer</code>. This article explains how
+<code>glBlitFramebuffer</code> executes multisample resolving, the
+configuration required to trigger the process, and the core constraints
+enforced by the OpenGL specification.</p>
+<h3 id="multisample-resolving-mechanics">Multisample Resolving
+Mechanics</h3>
+<p>During multisample rendering, render targets store an array of
+distinct sample values per pixel. Before this data can be displayed on a
+standard monitor or sampled as a traditional <code>sampler2D</code> in
+subsequent shader passes, the sub-pixel samples must be combined into a
+single color value. The GPU resolves these samples by calculating the
+mathematical average of all active color subsamples for each pixel.</p>
+<p>In OpenGL, <code>glBlitFramebuffer</code> performs this operation by
+copying a defined rectangular region from the framebuffer bound to
+<code>GL_READ_FRAMEBUFFER</code> to the framebuffer bound to
+<code>GL_DRAW_FRAMEBUFFER</code>. When the read framebuffer contains
+multisampled attachments and the draw framebuffer contains
+single-sampled attachments, the driver automatically performs the
+resolve pass during the blit.</p>
+<h3 id="setting-up-the-framebuffers">Setting Up the Framebuffers</h3>
+<p>To initiate a resolve operation, two framebuffer objects (FBOs) must
+be configured:</p>
+<ol type="1">
+<li><strong>Source (Multisampled) Framebuffer:</strong> This FBO has
+textures or renderbuffers allocated with multiple samples (via
+<code>glTexImage2DMultisample</code> or
+<code>glRenderbufferStorageMultisample</code>).</li>
+<li><strong>Destination (Single-Sample) Framebuffer:</strong> This FBO
+has standard textures or renderbuffers with zero multisampling (or
+targets the default framebuffer, FBO <code>0</code>).</li>
+</ol>
+<p>Before calling the blit function, both framebuffers must be bound to
+their respective targets:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>glBindFramebuffer<span class="op">(</span>GL_READ_FRAMEBUFFER<span class="op">,</span> msaaFBO<span class="op">);</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>glBindFramebuffer<span class="op">(</span>GL_DRAW_FRAMEBUFFER<span class="op">,</span> resolveFBO<span class="op">);</span></span></code></pre></div>
+<h3 id="executing-the-resolve-operation">Executing the Resolve
+Operation</h3>
+<p>The resolve is triggered using <code>glBlitFramebuffer</code>:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>glBlitFramebuffer<span class="op">(</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">,</span> width<span class="op">,</span> height<span class="op">,</span> <span class="co">// Source rectangle</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">,</span> width<span class="op">,</span> height<span class="op">,</span> <span class="co">// Destination rectangle</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    GL_COLOR_BUFFER_BIT<span class="op">,</span> <span class="co">// Mask indicating which buffers to copy</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    GL_NEAREST           <span class="co">// Filtering method</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="op">);</span></span></code></pre></div>
+<p>When executing this call:</p>
+<ul>
+<li>The read framebuffer provides the source multi-sample data.</li>
+<li>The GPU's fixed-function resolve hardware averages the sub-pixel
+samples for each pixel coordinate in the source rectangle.</li>
+<li>The resulting single-sample values are written directly to the draw
+framebuffer.</li>
+</ul>
+<h3 id="technical-constraints-and-rules">Technical Constraints and
+Rules</h3>
+<p>Multisample resolving via <code>glBlitFramebuffer</code> enforces
+strict rules defined by the OpenGL specification:</p>
+<ul>
+<li><strong>Matching Dimensions:</strong> When the source framebuffer
+has multisampling enabled and the destination does not, the source and
+destination rectangle dimensions must match precisely
+(<code>srcX1 - srcX0 == dstX1 - dstX0</code> and
+<code>srcY1 - srcY0 == dstY1 - dstY0</code>). Scaling or stretching the
+image during a resolve operation is not supported and will result in a
+<code>GL_INVALID_OPERATION</code> error.</li>
+<li><strong>Filter Parameter:</strong> The <code>filter</code> parameter
+must be set to <code>GL_NEAREST</code>. Setting this to
+<code>GL_LINEAR</code> while resolving a multisample buffer will trigger
+a <code>GL_INVALID_OPERATION</code>. The averaging of sub-pixel samples
+is handled internally by the hardware; the filter flag only applies to
+post-resolve pixel mapping.</li>
+<li><strong>Format Compatibility:</strong> The internal formats of the
+source and destination attachments must be compatible. For color
+buffers, they should have matching or convertible data representations
+(e.g., normalized floating-point).</li>
+<li><strong>Depth and Stencil Resolves:</strong> While color resolving
+computes an average, resolving depth or stencil multisample buffers
+behaves differently. Because averaging depth values or stencil IDs
+produces invalid data, OpenGL either selects a single arbitrary sample
+per pixel or applies implementation-specific selection rules (such as
+min/max depth sample selection introduced in newer OpenGL
+extensions).</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

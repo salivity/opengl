@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Writeonly Memory Qualifier for OpenGL Data Streaming - opengl</title>
+    <meta name="description" content="The writeonly memory qualifier in OpenGL Shading Language (GLSL) provides explicit hardware-level hints that optimize how the GPU handles outbound data streams. In high-throughput streaming scenarios—such as compute-driven geometry generation, particle si">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/writeonly-memory-qualifier-for-open-gl-data-streaming">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Writeonly Memory Qualifier for OpenGL Data Streaming - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/writeonly-memory-qualifier-for-open-gl-data-streaming" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The writeonly memory qualifier in OpenGL Shading Language (GLSL) provides explicit hardware-level hints that optimize how the GPU handles outbound data streams. In high-throughput streaming scenarios—such as compute-driven geometry generation, particle si" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="writeonly-memory-qualifier-for-opengl-data-streaming">Writeonly
+Memory Qualifier for OpenGL Data Streaming</h1>
+<p>The <code>writeonly</code> memory qualifier in OpenGL Shading
+Language (GLSL) provides explicit hardware-level hints that optimize how
+the GPU handles outbound data streams. In high-throughput streaming
+scenarios—such as compute-driven geometry generation, particle
+simulation, or image processing—specifying <code>writeonly</code> on
+Shader Storage Buffer Objects (SSBOs) or image variables allows the
+GPU's memory hierarchy to bypass standard read-allocate protocols. This
+article explores the underlying architectural capabilities enabled by
+the <code>writeonly</code> qualifier, detailing how it optimizes cache
+utilization, memory bus bandwidth, and execution pipeline
+throughput.</p>
+<h3 id="elimination-of-read-for-ownership-rfo-overhead">Elimination of
+Read-For-Ownership (RFO) Overhead</h3>
+<p>Standard GPU memory writes typically follow a write-allocate policy
+with write-back caching. When a shader writes to a memory address, the
+memory controller must first fetch the target cache line into the
+cache—a process known as Read-For-Ownership (RFO)—before modifying its
+contents. This effectively consumes read bandwidth for data that the
+shader has no intention of reading.</p>
+<p>Applying the <code>writeonly</code> qualifier allows the driver and
+GPU memory architecture to use non-temporal or streaming store
+instructions. These instructions write directly into memory or
+specialized staging buffers without fetching the line into the L1 or L2
+cache first. Eliminating RFO requests cuts the required bus transactions
+nearly in half for purely streamed output workloads.</p>
+<h3 id="write-combining-buffers-and-coalescing">Write-Combining Buffers
+and Coalescing</h3>
+<p>Modern GPU architectures feature dedicated write-combining buffers
+(WCBs) designed to aggregate scattered store operations from SIMD lanes
+(threads within a warp or wavefront). When an output target is marked
+<code>writeonly</code>, the hardware can route these operations directly
+through the write-combining path:</p>
+<ul>
+<li><strong>Transaction Aggregation:</strong> Dispersed writes across
+shader invocations are accumulated until a full cache line (typically 64
+or 128 bytes) is assembled.</li>
+<li><strong>Burst Transfers:</strong> Once filled, the line is written
+to the L2 cache or VRAM in a single, high-efficiency burst transaction
+across the memory bus.</li>
+<li><strong>Partial Write Minimization:</strong> It reduces byte-masking
+overhead and eliminates the need to track byte-level dirty bits across
+transient cache lines.</li>
+</ul>
+<h3 id="cache-pollution-mitigation">Cache Pollution Mitigation</h3>
+<p>Streamed data is often transient, generated once by a compute or
+vertex shader and consumed immediately by a downstream pipeline stage or
+written out to system memory.</p>
+<p>Without <code>writeonly</code>, streaming operations continually
+evict high-reuse data—such as lookup tables, transform matrices, and
+read-only textures—from the L1 and L2 caches. By signaling that the
+written data will not be read by the current shader execution units,
+<code>writeonly</code> enables streaming-store policies that bypass the
+L1 data cache entirely. This preserves cache lines for critical
+read-heavy workloads elsewhere on the chip.</p>
+<h3 id="register-and-execution-pipeline-optimization">Register and
+Execution Pipeline Optimization</h3>
+<p>The <code>writeonly</code> qualifier aids the shader compiler in
+instruction scheduling and register allocation:</p>
+<ul>
+<li><strong>Dependency Tracking:</strong> The compiler can omit the
+hardware scoreboarding logic required to monitor Read-After-Write (RAW)
+data hazards on that specific resource.</li>
+<li><strong>Instruction Reordering:</strong> Store instructions can be
+pushed as far down the instruction sequence as possible or grouped
+together to maximize instruction-level parallelism (ILP) without risking
+memory consistency violations within the active thread group.</li>
+<li><strong>Register Deallocation:</strong> Values intended for memory
+export can be flushed immediately, allowing the register allocator to
+reclaim vector registers sooner and thereby increasing overall thread
+occupancy on the streaming multiprocessor.</li>
+</ul>
+<h3 id="synchronization-and-barrier-efficiency">Synchronization and
+Barrier Efficiency</h3>
+<p>While OpenGL still requires appropriate calls to
+<code>glMemoryBarrier</code> (such as
+<code>GL_SHADER_STORAGE_BARRIER_BIT</code> or
+<code>GL_TEXTURE_UPDATE_BARRIER_BIT</code>) to synchronize data between
+separate passes, the internal memory fencing workload is reduced. When
+the GPU knows an allocated range is strictly write-only for a given
+pass, it avoids the overhead of invalidating and flushing intermediate
+read caches prior to shader execution. Memory pipelines only need to
+ensure outbound FIFO queues and write-combining buffers are drained
+before signaling completion, streamlining inter-stage handoffs in
+complex rendering graphs.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

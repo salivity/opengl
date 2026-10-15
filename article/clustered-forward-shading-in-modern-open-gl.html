@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clustered Forward Shading in Modern OpenGL - opengl</title>
+    <meta name="description" content="Clustered forward shading is an advanced rendering technique designed to handle thousands of dynamic light sources efficiently within a standard forward rendering pipeline. Traditional forward shading struggles with high light counts due to redundant eval">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/clustered-forward-shading-in-modern-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Clustered Forward Shading in Modern OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/clustered-forward-shading-in-modern-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Clustered forward shading is an advanced rendering technique designed to handle thousands of dynamic light sources efficiently within a standard forward rendering pipeline. Traditional forward shading struggles with high light counts due to redundant eval" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="clustered-forward-shading-in-modern-opengl">Clustered Forward
+Shading in Modern OpenGL</h1>
+<p>Clustered forward shading is an advanced rendering technique designed
+to handle thousands of dynamic light sources efficiently within a
+standard forward rendering pipeline. Traditional forward shading
+struggles with high light counts due to redundant evaluations per
+fragment, while tiled shading techniques suffer from depth-range
+discontinuities. By subdividing the camera's view frustum into a
+three-dimensional grid of spatial sub-volumes—often referred to as
+"froxels"—clustered forward shading isolates lights along the X, Y, and
+Z axes. This allows fragment shaders to query only the specific subset
+of lights affecting a fragment's precise 3D location, retaining the
+flexibility of forward rendering, such as hardware multi-sample
+anti-aliasing (MSAA) and straightforward transparency handling, without
+sacrificing performance.</p>
+<h2 id="the-frustum-subdivision-scheme">The Frustum Subdivision
+Scheme</h2>
+<p>The foundation of clustered shading is the partitioning of the view
+frustum into a three-dimensional grid. The view volume is sliced in
+three dimensions:</p>
+<ul>
+<li><strong>X and Y Slices:</strong> The screen is divided into a 2D
+grid of uniform tiles, typically 16x16 or 32x32 pixels in size, matching
+the structure used in tiled forward shading.</li>
+<li><strong>Z Slices:</strong> The depth axis is divided using an
+exponential (logarithmic) scale rather than a linear one. Because
+perspective projection compresses geometry with distance, linear slicing
+would cause distant clusters to encompass massive world-space volumes
+while near clusters remain tiny. Exponential slicing ensures that
+clusters scale proportionally with the perspective expansion,
+maintaining a balanced spatial volume per cluster across the entire view
+range.</li>
+</ul>
+<p>In OpenGL, the cluster index for a given fragment is computed
+directly in the fragment shader. The screen-space pixel coordinates
+<span class="math inline">\((x, y)\)</span> determine the horizontal and
+vertical cluster coordinates, while the linear view-space depth
+determines the slice along the Z axis via a logarithmic mapping
+formula.</p>
+<h2 id="light-culling-with-compute-shaders">Light Culling with Compute
+Shaders</h2>
+<p>Assigning lights to these 3D clusters occurs in a compute shader pass
+prior to the main geometry rendering. Modern OpenGL uses compute shaders
+to execute this process efficiently on the GPU:</p>
+<ol type="1">
+<li><strong>AABB Generation:</strong> A compute pass calculates the
+Axis-Aligned Bounding Box (AABB) in view space for every cluster in the
+3D grid. These bounds are written to a Shader Storage Buffer Object
+(SSBO).</li>
+<li><strong>Intersection Testing:</strong> A subsequent compute pass
+tests each light volume (typically spheres for point lights and cones
+for spot lights) against the cluster AABBs. A thread can be assigned per
+cluster to test all active lights, or per light to test candidate
+clusters.</li>
+<li><strong>Data Packing:</strong> When a light intersects a cluster,
+its index is recorded. To avoid allocating fixed-size arrays for every
+cluster—which would consume excessive VRAM—an indirect list format is
+commonly used.</li>
+</ol>
+<p>The light grid is typically represented in GPU memory using two
+SSBOs:</p>
+<ul>
+<li><strong>The Light Index List:</strong> A flat array of integers
+storing the accumulated light indices for all clusters
+sequentially.</li>
+<li><strong>The Cluster Grid Buffer:</strong> An array indexed by the 3D
+cluster ID containing two integers: the offset pointing to the start of
+that cluster's indices in the Light Index List, and the total count of
+lights affecting that cluster.</li>
+</ul>
+<p>Global atomic counters are used within the compute shader to
+dynamically pack light indices into the continuous index buffer.</p>
+<h2 id="fragment-evaluation-in-the-forward-pass">Fragment Evaluation in
+the Forward Pass</h2>
+<p>During the final geometry pass, the standard forward vertex and
+fragment shaders execute. For each fragment, the lighting calculation
+proceeds as follows:</p>
+<ol type="1">
+<li>The fragment's screen position <code>gl_FragCoord.xy</code> is
+divided by the tile size to derive the X and Y cluster indices.</li>
+<li>The view-space depth is derived from <code>gl_FragCoord.z</code>
+using the inverse projection matrix or reconstructed linearly to
+calculate the Z cluster slice.</li>
+<li>The 3D coordinate is flattened into a 1D index: <span
+class="math display">\[\text{ClusterIndex} = X + (Y \times
+\text{GridDimX}) + (Z \times \text{GridDimX} \times
+\text{GridDimY})\]</span></li>
+<li>The fragment shader reads the offset and count from the Cluster Grid
+Buffer using this index.</li>
+<li>A simple loop iterates through the Light Index List from
+<code>offset</code> to <code>offset + count</code>, fetching the light
+properties (position, color, attenuation) from a global light buffer and
+calculating the lighting contribution.</li>
+</ol>
+<h2 id="advantages-over-preceding-architectures">Advantages Over
+Preceding Architectures</h2>
+<p>By adding depth-based clustering, this architecture resolves the
+primary limitation of standard tiled forward shading, where a near
+object and a distant background object within the same screen tile would
+cause the shader to evaluate all lights along that entire view ray.
+Because modern OpenGL supports SSBOs, atomic counters, and compute
+shaders, clustered forward shading operates entirely on the GPU with
+minimal memory overhead, allowing modern rendering engines to scale to
+tens of thousands of active lights in a single scene.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spotlight Angles Using Dot Product in OpenGL Shaders - opengl</title>
+    <meta name="description" content="This article explains how spotlight illumination is calculated in an OpenGL fragment shader using vector mathematics. By computing the dot product between the spotlight&#39;s orientation vector and the vector pointing toward the surface fragment, shaders dete">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/spotlight-angles-using-dot-product-in-open-gl-shaders">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Spotlight Angles Using Dot Product in OpenGL Shaders - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/spotlight-angles-using-dot-product-in-open-gl-shaders" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how spotlight illumination is calculated in an OpenGL fragment shader using vector mathematics. By computing the dot product between the spotlight&#39;s orientation vector and the vector pointing toward the surface fragment, shaders dete" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="spotlight-angles-using-dot-product-in-opengl-shaders">Spotlight
+Angles Using Dot Product in OpenGL Shaders</h1>
+<p>This article explains how spotlight illumination is calculated in an
+OpenGL fragment shader using vector mathematics. By computing the dot
+product between the spotlight's orientation vector and the vector
+pointing toward the surface fragment, shaders determine whether a
+fragment falls within the spotlight’s cone of influence. You will learn
+the underlying vector geometry, how to optimize the calculation by
+working entirely in cosine space, and how to implement both hard and
+soft spotlight edges in GLSL.</p>
+<h2 id="vector-geometry-of-a-spotlight">Vector Geometry of a
+Spotlight</h2>
+<p>A standard spotlight requires three primary spatial vectors to
+determine illumination:</p>
+<ol type="1">
+<li><strong>Light Position (<code>lightPos</code>):</strong> The world-
+or view-space origin of the spotlight.</li>
+<li><strong>Spot Direction (<code>spotDir</code>):</strong> A normalized
+vector defining the central direction the spotlight is pointing.</li>
+<li><strong>Fragment Vector (<code>lightToFrag</code>):</strong> The
+normalized vector from the spotlight position to the fragment position
+(<code>normalize(fragPos - lightPos)</code>). Alternatively, shaders
+often use the direction from the fragment to the light
+(<code>fragToLight</code>), reversing the spotlight direction vector
+accordingly.</li>
+</ol>
+<h2 id="evaluating-angles-with-the-dot-product">Evaluating Angles with
+the Dot Product</h2>
+<p>Computing raw angular differences in radians or degrees using inverse
+trigonometric functions like <code>acos()</code> is computationally
+expensive for GPUs. Instead, OpenGL shaders evaluate spotlight angles
+using the geometric definition of the dot product:</p>
+<p><span class="math display">\[\mathbf{A} \cdot \mathbf{B} =
+\|\mathbf{A}\| \|\mathbf{B}\| \cos(\theta)\]</span></p>
+<p>When both vectors <span class="math inline">\(\mathbf{A}\)</span> and
+<span class="math inline">\(\mathbf{B}\)</span> are normalized to unit
+length (<span class="math inline">\(\|\mathbf{A}\| = 1\)</span> and
+<span class="math inline">\(\|\mathbf{B}\| = 1\)</span>), their dot
+product simplifies directly to the cosine of the angle between them:</p>
+<p><span class="math display">\[\cos(\theta) = \mathbf{A} \cdot
+\mathbf{B}\]</span></p>
+<p>In a shader, taking the dot product of the normalized vector pointing
+from the light to the fragment and the normalized spotlight direction
+yields the cosine of the angle between the center of the beam and the
+fragment:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> lightDir <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span>fragPos <span class="op">-</span> light<span class="op">.</span><span class="fu">position</span><span class="op">);</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> currentCos <span class="op">=</span> <span class="bu">dot</span><span class="op">(</span>lightDir<span class="op">,</span> <span class="bu">normalize</span><span class="op">(</span>light<span class="op">.</span><span class="fu">direction</span><span class="op">));</span></span></code></pre></div>
+<h2 id="the-cosine-threshold-comparison">The Cosine Threshold
+Comparison</h2>
+<p>The spotlight’s field of view is defined by a cutoff angle (<span
+class="math inline">\(\phi\)</span>). Because the cosine function
+decreases monotonically from <span class="math inline">\(1.0\)</span> at
+<span class="math inline">\(0^\circ\)</span> to <span
+class="math inline">\(0.0\)</span> at <span
+class="math inline">\(90^\circ\)</span>, a smaller angle results in a
+larger cosine value.</p>
+<p>To determine if a surface point is illuminated:</p>
+<ul>
+<li>Calculate <span class="math inline">\(\cos(\phi)\)</span> on the CPU
+once and pass it to the shader as a uniform (<code>cutoff</code>).</li>
+<li>Compare <code>currentCos</code> against <code>cutoff</code>.</li>
+<li>If <code>currentCos &gt; cutoff</code>, the angle is smaller than
+the cutoff threshold, meaning the fragment is inside the spotlight
+cone.</li>
+</ul>
+<h2 id="soft-edges-and-attenuation">Soft Edges and Attenuation</h2>
+<p>Hard cutoffs create abrupt, pixelated circular borders. To create
+realistic, soft edges, define two angles: an inner cutoff (<span
+class="math inline">\(\phi_{inner}\)</span>) and an outer cutoff (<span
+class="math inline">\(\phi_{outer}\)</span>).</p>
+<p>The shader interpolates intensity across the transition zone using
+the cosine values:</p>
+<p><span class="math display">\[I = \frac{\cos(\theta) -
+\cos(\phi_{outer})}{\cos(\phi_{inner}) -
+\cos(\phi_{outer})}\]</span></p>
+<p>In GLSL, this can be written using <code>clamp()</code> or
+<code>smoothstep()</code>:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> epsilon <span class="op">=</span> light<span class="op">.</span><span class="fu">innerCutoff</span> <span class="op">-</span> light<span class="op">.</span><span class="fu">outerCutoff</span><span class="op">;</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> intensity <span class="op">=</span> <span class="bu">clamp</span><span class="op">((</span>currentCos <span class="op">-</span> light<span class="op">.</span><span class="fu">outerCutoff</span><span class="op">)</span> <span class="op">/</span> epsilon<span class="op">,</span> <span class="fl">0.0</span><span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span></code></pre></div>
+<p>Because <span class="math inline">\(\phi_{inner} &lt;
+\phi_{outer}\)</span>, the cosine uniform values satisfy
+<code>innerCutoff &gt; outerCutoff</code>, ensuring a positive gradient
+from the edge of the beam to its bright center.</p>
+<h2 id="complete-glsl-fragment-shader-implementation">Complete GLSL
+Fragment Shader Implementation</h2>
+<p>Below is a focused GLSL snippet demonstrating the spotlight
+calculation:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 330 core</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec4</span> FragColor<span class="op">;</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="dt">in</span> <span class="dt">vec3</span> FragPos<span class="op">;</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="dt">in</span> <span class="dt">vec3</span> Normal<span class="op">;</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> Spotlight <span class="op">{</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> position<span class="op">;</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> direction<span class="op">;</span>     <span class="co">// Normalized direction vector</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> innerCutoff<span class="op">;</span>   <span class="co">// cos(innerAngle)</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> outerCutoff<span class="op">;</span>   <span class="co">// cos(outerAngle)</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> color<span class="op">;</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> Spotlight light<span class="op">;</span></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span></span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Compute direction from light to the fragment</span></span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> lightToFrag <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span>FragPos <span class="op">-</span> light<span class="op">.</span><span class="fu">position</span><span class="op">);</span></span>
+<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Evaluate cosine of the angle using the dot product</span></span>
+<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> currentCos <span class="op">=</span> <span class="bu">dot</span><span class="op">(</span>lightToFrag<span class="op">,</span> <span class="bu">normalize</span><span class="op">(</span>light<span class="op">.</span><span class="fu">direction</span><span class="op">));</span></span>
+<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb3-26"><a href="#cb3-26" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Determine soft-edge intensity</span></span>
+<span id="cb3-27"><a href="#cb3-27" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> epsilon <span class="op">=</span> light<span class="op">.</span><span class="fu">innerCutoff</span> <span class="op">-</span> light<span class="op">.</span><span class="fu">outerCutoff</span><span class="op">;</span></span>
+<span id="cb3-28"><a href="#cb3-28" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> intensity <span class="op">=</span> <span class="bu">clamp</span><span class="op">((</span>currentCos <span class="op">-</span> light<span class="op">.</span><span class="fu">outerCutoff</span><span class="op">)</span> <span class="op">/</span> epsilon<span class="op">,</span> <span class="fl">0.0</span><span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb3-29"><a href="#cb3-29" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb3-30"><a href="#cb3-30" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Apply intensity to final fragment color</span></span>
+<span id="cb3-31"><a href="#cb3-31" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> result <span class="op">=</span> light<span class="op">.</span><span class="fu">color</span> <span class="op">*</span> intensity<span class="op">;</span></span>
+<span id="cb3-32"><a href="#cb3-32" aria-hidden="true" tabindex="-1"></a>    FragColor <span class="op">=</span> <span class="dt">vec4</span><span class="op">(</span>result<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb3-33"><a href="#cb3-33" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>This method avoids inverse trigonometric overhead entirely, keeping
+the fragment evaluation down to basic vector subtraction, normalization,
+a single dot product, and a multiply-add operation.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

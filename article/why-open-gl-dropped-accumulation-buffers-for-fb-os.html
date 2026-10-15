@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Why OpenGL Dropped Accumulation Buffers for FBOs - opengl</title>
+    <meta name="description" content="This article examines why the Khronos Group deprecated and ultimately removed accumulation buffers from the core OpenGL specification in favor of modern Framebuffer Objects (FBOs). Historically used for multi-pass visual effects like motion blur, depth of">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/why-open-gl-dropped-accumulation-buffers-for-fb-os">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Why OpenGL Dropped Accumulation Buffers for FBOs - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/why-open-gl-dropped-accumulation-buffers-for-fb-os" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article examines why the Khronos Group deprecated and ultimately removed accumulation buffers from the core OpenGL specification in favor of modern Framebuffer Objects (FBOs). Historically used for multi-pass visual effects like motion blur, depth of" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="why-opengl-dropped-accumulation-buffers-for-fbos">Why OpenGL
+Dropped Accumulation Buffers for FBOs</h1>
+<p>This article examines why the Khronos Group deprecated and ultimately
+removed accumulation buffers from the core OpenGL specification in favor
+of modern Framebuffer Objects (FBOs). Historically used for multi-pass
+visual effects like motion blur, depth of field, and full-scene
+anti-aliasing, accumulation buffers were heavily constrained by
+fixed-function hardware designs and limited flexibility. As modern GPU
+architectures evolved toward programmable pipelines, Framebuffer Objects
+emerged as a far superior alternative, offering developers
+high-performance off-screen rendering, programmable floating-point
+precision, and arbitrary texture management.</p>
+<p>The accumulation buffer was introduced in early versions of OpenGL to
+composite multiple rendering passes into a single output. It operated
+through dedicated commands, such as <code>glAccum()</code>, which
+allowed developers to scale, bias, and accumulate color data from the
+active color buffer. While effective in the era of fixed-function
+pipelines for achieving soft shadows and scene-wide anti-aliasing, the
+mechanism was deeply tied to the default window-system framebuffer and
+relied on restrictive mathematical operations that could not adapt to
+modern real-time graphics demands.</p>
+<p>The primary reason accumulation buffers were phased out was their
+architectural inefficiency on modern hardware. Because accumulation
+buffers required specialized, high-precision storage tied directly to
+the display buffer, consumer GPU vendors rarely provided dedicated
+on-chip memory for them. Consequently, drivers frequently fell back to
+slow system RAM or software emulation to execute accumulation commands.
+This resulted in catastrophic performance drops that made accumulation
+buffers impractical for interactive applications and real-time video
+games.</p>
+<p>Furthermore, the design of accumulation buffers clashed with the
+transition to programmable shaders introduced in OpenGL 2.0 and
+formalized in OpenGL 3.0. Modern rendering pipelines require developers
+to write custom fragment shaders that read and write data flexibly
+across arbitrary memory locations. The accumulation buffer's fixed math
+functions—limited mostly to basic addition, multiplication, and return
+operations—prevented developers from implementing modern algorithmic
+post-processing, tone mapping, or custom temporal blending.</p>
+<p>The introduction of Framebuffer Objects (FBOs) rendered the
+accumulation buffer obsolete by solving all of its fundamental
+drawbacks:</p>
+<ul>
+<li><strong>Off-Screen Rendering:</strong> Unlike accumulation buffers,
+which were bound to the display window, FBOs allow applications to
+render directly into off-screen textures or renderbuffers completely
+detached from the operating system's windowing system.</li>
+<li><strong>Texture Reusability:</strong> FBO attachments can be
+immediately bound as textures in subsequent render passes. This enables
+modern multi-pass workflows where the output of one shader pass serves
+as the direct input to another without expensive memory copies.</li>
+<li><strong>Arbitrary Precision and Formats:</strong> FBOs support
+16-bit and 32-bit floating-point textures, providing the high numerical
+precision needed to accumulate color values over multiple frames without
+clipping, precision loss, or color banding.</li>
+<li><strong>Multiple Render Targets (MRT):</strong> Modern graphics
+techniques, such as deferred rendering and temporal anti-aliasing (TAA),
+require writing to several color attachments simultaneously. FBOs
+support MRT natively, whereas accumulation buffers were fundamentally
+single-target constructs.</li>
+<li><strong>Fully Programmable Blending:</strong> By rendering to an FBO
+and passing the resulting texture into a fragment shader, developers can
+execute arbitrarily complex accumulation logic, such as depth-aware
+temporal reconstruction and velocity-based motion blur, directly on the
+GPU cores.</li>
+</ul>
+<p>Because FBOs provided a faster, fully programmable, and
+hardware-aligned method for performing multi-pass compositing, the
+Khronos Group deprecated accumulation buffers in OpenGL 3.0 and removed
+them entirely from the OpenGL 3.1 Core Profile. Modern OpenGL
+applications achieve all historical accumulation buffer effects—and far
+more advanced techniques—by combining Framebuffer Objects with custom
+GLSL shaders.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

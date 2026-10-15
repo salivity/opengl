@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How GL_COMMAND_BARRIER_BIT Works for Indirect Draws - opengl</title>
+    <meta name="description" content="In modern OpenGL, GPU-driven rendering pipelines frequently generate draw parameters dynamically within compute shaders and output them into buffer objects. Because shader writes utilize incoherent memory operations, the fixed-function indirect command pr">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-gl-command-barrier-bit-works-for-indirect-draws">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How GL_COMMAND_BARRIER_BIT Works for Indirect Draws - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-gl-command-barrier-bit-works-for-indirect-draws" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In modern OpenGL, GPU-driven rendering pipelines frequently generate draw parameters dynamically within compute shaders and output them into buffer objects. Because shader writes utilize incoherent memory operations, the fixed-function indirect command pr" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-gl_command_barrier_bit-works-for-indirect-draws">How
+GL_COMMAND_BARRIER_BIT Works for Indirect Draws</h1>
+<p>In modern OpenGL, GPU-driven rendering pipelines frequently generate
+draw parameters dynamically within compute shaders and output them into
+buffer objects. Because shader writes utilize incoherent memory
+operations, the fixed-function indirect command processor cannot
+automatically detect when these writes finish. Calling
+<code>glMemoryBarrier(GL_COMMAND_BARRIER_BIT)</code> guarantees that all
+memory transactions originating from preceding shader stages are fully
+committed and made visible to the indirect command processor before any
+subsequent indirect draw or dispatch calls execute.</p>
+<h3 id="the-challenge-of-incoherent-memory">The Challenge of Incoherent
+Memory</h3>
+<p>When a compute shader or fragment shader populates an indirect
+command structure—such as <code>DrawArraysIndirectCommand</code> or
+<code>DrawElementsIndirectCommand</code>—it writes to memory via shader
+storage buffer objects (SSBOs) or image load/store operations. Modern
+GPUs execute these writes through high-speed L1/L2 shader caches that
+operate independently of fixed-function command processors.</p>
+<p>OpenGL treats these shader writes as incoherent memory accesses. This
+means the GPU does not continuously monitor cache states or synchronize
+data across different functional units automatically. Without explicit
+synchronization, there is no guarantee that data written by shader
+threads has flushed back to memory levels accessible by the command
+processor.</p>
+<h3 id="what-gl_command_barrier_bit-enforces">What
+<code>GL_COMMAND_BARRIER_BIT</code> Enforces</h3>
+<p>The function <code>glMemoryBarrier</code> establishes an ordering
+constraint between memory transactions issued before the barrier and
+specific memory accesses initiated after the barrier. Passing the
+<code>GL_COMMAND_BARRIER_BIT</code> flag specifically targets commands
+that read execution parameters from buffer objects.</p>
+<p>When <code>glMemoryBarrier(GL_COMMAND_BARRIER_BIT)</code> is invoked,
+it enforces two critical actions:</p>
+<ol type="1">
+<li><strong>Cache Flushing and Availability:</strong> It ensures that
+all memory writes issued by shader stages prior to the barrier call are
+completed and their cache lines are made available to system/device
+memory.</li>
+<li><strong>Read Invalidation and Visibility:</strong> It invalidates or
+refreshes any internal caches used by the indirect execution units,
+guaranteeing that subsequent reads from buffers bound to
+<code>GL_DRAW_INDIRECT_BUFFER</code> or
+<code>GL_DISPATCH_INDIRECT_BUFFER</code> fetch the newly committed
+values rather than stale or partial data.</li>
+</ol>
+<h3 id="preventing-race-conditions-in-gpu-driven-pipelines">Preventing
+Race Conditions in GPU-Driven Pipelines</h3>
+<p>A standard GPU-driven pipeline follows this sequence:</p>
+<ol type="1">
+<li>A compute shader evaluates visibility (e.g., frustum or occlusion
+culling) and writes instance counts, first index offsets, and base
+vertices directly into an SSBO.</li>
+<li>The application executes
+<code>glMemoryBarrier(GL_COMMAND_BARRIER_BIT)</code>.</li>
+<li>The buffer is bound as a <code>GL_DRAW_INDIRECT_BUFFER</code>.</li>
+<li>The application issues <code>glDrawArraysIndirect</code> or
+<code>glDrawElementsIndirect</code>.</li>
+</ol>
+<p>If the barrier is omitted, a race condition occurs. The GPU command
+processor may read the indirect argument buffer while the compute shader
+warps are still writing to it, or it may read stale cache lines left
+over from a previous frame. This results in undefined behavior,
+including missing geometry, flickering instances, draw calls with zero
+counts, or complete GPU device hangs due to reading invalid memory
+limits.</p>
+<p>By placing <code>glMemoryBarrier(GL_COMMAND_BARRIER_BIT)</code>
+between the generating shader stage and the consuming indirect draw
+call, the pipeline is reliably synchronized with minimal performance
+penalty, keeping rendering logic entirely on the GPU.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

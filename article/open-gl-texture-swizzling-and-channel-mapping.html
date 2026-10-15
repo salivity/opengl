@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Texture Swizzling and Channel Mapping - opengl</title>
+    <meta name="description" content="Texture swizzling in OpenGL allows developers to reconfigure how color components (Red, Green, Blue, and Alpha) are routed when a texture is sampled in a shader. By altering the default channel mapping at the texture state level, OpenGL can remap, duplica">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-texture-swizzling-and-channel-mapping">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Texture Swizzling and Channel Mapping - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-texture-swizzling-and-channel-mapping" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Texture swizzling in OpenGL allows developers to reconfigure how color components (Red, Green, Blue, and Alpha) are routed when a texture is sampled in a shader. By altering the default channel mapping at the texture state level, OpenGL can remap, duplica" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-texture-swizzling-and-channel-mapping">OpenGL Texture
+Swizzling and Channel Mapping</h1>
+<p>Texture swizzling in OpenGL allows developers to reconfigure how
+color components (Red, Green, Blue, and Alpha) are routed when a texture
+is sampled in a shader. By altering the default channel mapping at the
+texture state level, OpenGL can remap, duplicate, or substitute fixed
+values into any channel before the texel data reaches the fragment
+shader. This mechanism simplifies working with legacy texture formats,
+enables efficient packing of grayscale and mask maps, and eliminates the
+need for manual component rearranging inside GLSL code.</p>
+<h3 id="the-swizzle-mechanism">The Swizzle Mechanism</h3>
+<p>When a shader samples a texture using functions such as
+<code>texture()</code> or <code>texelFetch()</code>, the GPU reads the
+raw texel data from memory and applies a swizzle mask before returning
+the final vector. By default, the mapping is an identity transformation:
+Red maps to Red, Green to Green, Blue to Blue, and Alpha to Alpha
+(<code>R -&gt; R</code>, <code>G -&gt; G</code>, <code>B -&gt; B</code>,
+<code>A -&gt; A</code>).</p>
+<p>OpenGL exposes this configuration through the
+<code>glTexParameteri</code> and <code>glTexParameteriv</code> functions
+using the following targets:</p>
+<ul>
+<li><code>GL_TEXTURE_SWIZZLE_R</code></li>
+<li><code>GL_TEXTURE_SWIZZLE_G</code></li>
+<li><code>GL_TEXTURE_SWIZZLE_B</code></li>
+<li><code>GL_TEXTURE_SWIZZLE_A</code></li>
+<li><code>GL_TEXTURE_SWIZZLE_RGBA</code> (for setting all four
+components at once)</li>
+</ul>
+<h3 id="available-channel-assignments">Available Channel
+Assignments</h3>
+<p>Each destination channel can be assigned to one of several symbolic
+constants:</p>
+<ul>
+<li><strong>Source Channels (<code>GL_RED</code>, <code>GL_GREEN</code>,
+<code>GL_BLUE</code>, <code>GL_ALPHA</code>):</strong> Routes the
+specified internal format component to the chosen output channel. For
+example, setting <code>GL_TEXTURE_SWIZZLE_B</code> to
+<code>GL_RED</code> causes the blue channel in the shader to receive
+data from the red channel in memory.</li>
+<li><strong>Constant Values (<code>GL_ZERO</code>,
+<code>GL_ONE</code>):</strong> Forces a channel to always return a
+static value, regardless of memory contents. Setting
+<code>GL_TEXTURE_SWIZZLE_A</code> to <code>GL_ONE</code> ensures an
+opaque alpha channel without needing an explicit 4-component
+texture.</li>
+</ul>
+<h3 id="code-implementation">Code Implementation</h3>
+<p>To configure swizzling on an active texture object, set the
+parameters directly:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Example: Swizzle a single-channel GL_R8 texture to act as GL_LUMINANCE (R, R, R, 1.0)</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>GLint swizzleMask<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span> GL_RED<span class="op">,</span> GL_RED<span class="op">,</span> GL_RED<span class="op">,</span> GL_ONE <span class="op">};</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>glTexParameteriv<span class="op">(</span>GL_TEXTURE_2D<span class="op">,</span> GL_TEXTURE_SWIZZLE_RGBA<span class="op">,</span> swizzleMask<span class="op">);</span></span></code></pre></div>
+<p>Individually targeting channels is also supported:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Swap Red and Blue channels for BGRA emulation</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_2D<span class="op">,</span> GL_TEXTURE_SWIZZLE_R<span class="op">,</span> GL_BLUE<span class="op">);</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_2D<span class="op">,</span> GL_TEXTURE_SWIZZLE_B<span class="op">,</span> GL_RED<span class="op">);</span></span></code></pre></div>
+<h3 id="performance-and-pipeline-benefits">Performance and Pipeline
+Benefits</h3>
+<p>Texture swizzling occurs within the texture sampling hardware,
+meaning it incurs zero runtime performance penalty in the shader
+execution pipeline. Without hardware-level swizzling, developers must
+either run custom GLSL swizzle operations (e.g.,
+<code>color.bgra</code>) across all shaders that sample a specific
+asset, or convert texture data on the CPU before uploading to VRAM.</p>
+<p>Using OpenGL texture swizzling decouples the internal storage layout
+of an asset from shader logic, establishing a unified pipeline for
+diverse image formats and channel configurations.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

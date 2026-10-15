@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How glBlitFramebuffer Copies OpenGL Framebuffer Data - opengl</title>
+    <meta name="description" content="This article explains how the glBlitFramebuffer function transfers color, depth, and stencil data between distinct OpenGL framebuffer objects (FBOs). It covers the binding mechanics required to establish source and destination buffers, coordinate mapping">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-gl-blit-framebuffer-copies-open-gl-framebuffer-data">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How glBlitFramebuffer Copies OpenGL Framebuffer Data - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-gl-blit-framebuffer-copies-open-gl-framebuffer-data" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how the glBlitFramebuffer function transfers color, depth, and stencil data between distinct OpenGL framebuffer objects (FBOs). It covers the binding mechanics required to establish source and destination buffers, coordinate mapping" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-glblitframebuffer-copies-opengl-framebuffer-data">How
+glBlitFramebuffer Copies OpenGL Framebuffer Data</h1>
+<p>This article explains how the <code>glBlitFramebuffer</code> function
+transfers color, depth, and stencil data between distinct OpenGL
+framebuffer objects (FBOs). It covers the binding mechanics required to
+establish source and destination buffers, coordinate mapping for scaling
+and flipping, bitmask selection for targeting specific data buffers,
+filtering constraints, and the special rules governing multisample
+anti-aliasing (MSAA) resolves.</p>
+<h3 id="framebuffer-binding-mechanics">Framebuffer Binding
+Mechanics</h3>
+<p>Before invoking <code>glBlitFramebuffer</code>, OpenGL requires the
+application to bind the source and target framebuffers to two dedicated
+binding points: <code>GL_READ_FRAMEBUFFER</code> and
+<code>GL_DRAW_FRAMEBUFFER</code>.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>glBindFramebuffer<span class="op">(</span>GL_READ_FRAMEBUFFER<span class="op">,</span> srcFBO<span class="op">);</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>glBindFramebuffer<span class="op">(</span>GL_DRAW_FRAMEBUFFER<span class="op">,</span> dstFBO<span class="op">);</span></span></code></pre></div>
+<p>When blitting executes, OpenGL reads pixel data exclusively from the
+attachments bound to <code>GL_READ_FRAMEBUFFER</code> and writes the
+results directly into the attachments of
+<code>GL_DRAW_FRAMEBUFFER</code>. This separation allows simultaneous
+access to two different framebuffers without causing state conflicts or
+feedback loops.</p>
+<h3 id="coordinate-mapping-scaling-and-inversion">Coordinate Mapping,
+Scaling, and Inversion</h3>
+<p>The function defines rectangular regions in both the read and draw
+buffers:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> glBlitFramebuffer<span class="op">(</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    GLint srcX0<span class="op">,</span> GLint srcY0<span class="op">,</span> GLint srcX1<span class="op">,</span> GLint srcY1<span class="op">,</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    GLint dstX0<span class="op">,</span> GLint dstY0<span class="op">,</span> GLint dstX1<span class="op">,</span> GLint dstY1<span class="op">,</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    GLbitfield mask<span class="op">,</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    GLenum filter</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="op">);</span></span></code></pre></div>
+<ul>
+<li><strong>Direct Copying:</strong> If the source and destination
+dimensions match (<code>dstX1 - dstX0 == srcX1 - srcX0</code> and
+<code>dstY1 - dstY0 == srcY1 - srcY0</code>), data transfers at a 1:1
+pixel ratio.</li>
+<li><strong>Stretching and Scaling:</strong> If the source and
+destination rectangles have different widths or heights, the GPU scales
+the image data to fit the destination bounds.</li>
+<li><strong>Flipping:</strong> If the start coordinates are greater than
+the end coordinates (for example, <code>srcY0 &gt; srcY1</code> or
+<code>dstY0 &gt; dstY1</code>), OpenGL flips the image along the
+respective axis, which is commonly used to adjust for inverted
+Y-coordinates across different rendering APIs or texture
+conventions.</li>
+</ul>
+<h3 id="selecting-buffers-with-the-mask">Selecting Buffers with the
+Mask</h3>
+<p>The <code>mask</code> parameter determines which attachments are
+copied. It accepts a bitwise OR combination of three flags:</p>
+<ul>
+<li><code>GL_COLOR_BUFFER_BIT</code>: Copies the color buffer specified
+by <code>glReadBuffer</code> to the draw buffers enabled by
+<code>glDrawBuffers</code>.</li>
+<li><code>GL_DEPTH_BUFFER_BIT</code>: Copies the depth attachment
+values.</li>
+<li><code>GL_STENCIL_BUFFER_BIT</code>: Copies the stencil attachment
+values.</li>
+</ul>
+<p>You can copy multiple buffer types simultaneously (for example,
+<code>GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT</code>), provided that
+the operational constraints for each buffer type are satisfied.</p>
+<h3 id="filtering-rules-and-format-constraints">Filtering Rules and
+Format Constraints</h3>
+<p>The <code>filter</code> parameter specifies the interpolation
+algorithm used when scaling: either <code>GL_NEAREST</code> or
+<code>GL_LINEAR</code>.</p>
+<ul>
+<li><strong>Color Buffers:</strong> Support both <code>GL_NEAREST</code>
+and <code>GL_LINEAR</code>. Linear filtering produces smooth
+interpolation when resizing.</li>
+<li><strong>Depth and Stencil Buffers:</strong> Must use
+<code>GL_NEAREST</code>. Passing <code>GL_LINEAR</code> when blitting
+depth or stencil data generates a <code>GL_INVALID_OPERATION</code>
+error because interpolating discrete depth or stencil indices yields
+invalid data.</li>
+<li><strong>Format Compatibility:</strong> The internal formats of the
+source and destination attachments must be compatible. For example,
+copying a floating-point depth buffer to a normalized integer depth
+buffer is allowed, but format mismatches that prevent conversion will
+generate an error.</li>
+</ul>
+<h3 id="multisample-msaa-resolution">Multisample (MSAA) Resolution</h3>
+<p><code>glBlitFramebuffer</code> is the standard mechanism in OpenGL to
+resolve multisample renderbuffers into standard, single-sample textures
+for display or post-processing.</p>
+<p>When the read framebuffer is multisampled and the draw framebuffer is
+single-sampled:</p>
+<ol type="1">
+<li>The source and destination rectangles must have identical
+dimensions. Stretching is not permitted during an MSAA resolve.</li>
+<li>The <code>filter</code> parameter must be set to
+<code>GL_NEAREST</code>.</li>
+<li>The GPU calculates the average sample value for color pixels across
+all MSAA samples and writes the resolved result to the destination
+buffer.</li>
+</ol>
+<p>If both buffers are multisampled, they must contain the exact same
+number of samples; otherwise, the blit operation fails.</p>
+<h3 id="scissor-box-interaction">Scissor Box Interaction</h3>
+<p>Blit operations respect the draw framebuffer's scissor test. If
+<code>GL_SCISSOR_TEST</code> is enabled, only pixels that fall within
+the defined scissor rectangle of the destination framebuffer are
+modified. Pixels outside the scissor region remain untouched, providing
+fine-grained control over targeted sub-regions.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Split-Sum Specular Maps in OpenGL Compute - opengl</title>
+    <meta name="description" content="The split-sum approximation breaks the rendering equation&#39;s specular image-based lighting integral into two independently precomputed components: the pre-filtered radiance cubemap and the 2D environment Bidirectional Reflectance Distribution Function (BRD">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/split-sum-specular-maps-in-open-gl-compute">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Split-Sum Specular Maps in OpenGL Compute - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/split-sum-specular-maps-in-open-gl-compute" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The split-sum approximation breaks the rendering equation&#39;s specular image-based lighting integral into two independently precomputed components: the pre-filtered radiance cubemap and the 2D environment Bidirectional Reflectance Distribution Function (BRD" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="split-sum-specular-maps-in-opengl-compute">Split-Sum Specular
+Maps in OpenGL Compute</h1>
+<p>The split-sum approximation breaks the rendering equation's specular
+image-based lighting integral into two independently precomputed
+components: the pre-filtered radiance cubemap and the 2D environment
+Bidirectional Reflectance Distribution Function (BRDF) integration
+Look-Up Table (LUT). This article details how to implement and generate
+both components using OpenGL compute shaders, covering importance
+sampling, texture bindings, mip-chain iteration, and memory
+synchronization for an efficient Image-Based Lighting (IBL)
+pipeline.</p>
+<h2 id="understanding-the-split-sum-formulation">Understanding the
+Split-Sum Formulation</h2>
+<p>The Cook-Torrance specular radiance equation under an environment map
+is defined as:</p>
+<p><span class="math display">\[L_o(p, \omega_o) = \int_{\Omega} f_r(p,
+\omega_i, \omega_o) L_i(p, \omega_i) (n \cdot \omega_i)
+d\omega_i\]</span></p>
+<p>The split-sum approximation decouples this integral into two
+independent terms:</p>
+<ol type="1">
+<li><strong>Pre-filtered Environment Map:</strong> The integral of
+incident radiance convolved with a GGX specular lobe across multiple
+roughness levels: <span class="math display">\[\int_{\Omega} L_i(p,
+\omega_i) d\omega_i\]</span></li>
+<li><strong>Environment BRDF LUT:</strong> The integral of the specular
+BRDF terms (<span class="math inline">\(F, G, D\)</span>) assuming a
+uniform white environment: <span class="math display">\[\int_{\Omega}
+f_r(p, \omega_i, \omega_o) (n \cdot \omega_i) d\omega_i\]</span></li>
+</ol>
+<h2 id="generating-the-pre-filtered-radiance-cubemap">Generating the
+Pre-Filtered Radiance Cubemap</h2>
+<p>The pre-filtered map stores blurred environment reflections across
+its mipmap chain. Mip level <code>0</code> stores roughness
+<code>0.0</code> (sharp reflections), while the maximum mip level stores
+roughness <code>1.0</code>.</p>
+<h3 id="1-cubemap-setup">1. Cubemap Setup</h3>
+<p>Create an empty target cubemap with a full mip-chain:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>GLuint prefilterMap<span class="op">;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>glGenTextures<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="op">&amp;</span>prefilterMap<span class="op">);</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>glBindTexture<span class="op">(</span>GL_TEXTURE_CUBE_MAP<span class="op">,</span> prefilterMap<span class="op">);</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> baseResolution <span class="op">=</span> <span class="dv">512</span><span class="op">;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> maxMipLevels <span class="op">=</span> <span class="dv">5</span><span class="op">;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="op">(</span><span class="dt">unsigned</span> <span class="dt">int</span> face <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> face <span class="op">&lt;</span> <span class="dv">6</span><span class="op">;</span> <span class="op">++</span>face<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    glTexStorage2D<span class="op">(</span>GL_TEXTURE_CUBE_MAP<span class="op">,</span> maxMipLevels<span class="op">,</span> GL_RGBA16F<span class="op">,</span> baseResolution<span class="op">,</span> baseResolution<span class="op">);</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_CUBE_MAP<span class="op">,</span> GL_TEXTURE_MIN_FILTER<span class="op">,</span> GL_LINEAR_MIPMAP_LINEAR<span class="op">);</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_CUBE_MAP<span class="op">,</span> GL_TEXTURE_MAG_FILTER<span class="op">,</span> GL_LINEAR<span class="op">);</span></span></code></pre></div>
+<h3 id="2-compute-shader-execution">2. Compute Shader Execution</h3>
+<p>Instead of rendering a screen quad for each face using framebuffers,
+an OpenGL compute pass handles the operation via direct 3D image writes
+using layered binding.</p>
+<p>The compute shader evaluates each face and pixel:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 460 core</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span>local_size_x <span class="op">=</span> <span class="dv">16</span><span class="op">,</span> local_size_y <span class="op">=</span> <span class="dv">16</span><span class="op">,</span> local_size_z <span class="op">=</span> <span class="dv">1</span><span class="op">)</span> <span class="dt">in</span><span class="op">;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">binding</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="kw">uniform</span> <span class="dt">samplerCube</span> u_SourceEnvMap<span class="op">;</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">binding</span> <span class="op">=</span> <span class="dv">0</span><span class="op">,</span> rgba16F<span class="op">)</span> <span class="kw">uniform</span> <span class="dt">writeonly</span> <span class="dt">image2DArray</span> u_PrefilterOut<span class="op">;</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">float</span> u_Roughness<span class="op">;</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">float</span> u_SourceResolution<span class="op">;</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="co">// Hammersley sequence generation</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> <span class="fu">RadicalInverse_VdC</span><span class="op">(</span><span class="dt">uint</span> bits<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>    bits <span class="op">=</span> <span class="op">(</span>bits <span class="op">&lt;&lt;</span> <span class="dv">16</span>u<span class="op">)</span> <span class="op">|</span> <span class="op">(</span>bits <span class="op">&gt;&gt;</span> <span class="dv">16</span>u<span class="op">);</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>    bits <span class="op">=</span> <span class="op">((</span>bits <span class="op">&amp;</span> <span class="bn">0x55555555</span>u<span class="op">)</span> <span class="op">&lt;&lt;</span> <span class="dv">1</span>u<span class="op">)</span> <span class="op">|</span> <span class="op">((</span>bits <span class="op">&amp;</span> <span class="bn">0xAAAAAAAA</span>u<span class="op">)</span> <span class="op">&gt;&gt;</span> <span class="dv">1</span>u<span class="op">);</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>    bits <span class="op">=</span> <span class="op">((</span>bits <span class="op">&amp;</span> <span class="bn">0x33333333</span>u<span class="op">)</span> <span class="op">&lt;&lt;</span> <span class="dv">2</span>u<span class="op">)</span> <span class="op">|</span> <span class="op">((</span>bits <span class="op">&amp;</span> <span class="bn">0xCCCCCCCC</span>u<span class="op">)</span> <span class="op">&gt;&gt;</span> <span class="dv">2</span>u<span class="op">);</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>    bits <span class="op">=</span> <span class="op">((</span>bits <span class="op">&amp;</span> <span class="bn">0x0F0F0F0F</span>u<span class="op">)</span> <span class="op">&lt;&lt;</span> <span class="dv">4</span>u<span class="op">)</span> <span class="op">|</span> <span class="op">((</span>bits <span class="op">&amp;</span> <span class="bn">0xF0F0F0F0</span>u<span class="op">)</span> <span class="op">&gt;&gt;</span> <span class="dv">4</span>u<span class="op">);</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>    bits <span class="op">=</span> <span class="op">((</span>bits <span class="op">&amp;</span> <span class="bn">0x00FF00FF</span>u<span class="op">)</span> <span class="op">&lt;&lt;</span> <span class="dv">8</span>u<span class="op">)</span> <span class="op">|</span> <span class="op">((</span>bits <span class="op">&amp;</span> <span class="bn">0xFF00FF00</span>u<span class="op">)</span> <span class="op">&gt;&gt;</span> <span class="dv">8</span>u<span class="op">);</span></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> <span class="dt">float</span><span class="op">(</span>bits<span class="op">)</span> <span class="op">*</span> <span class="fl">2.3283064365386963e-10</span><span class="op">;</span></span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a><span class="dt">vec2</span> <span class="fu">Hammersley</span><span class="op">(</span><span class="dt">uint</span> i<span class="op">,</span> <span class="dt">uint</span> N<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> <span class="dt">vec2</span><span class="op">(</span><span class="dt">float</span><span class="op">(</span>i<span class="op">)</span> <span class="op">/</span> <span class="dt">float</span><span class="op">(</span>N<span class="op">),</span> <span class="fu">RadicalInverse_VdC</span><span class="op">(</span>i<span class="op">));</span></span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> <span class="fu">ImportanceSampleGGX</span><span class="op">(</span><span class="dt">vec2</span> Xi<span class="op">,</span> <span class="dt">vec3</span> N<span class="op">,</span> <span class="dt">float</span> roughness<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> a <span class="op">=</span> roughness <span class="op">*</span> roughness<span class="op">;</span></span>
+<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> phi <span class="op">=</span> <span class="fl">2.0</span> <span class="op">*</span> <span class="fl">3.14159265359</span> <span class="op">*</span> Xi<span class="op">.</span><span class="fu">x</span><span class="op">;</span></span>
+<span id="cb2-27"><a href="#cb2-27" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> cosTheta <span class="op">=</span> <span class="bu">sqrt</span><span class="op">((</span><span class="fl">1.0</span> <span class="op">-</span> Xi<span class="op">.</span><span class="fu">y</span><span class="op">)</span> <span class="op">/</span> <span class="op">(</span><span class="fl">1.0</span> <span class="op">+</span> <span class="op">(</span>a <span class="op">*</span> a <span class="op">-</span> <span class="fl">1.0</span><span class="op">)</span> <span class="op">*</span> Xi<span class="op">.</span><span class="fu">y</span><span class="op">));</span></span>
+<span id="cb2-28"><a href="#cb2-28" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> sinTheta <span class="op">=</span> <span class="bu">sqrt</span><span class="op">(</span><span class="fl">1.0</span> <span class="op">-</span> cosTheta <span class="op">*</span> cosTheta<span class="op">);</span></span>
+<span id="cb2-29"><a href="#cb2-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-30"><a href="#cb2-30" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> H <span class="op">=</span> <span class="dt">vec3</span><span class="op">(</span><span class="bu">cos</span><span class="op">(</span>phi<span class="op">)</span> <span class="op">*</span> sinTheta<span class="op">,</span> <span class="bu">sin</span><span class="op">(</span>phi<span class="op">)</span> <span class="op">*</span> sinTheta<span class="op">,</span> cosTheta<span class="op">);</span></span>
+<span id="cb2-31"><a href="#cb2-31" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> up <span class="op">=</span> <span class="bu">abs</span><span class="op">(</span>N<span class="op">.</span><span class="fu">z</span><span class="op">)</span> <span class="op">&lt;</span> <span class="fl">0.999</span> <span class="op">?</span> <span class="dt">vec3</span><span class="op">(</span><span class="fl">0.0</span><span class="op">,</span> <span class="fl">0.0</span><span class="op">,</span> <span class="fl">1.0</span><span class="op">)</span> <span class="op">:</span> <span class="dt">vec3</span><span class="op">(</span><span class="fl">1.0</span><span class="op">,</span> <span class="fl">0.0</span><span class="op">,</span> <span class="fl">0.0</span><span class="op">);</span></span>
+<span id="cb2-32"><a href="#cb2-32" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> tangent <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span><span class="bu">cross</span><span class="op">(</span>up<span class="op">,</span> N<span class="op">));</span></span>
+<span id="cb2-33"><a href="#cb2-33" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> bitangent <span class="op">=</span> <span class="bu">cross</span><span class="op">(</span>N<span class="op">,</span> tangent<span class="op">);</span></span>
+<span id="cb2-34"><a href="#cb2-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-35"><a href="#cb2-35" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> <span class="bu">normalize</span><span class="op">(</span>tangent <span class="op">*</span> H<span class="op">.</span><span class="fu">x</span> <span class="op">+</span> bitangent <span class="op">*</span> H<span class="op">.</span><span class="fu">y</span> <span class="op">+</span> N <span class="op">*</span> H<span class="op">.</span><span class="fu">z</span><span class="op">);</span></span>
+<span id="cb2-36"><a href="#cb2-36" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb2-37"><a href="#cb2-37" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-38"><a href="#cb2-38" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> <span class="fu">GetCubeDirection</span><span class="op">(</span><span class="dt">vec2</span> uv<span class="op">,</span> <span class="dt">uint</span> face<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-39"><a href="#cb2-39" aria-hidden="true" tabindex="-1"></a>    uv <span class="op">=</span> uv <span class="op">*</span> <span class="fl">2.0</span> <span class="op">-</span> <span class="fl">1.0</span><span class="op">;</span></span>
+<span id="cb2-40"><a href="#cb2-40" aria-hidden="true" tabindex="-1"></a>    <span class="fu">switch</span><span class="op">(</span>face<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-41"><a href="#cb2-41" aria-hidden="true" tabindex="-1"></a>        case <span class="dv">0</span><span class="op">:</span> <span class="kw">return</span> <span class="bu">normalize</span><span class="op">(</span><span class="dt">vec3</span><span class="op">(</span> <span class="fl">1.0</span><span class="op">,</span> <span class="op">-</span>uv<span class="op">.</span><span class="fu">y</span><span class="op">,</span> <span class="op">-</span>uv<span class="op">.</span><span class="fu">x</span><span class="op">));</span></span>
+<span id="cb2-42"><a href="#cb2-42" aria-hidden="true" tabindex="-1"></a>        case <span class="dv">1</span><span class="op">:</span> <span class="kw">return</span> <span class="bu">normalize</span><span class="op">(</span><span class="dt">vec3</span><span class="op">(-</span><span class="fl">1.0</span><span class="op">,</span> <span class="op">-</span>uv<span class="op">.</span><span class="fu">y</span><span class="op">,</span>  uv<span class="op">.</span><span class="fu">x</span><span class="op">));</span></span>
+<span id="cb2-43"><a href="#cb2-43" aria-hidden="true" tabindex="-1"></a>        case <span class="dv">2</span><span class="op">:</span> <span class="kw">return</span> <span class="bu">normalize</span><span class="op">(</span><span class="dt">vec3</span><span class="op">(</span> uv<span class="op">.</span><span class="fu">x</span><span class="op">,</span>  <span class="fl">1.0</span><span class="op">,</span>  uv<span class="op">.</span><span class="fu">y</span><span class="op">));</span></span>
+<span id="cb2-44"><a href="#cb2-44" aria-hidden="true" tabindex="-1"></a>        case <span class="dv">3</span><span class="op">:</span> <span class="kw">return</span> <span class="bu">normalize</span><span class="op">(</span><span class="dt">vec3</span><span class="op">(</span> uv<span class="op">.</span><span class="fu">x</span><span class="op">,</span> <span class="op">-</span><span class="fl">1.0</span><span class="op">,</span> <span class="op">-</span>uv<span class="op">.</span><span class="fu">y</span><span class="op">));</span></span>
+<span id="cb2-45"><a href="#cb2-45" aria-hidden="true" tabindex="-1"></a>        case <span class="dv">4</span><span class="op">:</span> <span class="kw">return</span> <span class="bu">normalize</span><span class="op">(</span><span class="dt">vec3</span><span class="op">(</span> uv<span class="op">.</span><span class="fu">x</span><span class="op">,</span> <span class="op">-</span>uv<span class="op">.</span><span class="fu">y</span><span class="op">,</span>  <span class="fl">1.0</span><span class="op">));</span></span>
+<span id="cb2-46"><a href="#cb2-46" aria-hidden="true" tabindex="-1"></a>        case <span class="dv">5</span><span class="op">:</span> <span class="kw">return</span> <span class="bu">normalize</span><span class="op">(</span><span class="dt">vec3</span><span class="op">(-</span>uv<span class="op">.</span><span class="fu">x</span><span class="op">,</span> <span class="op">-</span>uv<span class="op">.</span><span class="fu">y</span><span class="op">,</span> <span class="op">-</span><span class="fl">1.0</span><span class="op">));</span></span>
+<span id="cb2-47"><a href="#cb2-47" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb2-48"><a href="#cb2-48" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> <span class="dt">vec3</span><span class="op">(</span><span class="fl">0.0</span><span class="op">);</span></span>
+<span id="cb2-49"><a href="#cb2-49" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb2-50"><a href="#cb2-50" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-51"><a href="#cb2-51" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb2-52"><a href="#cb2-52" aria-hidden="true" tabindex="-1"></a>    <span class="dt">ivec3</span> coords <span class="op">=</span> <span class="dt">ivec3</span><span class="op">(</span><span class="bu">gl_GlobalInvocationID</span><span class="op">.</span><span class="fu">xyz</span><span class="op">);</span></span>
+<span id="cb2-53"><a href="#cb2-53" aria-hidden="true" tabindex="-1"></a>    <span class="dt">ivec2</span> outputSize <span class="op">=</span> <span class="bu">imageSize</span><span class="op">(</span>u_PrefilterOut<span class="op">).</span><span class="fu">xy</span><span class="op">;</span></span>
+<span id="cb2-54"><a href="#cb2-54" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-55"><a href="#cb2-55" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> <span class="op">(</span>coords<span class="op">.</span><span class="fu">x</span> <span class="op">&gt;=</span> outputSize<span class="op">.</span><span class="fu">x</span> <span class="op">||</span> coords<span class="op">.</span><span class="fu">y</span> <span class="op">&gt;=</span> outputSize<span class="op">.</span><span class="fu">y</span><span class="op">)</span> <span class="kw">return</span><span class="op">;</span></span>
+<span id="cb2-56"><a href="#cb2-56" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-57"><a href="#cb2-57" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec2</span> uv <span class="op">=</span> <span class="op">(</span><span class="dt">vec2</span><span class="op">(</span>coords<span class="op">.</span><span class="fu">xy</span><span class="op">)</span> <span class="op">+</span> <span class="fl">0.5</span><span class="op">)</span> <span class="op">/</span> <span class="dt">vec2</span><span class="op">(</span>outputSize<span class="op">);</span></span>
+<span id="cb2-58"><a href="#cb2-58" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> N <span class="op">=</span> <span class="fu">GetCubeDirection</span><span class="op">(</span>uv<span class="op">,</span> coords<span class="op">.</span><span class="fu">z</span><span class="op">);</span></span>
+<span id="cb2-59"><a href="#cb2-59" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> R <span class="op">=</span> N<span class="op">;</span></span>
+<span id="cb2-60"><a href="#cb2-60" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> V <span class="op">=</span> R<span class="op">;</span></span>
+<span id="cb2-61"><a href="#cb2-61" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-62"><a href="#cb2-62" aria-hidden="true" tabindex="-1"></a>    <span class="dt">const</span> <span class="dt">uint</span> SAMPLE_COUNT <span class="op">=</span> <span class="dv">1024</span>u<span class="op">;</span></span>
+<span id="cb2-63"><a href="#cb2-63" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> prefilteredColor <span class="op">=</span> <span class="dt">vec3</span><span class="op">(</span><span class="fl">0.0</span><span class="op">);</span></span>
+<span id="cb2-64"><a href="#cb2-64" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> totalWeight <span class="op">=</span> <span class="fl">0.0</span><span class="op">;</span></span>
+<span id="cb2-65"><a href="#cb2-65" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-66"><a href="#cb2-66" aria-hidden="true" tabindex="-1"></a>    <span class="kw">for</span> <span class="op">(</span><span class="dt">uint</span> i <span class="op">=</span> <span class="dv">0</span>u<span class="op">;</span> i <span class="op">&lt;</span> SAMPLE_COUNT<span class="op">;</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-67"><a href="#cb2-67" aria-hidden="true" tabindex="-1"></a>        <span class="dt">vec2</span> Xi <span class="op">=</span> <span class="fu">Hammersley</span><span class="op">(</span>i<span class="op">,</span> SAMPLE_COUNT<span class="op">);</span></span>
+<span id="cb2-68"><a href="#cb2-68" aria-hidden="true" tabindex="-1"></a>        <span class="dt">vec3</span> H <span class="op">=</span> <span class="fu">ImportanceSampleGGX</span><span class="op">(</span>Xi<span class="op">,</span> N<span class="op">,</span> u_Roughness<span class="op">);</span></span>
+<span id="cb2-69"><a href="#cb2-69" aria-hidden="true" tabindex="-1"></a>        <span class="dt">vec3</span> L <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span><span class="fl">2.0</span> <span class="op">*</span> <span class="bu">dot</span><span class="op">(</span>V<span class="op">,</span> H<span class="op">)</span> <span class="op">*</span> H <span class="op">-</span> V<span class="op">);</span></span>
+<span id="cb2-70"><a href="#cb2-70" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-71"><a href="#cb2-71" aria-hidden="true" tabindex="-1"></a>        <span class="dt">float</span> NdotL <span class="op">=</span> <span class="bu">max</span><span class="op">(</span><span class="bu">dot</span><span class="op">(</span>N<span class="op">,</span> L<span class="op">),</span> <span class="fl">0.0</span><span class="op">);</span></span>
+<span id="cb2-72"><a href="#cb2-72" aria-hidden="true" tabindex="-1"></a>        <span class="kw">if</span> <span class="op">(</span>NdotL <span class="op">&gt;</span> <span class="fl">0.0</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-73"><a href="#cb2-73" aria-hidden="true" tabindex="-1"></a>            <span class="dt">float</span> NdotH <span class="op">=</span> <span class="bu">max</span><span class="op">(</span><span class="bu">dot</span><span class="op">(</span>N<span class="op">,</span> H<span class="op">),</span> <span class="fl">0.0</span><span class="op">);</span></span>
+<span id="cb2-74"><a href="#cb2-74" aria-hidden="true" tabindex="-1"></a>            <span class="dt">float</span> HdotV <span class="op">=</span> <span class="bu">max</span><span class="op">(</span><span class="bu">dot</span><span class="op">(</span>H<span class="op">,</span> V<span class="op">),</span> <span class="fl">0.0</span><span class="op">);</span></span>
+<span id="cb2-75"><a href="#cb2-75" aria-hidden="true" tabindex="-1"></a>            <span class="dt">float</span> a <span class="op">=</span> u_Roughness <span class="op">*</span> u_Roughness<span class="op">;</span></span>
+<span id="cb2-76"><a href="#cb2-76" aria-hidden="true" tabindex="-1"></a>            <span class="dt">float</span> D <span class="op">=</span> <span class="op">(</span>a <span class="op">*</span> a<span class="op">)</span> <span class="op">/</span> <span class="op">(</span><span class="fl">3.14159265359</span> <span class="op">*</span> <span class="bu">pow</span><span class="op">((</span>NdotH <span class="op">*</span> NdotH <span class="op">*</span> <span class="op">(</span>a <span class="op">*</span> a <span class="op">-</span> <span class="fl">1.0</span><span class="op">)</span> <span class="op">+</span> <span class="fl">1.0</span><span class="op">),</span> <span class="fl">2.0</span><span class="op">));</span></span>
+<span id="cb2-77"><a href="#cb2-77" aria-hidden="true" tabindex="-1"></a>            <span class="dt">float</span> pdf <span class="op">=</span> <span class="op">(</span>D <span class="op">*</span> NdotH <span class="op">/</span> <span class="op">(</span><span class="fl">4.0</span> <span class="op">*</span> HdotV<span class="op">))</span> <span class="op">+</span> <span class="fl">0.0001</span><span class="op">;</span></span>
+<span id="cb2-78"><a href="#cb2-78" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-79"><a href="#cb2-79" aria-hidden="true" tabindex="-1"></a>            <span class="dt">float</span> saTexel <span class="op">=</span> <span class="fl">4.0</span> <span class="op">*</span> <span class="fl">3.14159265359</span> <span class="op">/</span> <span class="op">(</span><span class="fl">6.0</span> <span class="op">*</span> u_SourceResolution <span class="op">*</span> u_SourceResolution<span class="op">);</span></span>
+<span id="cb2-80"><a href="#cb2-80" aria-hidden="true" tabindex="-1"></a>            <span class="dt">float</span> saSample <span class="op">=</span> <span class="fl">1.0</span> <span class="op">/</span> <span class="op">(</span><span class="dt">float</span><span class="op">(</span>SAMPLE_COUNT<span class="op">)</span> <span class="op">*</span> pdf <span class="op">+</span> <span class="fl">0.0001</span><span class="op">);</span></span>
+<span id="cb2-81"><a href="#cb2-81" aria-hidden="true" tabindex="-1"></a>            <span class="dt">float</span> mipLevel <span class="op">=</span> u_Roughness <span class="op">==</span> <span class="fl">0.0</span> <span class="op">?</span> <span class="fl">0.0</span> <span class="op">:</span> <span class="fl">0.5</span> <span class="op">*</span> <span class="bu">log2</span><span class="op">(</span>saSample <span class="op">/</span> saTexel<span class="op">);</span></span>
+<span id="cb2-82"><a href="#cb2-82" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-83"><a href="#cb2-83" aria-hidden="true" tabindex="-1"></a>            prefilteredColor <span class="op">+=</span> <span class="bu">textureLod</span><span class="op">(</span>u_SourceEnvMap<span class="op">,</span> L<span class="op">,</span> mipLevel<span class="op">).</span><span class="fu">rgb</span> <span class="op">*</span> NdotL<span class="op">;</span></span>
+<span id="cb2-84"><a href="#cb2-84" aria-hidden="true" tabindex="-1"></a>            totalWeight <span class="op">+=</span> NdotL<span class="op">;</span></span>
+<span id="cb2-85"><a href="#cb2-85" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb2-86"><a href="#cb2-86" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb2-87"><a href="#cb2-87" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-88"><a href="#cb2-88" aria-hidden="true" tabindex="-1"></a>    prefilteredColor <span class="op">=</span> prefilteredColor <span class="op">/</span> totalWeight<span class="op">;</span></span>
+<span id="cb2-89"><a href="#cb2-89" aria-hidden="true" tabindex="-1"></a>    <span class="bu">imageStore</span><span class="op">(</span>u_PrefilterOut<span class="op">,</span> coords<span class="op">,</span> <span class="dt">vec4</span><span class="op">(</span>prefilteredColor<span class="op">,</span> <span class="fl">1.0</span><span class="op">));</span></span>
+<span id="cb2-90"><a href="#cb2-90" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="3-compute-dispatch-pipeline">3. Compute Dispatch Pipeline</h3>
+<p>Iterate through the mip-chain on the CPU, dispatching the compute
+shader once per mip level:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>glUseProgram<span class="op">(</span>prefilterComputeProgram<span class="op">);</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>glActiveTexture<span class="op">(</span>GL_TEXTURE0<span class="op">);</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>glBindTexture<span class="op">(</span>GL_TEXTURE_CUBE_MAP<span class="op">,</span> sourceEnvironmentMap<span class="op">);</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> mip <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> mip <span class="op">&lt;</span> maxMipLevels<span class="op">;</span> <span class="op">++</span>mip<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> mipWidth <span class="op">=</span> baseResolution <span class="op">&gt;&gt;</span> mip<span class="op">;</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> mipHeight <span class="op">=</span> baseResolution <span class="op">&gt;&gt;</span> mip<span class="op">;</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> roughness <span class="op">=</span> <span class="op">(</span><span class="dt">float</span><span class="op">)</span>mip <span class="op">/</span> <span class="op">(</span><span class="dt">float</span><span class="op">)(</span>maxMipLevels <span class="op">-</span> <span class="dv">1</span><span class="op">);</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>    glUniform1f<span class="op">(</span>glGetUniformLocation<span class="op">(</span>prefilterComputeProgram<span class="op">,</span> <span class="st">&quot;u_Roughness&quot;</span><span class="op">),</span> roughness<span class="op">);</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>    glUniform1f<span class="op">(</span>glGetUniformLocation<span class="op">(</span>prefilterComputeProgram<span class="op">,</span> <span class="st">&quot;u_SourceResolution&quot;</span><span class="op">),</span> <span class="op">(</span><span class="dt">float</span><span class="op">)</span>baseResolution<span class="op">);</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Bind layer-face views for current mip</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>    glBindImageTexture<span class="op">(</span><span class="dv">0</span><span class="op">,</span> prefilterMap<span class="op">,</span> mip<span class="op">,</span> GL_TRUE<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> GL_WRITE_ONLY<span class="op">,</span> GL_RGBA16F<span class="op">);</span></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>    GLuint groupX <span class="op">=</span> <span class="op">(</span>mipWidth <span class="op">+</span> <span class="dv">15</span><span class="op">)</span> <span class="op">/</span> <span class="dv">16</span><span class="op">;</span></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>    GLuint groupY <span class="op">=</span> <span class="op">(</span>mipHeight <span class="op">+</span> <span class="dv">15</span><span class="op">)</span> <span class="op">/</span> <span class="dv">16</span><span class="op">;</span></span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>    glDispatchCompute<span class="op">(</span>groupX<span class="op">,</span> groupY<span class="op">,</span> <span class="dv">6</span><span class="op">);</span></span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a>    glMemoryBarrier<span class="op">(</span>GL_SHADER_IMAGE_ACCESS_BARRIER_BIT<span class="op">);</span></span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h2 id="generating-the-2d-environment-brdf-lut">Generating the 2D
+Environment BRDF LUT</h2>
+<p>The BRDF LUT is a 2D look-up table parametrized by <span
+class="math inline">\(\cos\theta\)</span> (view angle <span
+class="math inline">\(N \cdot V\)</span>) on the x-axis and roughness on
+the y-axis. It stores an analytical approximation of the scale (<span
+class="math inline">\(R\)</span>) and bias (<span
+class="math inline">\(G\)</span>) to the Fresnel factor <span
+class="math inline">\(F_0\)</span>.</p>
+<h3 id="1-2d-texture-allocation">1. 2D Texture Allocation</h3>
+<p>A standard 512x512 16-bit float surface provides sufficient
+precision:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>GLuint brdfLUTTexture<span class="op">;</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>glGenTextures<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="op">&amp;</span>brdfLUTTexture<span class="op">);</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>glBindTexture<span class="op">(</span>GL_TEXTURE_2D<span class="op">,</span> brdfLUTTexture<span class="op">);</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>glTexStorage2D<span class="op">(</span>GL_TEXTURE_2D<span class="op">,</span> <span class="dv">1</span><span class="op">,</span> GL_RG16F<span class="op">,</span> <span class="dv">512</span><span class="op">,</span> <span class="dv">512</span><span class="op">);</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_2D<span class="op">,</span> GL_TEXTURE_MIN_FILTER<span class="op">,</span> GL_LINEAR<span class="op">);</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_2D<span class="op">,</span> GL_TEXTURE_MAG_FILTER<span class="op">,</span> GL_LINEAR<span class="op">);</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_2D<span class="op">,</span> GL_TEXTURE_WRAP_S<span class="op">,</span> GL_CLAMP_TO_EDGE<span class="op">);</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_2D<span class="op">,</span> GL_TEXTURE_WRAP_T<span class="op">,</span> GL_CLAMP_TO_EDGE<span class="op">);</span></span></code></pre></div>
+<h3 id="2-compute-shader-execution-1">2. Compute Shader Execution</h3>
+<p>The compute pass computes the geometry visibility function coupled
+with the Fresnel-Schlick approximation:</p>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 460 core</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span>local_size_x <span class="op">=</span> <span class="dv">16</span><span class="op">,</span> local_size_y <span class="op">=</span> <span class="dv">16</span><span class="op">)</span> <span class="dt">in</span><span class="op">;</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">binding</span> <span class="op">=</span> <span class="dv">0</span><span class="op">,</span> rg16f<span class="op">)</span> <span class="kw">uniform</span> <span class="dt">writeonly</span> <span class="dt">image2D</span> u_BRDFLUTOut<span class="op">;</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> <span class="fu">GeometrySchlickGGX</span><span class="op">(</span><span class="dt">float</span> NdotV<span class="op">,</span> <span class="dt">float</span> roughness<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> k <span class="op">=</span> <span class="op">(</span>roughness <span class="op">*</span> roughness<span class="op">)</span> <span class="op">/</span> <span class="fl">2.0</span><span class="op">;</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> NdotV <span class="op">/</span> <span class="op">(</span>NdotV <span class="op">*</span> <span class="op">(</span><span class="fl">1.0</span> <span class="op">-</span> k<span class="op">)</span> <span class="op">+</span> k<span class="op">);</span></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> <span class="fu">GeometrySmith</span><span class="op">(</span><span class="dt">vec3</span> N<span class="op">,</span> <span class="dt">vec3</span> V<span class="op">,</span> <span class="dt">vec3</span> L<span class="op">,</span> <span class="dt">float</span> roughness<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> NdotV <span class="op">=</span> <span class="bu">max</span><span class="op">(</span><span class="bu">dot</span><span class="op">(</span>N<span class="op">,</span> V<span class="op">),</span> <span class="fl">0.0</span><span class="op">);</span></span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> NdotL <span class="op">=</span> <span class="bu">max</span><span class="op">(</span><span class="bu">dot</span><span class="op">(</span>N<span class="op">,</span> L<span class="op">),</span> <span class="fl">0.0</span><span class="op">);</span></span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> ggx2 <span class="op">=</span> <span class="fu">GeometrySchlickGGX</span><span class="op">(</span>NdotV<span class="op">,</span> roughness<span class="op">);</span></span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> ggx1 <span class="op">=</span> <span class="fu">GeometrySchlickGGX</span><span class="op">(</span>NdotL<span class="op">,</span> roughness<span class="op">);</span></span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> ggx1 <span class="op">*</span> ggx2<span class="op">;</span></span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a><span class="dt">vec2</span> <span class="fu">IntegrateBRDF</span><span class="op">(</span><span class="dt">float</span> NdotV<span class="op">,</span> <span class="dt">float</span> roughness<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> V <span class="op">=</span> <span class="dt">vec3</span><span class="op">(</span><span class="bu">sqrt</span><span class="op">(</span><span class="fl">1.0</span> <span class="op">-</span> NdotV <span class="op">*</span> NdotV<span class="op">),</span> <span class="fl">0.0</span><span class="op">,</span> NdotV<span class="op">);</span></span>
+<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> N <span class="op">=</span> <span class="dt">vec3</span><span class="op">(</span><span class="fl">0.0</span><span class="op">,</span> <span class="fl">0.0</span><span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> A <span class="op">=</span> <span class="fl">0.0</span><span class="op">;</span></span>
+<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> B <span class="op">=</span> <span class="fl">0.0</span><span class="op">;</span></span>
+<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a>    <span class="dt">const</span> <span class="dt">uint</span> SAMPLE_COUNT <span class="op">=</span> <span class="dv">1024</span>u<span class="op">;</span></span>
+<span id="cb5-25"><a href="#cb5-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-26"><a href="#cb5-26" aria-hidden="true" tabindex="-1"></a>    <span class="kw">for</span> <span class="op">(</span><span class="dt">uint</span> i <span class="op">=</span> <span class="dv">0</span>u<span class="op">;</span> i <span class="op">&lt;</span> SAMPLE_COUNT<span class="op">;</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb5-27"><a href="#cb5-27" aria-hidden="true" tabindex="-1"></a>        <span class="dt">vec2</span> Xi <span class="op">=</span> <span class="fu">Hammersley</span><span class="op">(</span>i<span class="op">,</span> SAMPLE_COUNT<span class="op">);</span></span>
+<span id="cb5-28"><a href="#cb5-28" aria-hidden="true" tabindex="-1"></a>        <span class="dt">vec3</span> H <span class="op">=</span> <span class="fu">ImportanceSampleGGX</span><span class="op">(</span>Xi<span class="op">,</span> N<span class="op">,</span> roughness<span class="op">);</span></span>
+<span id="cb5-29"><a href="#cb5-29" aria-hidden="true" tabindex="-1"></a>        <span class="dt">vec3</span> L <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span><span class="fl">2.0</span> <span class="op">*</span> <span class="bu">dot</span><span class="op">(</span>V<span class="op">,</span> H<span class="op">)</span> <span class="op">*</span> H <span class="op">-</span> V<span class="op">);</span></span>
+<span id="cb5-30"><a href="#cb5-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-31"><a href="#cb5-31" aria-hidden="true" tabindex="-1"></a>        <span class="dt">float</span> NdotL <span class="op">=</span> <span class="bu">max</span><span class="op">(</span>L<span class="op">.</span><span class="fu">z</span><span class="op">,</span> <span class="fl">0.0</span><span class="op">);</span></span>
+<span id="cb5-32"><a href="#cb5-32" aria-hidden="true" tabindex="-1"></a>        <span class="dt">float</span> NdotH <span class="op">=</span> <span class="bu">max</span><span class="op">(</span>H<span class="op">.</span><span class="fu">z</span><span class="op">,</span> <span class="fl">0.0</span><span class="op">);</span></span>
+<span id="cb5-33"><a href="#cb5-33" aria-hidden="true" tabindex="-1"></a>        <span class="dt">float</span> VdotH <span class="op">=</span> <span class="bu">max</span><span class="op">(</span><span class="bu">dot</span><span class="op">(</span>V<span class="op">,</span> H<span class="op">),</span> <span class="fl">0.0</span><span class="op">);</span></span>
+<span id="cb5-34"><a href="#cb5-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-35"><a href="#cb5-35" aria-hidden="true" tabindex="-1"></a>        <span class="kw">if</span> <span class="op">(</span>NdotL <span class="op">&gt;</span> <span class="fl">0.0</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb5-36"><a href="#cb5-36" aria-hidden="true" tabindex="-1"></a>            <span class="dt">float</span> G <span class="op">=</span> <span class="fu">GeometrySmith</span><span class="op">(</span>N<span class="op">,</span> V<span class="op">,</span> L<span class="op">,</span> roughness<span class="op">);</span></span>
+<span id="cb5-37"><a href="#cb5-37" aria-hidden="true" tabindex="-1"></a>            <span class="dt">float</span> G_Vis <span class="op">=</span> <span class="op">(</span>G <span class="op">*</span> VdotH<span class="op">)</span> <span class="op">/</span> <span class="op">(</span>NdotH <span class="op">*</span> NdotV<span class="op">);</span></span>
+<span id="cb5-38"><a href="#cb5-38" aria-hidden="true" tabindex="-1"></a>            <span class="dt">float</span> Fc <span class="op">=</span> <span class="bu">pow</span><span class="op">(</span><span class="fl">1.0</span> <span class="op">-</span> VdotH<span class="op">,</span> <span class="fl">5.0</span><span class="op">);</span></span>
+<span id="cb5-39"><a href="#cb5-39" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-40"><a href="#cb5-40" aria-hidden="true" tabindex="-1"></a>            A <span class="op">+=</span> <span class="op">(</span><span class="fl">1.0</span> <span class="op">-</span> Fc<span class="op">)</span> <span class="op">*</span> G_Vis<span class="op">;</span></span>
+<span id="cb5-41"><a href="#cb5-41" aria-hidden="true" tabindex="-1"></a>            B <span class="op">+=</span> Fc <span class="op">*</span> G_Vis<span class="op">;</span></span>
+<span id="cb5-42"><a href="#cb5-42" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb5-43"><a href="#cb5-43" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb5-44"><a href="#cb5-44" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> <span class="dt">vec2</span><span class="op">(</span>A <span class="op">/</span> <span class="dt">float</span><span class="op">(</span>SAMPLE_COUNT<span class="op">),</span> B <span class="op">/</span> <span class="dt">float</span><span class="op">(</span>SAMPLE_COUNT<span class="op">));</span></span>
+<span id="cb5-45"><a href="#cb5-45" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb5-46"><a href="#cb5-46" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-47"><a href="#cb5-47" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb5-48"><a href="#cb5-48" aria-hidden="true" tabindex="-1"></a>    <span class="dt">ivec2</span> coords <span class="op">=</span> <span class="dt">ivec2</span><span class="op">(</span><span class="bu">gl_GlobalInvocationID</span><span class="op">.</span><span class="fu">xy</span><span class="op">);</span></span>
+<span id="cb5-49"><a href="#cb5-49" aria-hidden="true" tabindex="-1"></a>    <span class="dt">ivec2</span> outputSize <span class="op">=</span> <span class="bu">imageSize</span><span class="op">(</span>u_BRDFLUTOut<span class="op">);</span></span>
+<span id="cb5-50"><a href="#cb5-50" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-51"><a href="#cb5-51" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> <span class="op">(</span>coords<span class="op">.</span><span class="fu">x</span> <span class="op">&gt;=</span> outputSize<span class="op">.</span><span class="fu">x</span> <span class="op">||</span> coords<span class="op">.</span><span class="fu">y</span> <span class="op">&gt;=</span> outputSize<span class="op">.</span><span class="fu">y</span><span class="op">)</span> <span class="kw">return</span><span class="op">;</span></span>
+<span id="cb5-52"><a href="#cb5-52" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-53"><a href="#cb5-53" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec2</span> uv <span class="op">=</span> <span class="op">(</span><span class="dt">vec2</span><span class="op">(</span>coords<span class="op">)</span> <span class="op">+</span> <span class="fl">0.5</span><span class="op">)</span> <span class="op">/</span> <span class="dt">vec2</span><span class="op">(</span>outputSize<span class="op">);</span></span>
+<span id="cb5-54"><a href="#cb5-54" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec2</span> integratedBRDF <span class="op">=</span> <span class="fu">IntegrateBRDF</span><span class="op">(</span>uv<span class="op">.</span><span class="fu">x</span><span class="op">,</span> uv<span class="op">.</span><span class="fu">y</span><span class="op">);</span></span>
+<span id="cb5-55"><a href="#cb5-55" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-56"><a href="#cb5-56" aria-hidden="true" tabindex="-1"></a>    <span class="bu">imageStore</span><span class="op">(</span>u_BRDFLUTOut<span class="op">,</span> coords<span class="op">,</span> <span class="dt">vec4</span><span class="op">(</span>integratedBRDF<span class="op">,</span> <span class="fl">0.0</span><span class="op">,</span> <span class="fl">0.0</span><span class="op">));</span></span>
+<span id="cb5-57"><a href="#cb5-57" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="3-compute-dispatch-pipeline-1">3. Compute Dispatch Pipeline</h3>
+<p>Dispatching the BRDF integration requires a single dispatch without
+mip iteration:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>glUseProgram<span class="op">(</span>brdfComputeProgram<span class="op">);</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>glBindImageTexture<span class="op">(</span><span class="dv">0</span><span class="op">,</span> brdfLUTTexture<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> GL_FALSE<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> GL_WRITE_ONLY<span class="op">,</span> GL_RG16F<span class="op">);</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>glDispatchCompute<span class="op">((</span><span class="dv">512</span> <span class="op">+</span> <span class="dv">15</span><span class="op">)</span> <span class="op">/</span> <span class="dv">16</span><span class="op">,</span> <span class="op">(</span><span class="dv">512</span> <span class="op">+</span> <span class="dv">15</span><span class="op">)</span> <span class="op">/</span> <span class="dv">16</span><span class="op">,</span> <span class="dv">1</span><span class="op">);</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>glMemoryBarrier<span class="op">(</span>GL_TEXTURE_FETCH_BARRIER_BIT<span class="op">);</span></span></code></pre></div>
+<h2 id="reconstruction-in-the-pbr-shader">Reconstruction in the PBR
+Shader</h2>
+<p>Once both textures are generated, sample them in the final deferred
+or forward evaluation pass:</p>
+<div class="sourceCode" id="cb7"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> <span class="fu">PrefilteredReflection</span><span class="op">(</span><span class="dt">vec3</span> R<span class="op">,</span> <span class="dt">float</span> roughness<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> maxMipLevel <span class="op">=</span> <span class="fl">4.0</span><span class="op">;</span> </span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> <span class="bu">textureLod</span><span class="op">(</span>u_PrefilterMap<span class="op">,</span> R<span class="op">,</span> roughness <span class="op">*</span> maxMipLevel<span class="op">).</span><span class="fu">rgb</span><span class="op">;</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> <span class="fu">SpecularIBL</span><span class="op">(</span><span class="dt">vec3</span> F0<span class="op">,</span> <span class="dt">float</span> roughness<span class="op">,</span> <span class="dt">vec3</span> N<span class="op">,</span> <span class="dt">vec3</span> V<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> NdotV <span class="op">=</span> <span class="bu">max</span><span class="op">(</span><span class="bu">dot</span><span class="op">(</span>N<span class="op">,</span> V<span class="op">),</span> <span class="fl">0.0</span><span class="op">);</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> R <span class="op">=</span> <span class="bu">reflect</span><span class="op">(-</span>V<span class="op">,</span> N<span class="op">);</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> prefilteredColor <span class="op">=</span> <span class="fu">PrefilteredReflection</span><span class="op">(</span>R<span class="op">,</span> roughness<span class="op">);</span></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec2</span> envBRDF <span class="op">=</span> <span class="bu">texture</span><span class="op">(</span>u_BRDFLUT<span class="op">,</span> <span class="dt">vec2</span><span class="op">(</span>NdotV<span class="op">,</span> roughness<span class="op">)).</span><span class="fu">rg</span><span class="op">;</span></span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> prefilteredColor <span class="op">*</span> <span class="op">(</span>F0 <span class="op">*</span> envBRDF<span class="op">.</span><span class="fu">x</span> <span class="op">+</span> envBRDF<span class="op">.</span><span class="fu">y</span><span class="op">);</span></span>
+<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>Using compute shaders for the split-sum approximation eliminates the
+overhead of managing specialized Framebuffer Objects (FBOs), rendering
+geometry passes, and switching render targets across each cubemap face
+and mipmap level.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

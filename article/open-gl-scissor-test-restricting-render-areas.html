@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Scissor Test: Restricting Render Areas - opengl</title>
+    <meta name="description" content="The OpenGL scissor test is a per-fragment processing stage that confines all rasterization and clear operations to a specified rectangular region of the framebuffer. By evaluating fragment window coordinates and discarding any pixels generated outside the">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-scissor-test-restricting-render-areas">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Scissor Test: Restricting Render Areas - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-scissor-test-restricting-render-areas" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The OpenGL scissor test is a per-fragment processing stage that confines all rasterization and clear operations to a specified rectangular region of the framebuffer. By evaluating fragment window coordinates and discarding any pixels generated outside the" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-scissor-test-restricting-render-areas">OpenGL Scissor
+Test: Restricting Render Areas</h1>
+<p>The OpenGL scissor test is a per-fragment processing stage that
+confines all rasterization and clear operations to a specified
+rectangular region of the framebuffer. By evaluating fragment window
+coordinates and discarding any pixels generated outside the designated
+bounds, the scissor test provides an efficient hardware-level clipping
+mechanism. This article explains how the scissor test functions within
+the rendering pipeline, how it differs from the viewport transformation,
+and how to configure it to restrict drawing commands.</p>
+<h2 id="how-the-scissor-test-works-in-the-pipeline">How the Scissor Test
+Works in the Pipeline</h2>
+<p>The scissor test occurs late in the OpenGL graphics pipeline during
+the per-fragment operations stage, immediately after fragment shading
+and before operations like stencil testing, depth testing, and
+blending.</p>
+<p>When geometry is rasterized, the pipeline generates fragments, each
+associated with a specific window-space coordinate <span
+class="math inline">\((x_w, y_w)\)</span>. If the scissor test is
+enabled, OpenGL evaluates whether each fragment falls within the defined
+scissor rectangle:</p>
+<p><span class="math display">\[\text{left} \le x_w &lt; \text{left} +
+\text{width}\]</span> <span class="math display">\[\text{bottom} \le y_w
+&lt; \text{bottom} + \text{height}\]</span></p>
+<p>Fragments that satisfy this condition continue through the remaining
+per-fragment tests and write to the framebuffer. Any fragment that falls
+outside these boundaries is immediately discarded, preventing any
+modification to the color, depth, or stencil buffers for those
+pixels.</p>
+<h2 id="scissor-box-vs-viewport">Scissor Box vs. Viewport</h2>
+<p>While both <code>glViewport</code> and <code>glScissor</code> take
+identical parameters (<code>x</code>, <code>y</code>,
+<code>width</code>, <code>height</code>), they serve entirely different
+functions:</p>
+<ul>
+<li><strong>Viewport (<code>glViewport</code>):</strong> Defines the
+affine transformation from Normalized Device Coordinates (NDC) to window
+coordinates. Changing the viewport scales and translates the rendered
+geometry to fit into the specified area.</li>
+<li><strong>Scissor Box (<code>glScissor</code>):</strong> Acts as a
+clipping mask in window coordinates. It does not alter vertex positions,
+project geometry, or scale primitives. Instead, it defines a rigid
+gatekeeper that cuts off drawing outside its borders.</li>
+</ul>
+<p>Because the viewport scales the scene while the scissor box merely
+discards pixels, they are frequently used together. For example, in
+split-screen rendering, <code>glViewport</code> sizes the projection,
+while <code>glScissor</code> guarantees that wide primitives or
+post-processing effects do not bleed into neighboring views.</p>
+<h2 id="configuring-the-scissor-test">Configuring the Scissor Test</h2>
+<p>The scissor test is disabled by default. To use it, you must
+explicitly enable the capability and define the bounds of the
+sub-rectangle in window coordinates (measured in pixels, with the origin
+<code>(0, 0)</code> located at the bottom-left corner of the
+window).</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Enable the scissor test</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>glEnable<span class="op">(</span>GL_SCISSOR_TEST<span class="op">);</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="co">// Define the sub-rectangle: x, y, width, height</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>glScissor<span class="op">(</span><span class="dv">100</span><span class="op">,</span> <span class="dv">100</span><span class="op">,</span> <span class="dv">400</span><span class="op">,</span> <span class="dv">300</span><span class="op">);</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="co">// Render objects or perform clear operations here</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="co">// Only pixels within the 400x300 box will be modified</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="co">// Disable the scissor test when finished</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>glDisable<span class="op">(</span>GL_SCISSOR_TEST<span class="op">);</span></span></code></pre></div>
+<h2 id="effect-on-buffer-clearing">Effect on Buffer Clearing</h2>
+<p>A critical behavior of the scissor test is its effect on
+<code>glClear</code>. Unlike standard drawing commands that clip against
+viewing frustums, <code>glClear</code> ignores camera projections and
+normally affects the entire framebuffer.</p>
+<p>However, when <code>GL_SCISSOR_TEST</code> is enabled, calls to
+<code>glClear</code> (including color, depth, and stencil clears) are
+strictly confined to the scissor rectangle. This allows developers to
+clear and update specific sub-regions of a render target without
+incurring the overhead of redrawing the entire screen.</p>
+<h2 id="common-practical-applications">Common Practical
+Applications</h2>
+<ul>
+<li><strong>User Interface Clipping:</strong> Restricting scrollable
+lists, text input boxes, or nested UI windows so that content does not
+overflow its designated UI panel.</li>
+<li><strong>Split-Screen Displays:</strong> Ensuring multiple camera
+viewpoints rendered to the same default framebuffer remain cleanly
+isolated.</li>
+<li><strong>Tile-Based or Partial Updates:</strong> Repainting only
+"dirty" regions of a screen that have changed from frame to frame,
+conserving fill rate and memory bandwidth.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

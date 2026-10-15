@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Features Removed in OpenGL 3.0 Core Profile - opengl</title>
+    <meta name="description" content="The release of OpenGL 3.0 introduced a formal deprecation mechanism that led to the removal of vast portions of legacy functionality in subsequent Core Profiles (formalized in versions 3.1 and 3.2). This article details the specific capabilities, function">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/features-removed-in-open-gl-3-0-core-profile">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Features Removed in OpenGL 3.0 Core Profile - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/features-removed-in-open-gl-3-0-core-profile" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The release of OpenGL 3.0 introduced a formal deprecation mechanism that led to the removal of vast portions of legacy functionality in subsequent Core Profiles (formalized in versions 3.1 and 3.2). This article details the specific capabilities, function" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="features-removed-in-opengl-30-core-profile">Features Removed in
+OpenGL 3.0 Core Profile</h1>
+<p>The release of OpenGL 3.0 introduced a formal deprecation mechanism
+that led to the removal of vast portions of legacy functionality in
+subsequent Core Profiles (formalized in versions 3.1 and 3.2). This
+article details the specific capabilities, functions, and architectures
+that were permanently removed from the OpenGL Core Profile to modernize
+the graphics pipeline, eliminate obsolete hardware paradigms, and
+transition the API entirely toward programmable shaders and
+high-performance buffer objects.</p>
+<h3 id="immediate-mode">Immediate Mode</h3>
+<p>Immediate mode rendering using <code>glBegin()</code> and
+<code>glEnd()</code> blocks was completely eliminated. Functions that
+submitted per-vertex attributes sequentially—such as
+<code>glVertex*()</code>, <code>glNormal*()</code>,
+<code>glTexCoord*()</code>, and <code>glColor*()</code>—were removed.
+Modern Core OpenGL requires vertex data to be stored in GPU-accessible
+memory via Vertex Buffer Objects (VBOs) and referenced through Vertex
+Array Objects (VAOs).</p>
+<h3 id="fixed-function-pipeline">Fixed-Function Pipeline</h3>
+<p>The entire fixed-function vertex and fragment processing pipeline was
+removed. Hardware states that automatically computed lighting, fog,
+texture blending, material properties, and alpha testing without custom
+program code are unavailable in Core Profile. All per-vertex and
+per-fragment operations must be implemented explicitly using the OpenGL
+Shading Language (GLSL) via vertex and fragment shaders.</p>
+<h3 id="built-in-matrix-stacks-and-transformations">Built-in Matrix
+Stacks and Transformations</h3>
+<p>OpenGL previously managed coordinate systems and projection
+mathematics via an internal matrix stack. Functions including
+<code>glMatrixMode()</code>, <code>glPushMatrix()</code>,
+<code>glPopMatrix()</code>, <code>glLoadIdentity()</code>,
+<code>glMultMatrix()</code>, <code>glRotate*()</code>,
+<code>glTranslate*()</code>, and <code>glScale*()</code> were removed.
+Applications must now calculate their own transformation matrices on the
+CPU and pass them to shaders as uniform variables.</p>
+<h3 id="client-side-vertex-arrays">Client-Side Vertex Arrays</h3>
+<p>Prior to OpenGL 3.0, applications could supply geometry directly from
+CPU system memory using functions such as
+<code>glVertexPointer()</code>, <code>glColorPointer()</code>,
+<code>glNormalPointer()</code>, and <code>glTexCoordPointer()</code>.
+These client-side vertex arrays were eliminated; data must reside in
+server-side buffer objects managed by <code>glBindBuffer()</code> and
+configured with <code>glVertexAttribPointer()</code>.</p>
+<h3 id="display-lists">Display Lists</h3>
+<p>Display lists, created using <code>glNewList()</code>,
+<code>glEndList()</code>, and executed with <code>glCallList()</code>,
+were removed. Previously used to cache sequences of commands on the GPU,
+display lists became redundant with the advent of uniform buffers,
+shader programs, and vertex buffers.</p>
+<h3 id="obsolete-primitive-types">Obsolete Primitive Types</h3>
+<p>Specific rendering primitives were excised due to modern GPU
+architectures operating strictly on points, lines, and triangles. The
+removed primitive types include:</p>
+<ul>
+<li><code>GL_QUADS</code></li>
+<li><code>GL_QUAD_STRIP</code></li>
+<li><code>GL_POLYGON</code></li>
+</ul>
+<p>Geometry must now be composed using <code>GL_TRIANGLES</code>,
+<code>GL_TRIANGLE_STRIP</code>, or <code>GL_TRIANGLE_FAN</code>.</p>
+<h3 id="selection-and-feedback-modes">Selection and Feedback Modes</h3>
+<p>Rasterization-independent operation modes, specifically Selection
+Mode (<code>GL_SELECT</code>) and Feedback Mode
+(<code>GL_FEEDBACK</code>), were purged alongside functions like
+<code>glRenderMode()</code>, <code>glInitNames()</code>, and
+<code>glPassThrough()</code>. Object picking and geometry queries must
+instead be implemented using color-buffer picking, depth tests,
+occlusion queries, or compute/transform feedback mechanisms.</p>
+<h3 id="evaluators-and-pixel-operations">Evaluators and Pixel
+Operations</h3>
+<p>Hardware evaluators for Bézier surfaces and spline generation
+(<code>glMap1*</code>, <code>glMap2*</code>, <code>glEvalCoord*</code>)
+were removed in favor of software tessellation and later hardware
+tessellation shaders. Additionally, legacy pixel drawing routines such
+as <code>glDrawPixels()</code>, <code>glBitmap()</code>, and
+<code>glPixelTransfer()</code> were removed; texture mapping onto
+geometric quads or blitting via Framebuffer Objects (FBOs) replaced
+them.</p>
+<h3 id="accumulation-buffer">Accumulation Buffer</h3>
+<p>The accumulation buffer and its associated commands
+(<code>glAccum()</code>) were permanently eliminated. Post-processing
+effects such as motion blur, depth of field, and antialiasing that
+historically relied on the accumulation buffer are now achieved using
+off-screen render targets and multi-pass shaders.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

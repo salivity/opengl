@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Sampler Arrays and Dynamic Indexing Stalls - opengl</title>
+    <meta name="description" content="This article examines OpenGL sampler arrays, distinguishing them from texture arrays, and explains how dynamic indexing functions within GLSL shaders. It breaks down the low-level hardware architecture—specifically warp divergence and texture unit arbitra">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-sampler-arrays-and-dynamic-indexing-stalls">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Sampler Arrays and Dynamic Indexing Stalls - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-sampler-arrays-and-dynamic-indexing-stalls" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article examines OpenGL sampler arrays, distinguishing them from texture arrays, and explains how dynamic indexing functions within GLSL shaders. It breaks down the low-level hardware architecture—specifically warp divergence and texture unit arbitra" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-sampler-arrays-and-dynamic-indexing-stalls">OpenGL
+Sampler Arrays and Dynamic Indexing Stalls</h1>
+<p>This article examines OpenGL sampler arrays, distinguishing them from
+texture arrays, and explains how dynamic indexing functions within GLSL
+shaders. It breaks down the low-level hardware architecture—specifically
+warp divergence and texture unit arbitration—that causes dynamically
+indexed sampler arrays to induce costly GPU pipeline stalls, and
+provides modern rendering alternatives to maintain high throughput.</p>
+<h3 id="what-is-an-opengl-sampler-array">What is an OpenGL Sampler
+Array?</h3>
+<p>In GLSL, a sampler array is an array of texture handles declared as a
+uniform, such as <code>uniform sampler2D textures[8];</code>. Each
+element in the array represents a distinct texture image unit bound to
+an independent texture object.</p>
+<p>It is important to differentiate a sampler array from a 2D texture
+array (<code>sampler2DArray</code>). A texture array is a single OpenGL
+texture object containing multiple slices or layers that all share the
+same dimensions, format, and filtering parameters. In contrast, a
+sampler array is a collection of entirely separate texture samplers,
+each capable of pointing to different texture targets, formats,
+resolutions, and sampling states.</p>
+<h3 id="static-vs-dynamic-indexing">Static vs. Dynamic Indexing</h3>
+<p>When accessing elements in a sampler array, GLSL distinguishes
+between constant (compile-time) expressions, dynamically uniform
+expressions, and non-uniform dynamic expressions:</p>
+<ul>
+<li><strong>Static Indexing:</strong> The index is a compile-time
+constant (e.g., <code>textures[2]</code>). The compiler resolves the
+exact texture unit directly before execution.</li>
+<li><strong>Dynamically Uniform Indexing:</strong> The index is
+calculated at runtime (e.g., via a uniform variable), but it evaluates
+to the exact same value across all invocations within a draw call or
+dispatch group.</li>
+<li><strong>Non-Uniform Dynamic Indexing:</strong> The index varies
+across shader invocations within the same draw call, such as an index
+derived from vertex attributes, fragment coordinates, or texture fetches
+(e.g., <code>textures[materialIndex]</code>).</li>
+</ul>
+<p>GLSL requirements around dynamic sampler indexing have historically
+been strict. Prior to GLSL 4.0 and the <code>GL_ARB_gpu_shader5</code>
+extension, indexing sampler arrays with non-constant expressions was
+invalid. Even in modern GLSL, non-uniform dynamic indexing requires the
+explicit use of <code>nonuniformEXT()</code> to prevent undefined
+behavior.</p>
+<h3 id="why-dynamic-indexing-triggers-pipeline-stalls">Why Dynamic
+Indexing Triggers Pipeline Stalls</h3>
+<p>Modern GPUs process parallel work (vertices or fragments) in lockstep
+groups called warps (NVIDIA) or wavefronts (AMD), typically comprising
+32 or 64 threads executing identical instructions via SIMD (Single
+Instruction, Multiple Data) or SIMT (Single Instruction, Multiple
+Threads).</p>
+<p>When a shader dynamically indexes a sampler array in a non-uniform
+manner, it creates severe hardware bottlenecks:</p>
+<h4 id="1-warp-divergence-and-serialization">1. Warp Divergence and
+Serialization</h4>
+<p>When threads within the same warp request different samplers
+simultaneously, execution diverges. Because standard hardware texture
+fetch units are configured to dispatch instructions against a single
+texture state per cycle across the warp, the GPU cannot execute the
+texture fetch in parallel. The warp must serialize its memory
+operations, executing one unique texture fetch at a time while masking
+out non-participating threads. This directly multiplies the latency of
+the texture instruction by the number of unique textures requested
+within that single warp.</p>
+<h4 id="2-texture-descriptor-cache-thrashing">2. Texture Descriptor
+Cache Thrashing</h4>
+<p>Textures are accessed via descriptors—small state blocks containing
+the memory address, format, mipmap levels, and filtering modes of the
+texture. GPUs feature small, low-latency caches specifically for these
+descriptors. Static access allows these descriptors to be prefetched and
+cached uniformly. Non-uniform dynamic indexing forces rapid, scattered
+reads across the texture descriptor table, evicting active descriptors,
+stalling the instruction unit, and waiting for descriptor fetches from
+higher-latency memory levels.</p>
+<h4 id="3-loss-of-hardware-derivative-calculations">3. Loss of Hardware
+Derivative Calculations</h4>
+<p>Implicit Level of Detail (LOD) and anisotropic filtering rely on
+hardware derivatives (<code>dFdx</code>, <code>dFdy</code>), which
+calculate coordinate deltas across a <span class="math inline">\(2
+\times 2\)</span> quad of adjacent fragment pixels. If neighboring
+fragments in a quad index different textures, comparing their
+coordinates becomes meaningless. The hardware must fall back to
+conservative or serialized LOD evaluations, introducing pipeline stalls
+as the rasterizer waits for valid sampling coordinates to be
+resolved.</p>
+<h3 id="solutions-to-avoid-stalls">Solutions to Avoid Stalls</h3>
+<p>To bypass the performance cost of dynamic sampler indexing:</p>
+<ul>
+<li><strong>Use Texture Arrays (<code>sampler2DArray</code>):</strong>
+Pack textures of identical dimensions into a single array object. The
+layer is chosen via the third coordinate vector
+<code>(u, v, layer)</code>, which is evaluated natively per fragment
+without triggering sampler divergence or pipeline serialization.</li>
+<li><strong>Use Bindless Textures
+(<code>GL_ARB_bindless_texture</code>):</strong> Bindless texturing
+converts texture objects into 64-bit GPU memory handles that can be
+stored in Uniform Buffer Objects (UBOs) or Shader Storage Buffer Objects
+(SSBOs), circumventing traditional texture unit slot limits and
+optimizing descriptor indirection.</li>
+<li><strong>Batch Draws by Material:</strong> Group draw calls so that
+all geometry sharing identical texture sets is drawn together,
+eliminating the need for runtime dynamic selection entirely.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

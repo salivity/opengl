@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Splitting OpenGL Compute Tasks to Prevent Timeouts - opengl</title>
+    <meta name="description" content="Executing massive workloads within a single OpenGL compute dispatch often triggers operating system watchdog mechanisms, such as Windows Timeout Detection and Recovery (TDR), causing the driver to crash or reset. To prevent these timeouts, developers must">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/splitting-open-gl-compute-tasks-to-prevent-timeouts">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Splitting OpenGL Compute Tasks to Prevent Timeouts - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/splitting-open-gl-compute-tasks-to-prevent-timeouts" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Executing massive workloads within a single OpenGL compute dispatch often triggers operating system watchdog mechanisms, such as Windows Timeout Detection and Recovery (TDR), causing the driver to crash or reset. To prevent these timeouts, developers must" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="splitting-opengl-compute-tasks-to-prevent-timeouts">Splitting
+OpenGL Compute Tasks to Prevent Timeouts</h1>
+<p>Executing massive workloads within a single OpenGL compute dispatch
+often triggers operating system watchdog mechanisms, such as Windows
+Timeout Detection and Recovery (TDR), causing the driver to crash or
+reset. To prevent these timeouts, developers must break monolithic
+compute tasks into smaller, manageable dispatches executed across
+multiple frames or iterations. This article details practical strategies
+for chunking workloads along grid dimensions, passing dynamic offsets,
+synchronizing data access with memory barriers and fences, and balancing
+chunk sizes to maintain peak GPU throughput without freezing the display
+driver.</p>
+<h3 id="understanding-the-gpu-driver-timeout">Understanding the GPU
+Driver Timeout</h3>
+<p>Operating systems monitor GPU execution to keep the user interface
+responsive. On Windows, if a graphics or compute task locks the GPU for
+more than approximately two seconds without yielding, the OS assumes the
+device has hung and resets the driver via TDR. On Linux, display
+managers like X11 or Wayland exhibit similar behavior. A single
+<code>glDispatchCompute</code> call handling millions of heavy work
+groups easily breaches this threshold if the per-invocation cost is
+high.</p>
+<h3 id="slicing-the-workload-using-uniform-offsets">Slicing the Workload
+Using Uniform Offsets</h3>
+<p>The most common approach to splitting compute workloads is segmenting
+the total invocation space along one or more dimensions. Because
+<code>gl_GlobalInvocationID</code> inside the shader always starts at
+<code>(0, 0, 0)</code> for each dispatch, an offset must be provided to
+determine the actual global index of the thread.</p>
+<ol type="1">
+<li><strong>Shader Modification</strong>: Add a uniform variable
+representing the current chunk's offset:</li>
+</ol>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 430</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span>local_size_x <span class="op">=</span> <span class="dv">256</span><span class="op">)</span> <span class="dt">in</span><span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">std430</span><span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="kw">buffer</span> DataBuffer <span class="op">{</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> data<span class="op">[];</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">uint</span> u_BaseOffset<span class="op">;</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint</span> globalIndex <span class="op">=</span> <span class="bu">gl_GlobalInvocationID</span><span class="op">.</span><span class="fu">x</span> <span class="op">+</span> u_BaseOffset<span class="op">;</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> <span class="op">(</span>globalIndex <span class="op">&gt;=</span> data<span class="op">.</span><span class="fu">length</span><span class="op">())</span> <span class="op">{</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>        <span class="kw">return</span><span class="op">;</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Perform intensive compute operation</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>    data<span class="op">[</span>globalIndex<span class="op">]</span> <span class="op">=</span> <span class="bu">sqrt</span><span class="op">(</span>data<span class="op">[</span>globalIndex<span class="op">])</span> <span class="op">*</span> <span class="fl">2.0</span><span class="op">;</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<ol start="2" type="1">
+<li><strong>Host-Side Chunking Loop</strong>: Partition the total
+elements into chunks that execute within a safe duration:</li>
+</ol>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>GLuint totalElements <span class="op">=</span> <span class="dv">100000000</span><span class="op">;</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>GLuint chunkSize <span class="op">=</span> <span class="dv">1000000</span><span class="op">;</span> <span class="co">// Calibrate according to performance</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>GLuint localSizeX <span class="op">=</span> <span class="dv">256</span><span class="op">;</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>GLuint numGroupsPerChunk <span class="op">=</span> <span class="op">(</span>chunkSize <span class="op">+</span> localSizeX <span class="op">-</span> <span class="dv">1</span><span class="op">)</span> <span class="op">/</span> localSizeX<span class="op">;</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="op">(</span>GLuint offset <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> offset <span class="op">&lt;</span> totalElements<span class="op">;</span> offset <span class="op">+=</span> chunkSize<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    glUniform1ui<span class="op">(</span>baseOffsetLocation<span class="op">,</span> offset<span class="op">);</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    glDispatchCompute<span class="op">(</span>numGroupsPerChunk<span class="op">,</span> <span class="dv">1</span><span class="op">,</span> <span class="dv">1</span><span class="op">);</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Coordinate state between chunks if running in a single frame</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>    glMemoryBarrier<span class="op">(</span>GL_SHADER_STORAGE_BARRIER_BIT<span class="op">);</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="multi-frame-distribution">Multi-Frame Distribution</h3>
+<p>If the total task is too large to complete within a single frame even
+when split into consecutive dispatches, the chunks must be spread across
+multiple application frames. Executing too many dispatches consecutively
+without presenting a frame still starves the OS window manager and
+triggers a TDR.</p>
+<p>To execute over multiple frames:</p>
+<ul>
+<li>Maintain a state machine in your application loop tracking the
+current <code>offset</code> and the overall completion status.</li>
+<li>Dispatch one or a few chunks per rendered frame.</li>
+<li>Swap the display buffers (<code>glfwSwapBuffers</code>,
+<code>SDL_GL_SwapWindow</code>, or <code>wglSwapBuffers</code>) after
+each frame. Swapping informs the OS that the application is alive and
+yielding the GPU.</li>
+</ul>
+<h3 id="memory-barriers-and-pipeline-synchronization">Memory Barriers
+and Pipeline Synchronization</h3>
+<p>When splitting tasks where subsequent chunks depend on the output of
+prior chunks, explicit barriers are required to prevent data races:</p>
+<ul>
+<li><strong>In-Frame Dependencies</strong>: Call
+<code>glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT)</code> between
+dependent dispatches. This ensures that memory writes from the previous
+dispatch complete and become visible to the next dispatch.</li>
+<li><strong>CPU Readback Synchronization</strong>: If the CPU needs to
+read results from a shared buffer after processing completes, use sync
+objects rather than blocking commands like <code>glFinish()</code>.
+Place a fence using
+<code>glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0)</code> after the
+final chunk, and poll it using <code>glClientWaitSync</code> with a
+timeout of zero inside your frame loop until it signals completion.</li>
+</ul>
+<h3 id="calibrating-chunk-sizes">Calibrating Chunk Sizes</h3>
+<p>Determining the ideal chunk size requires profiling:</p>
+<ul>
+<li><strong>Target Execution Time</strong>: Aim for compute chunks that
+run within 2 to 8 milliseconds. This leaves adequate headroom below
+typical OS timeout thresholds (usually 2000 milliseconds) while
+maintaining interactive frame rates (60 to 120 FPS).</li>
+<li><strong>Work Group Dimensions</strong>: Keep local work group sizes
+as multiples of the hardware's warp or wavefront size (32 threads for
+NVIDIA, 32 or 64 for AMD) to avoid underutilizing execution units.</li>
+<li><strong>Driver Overhead</strong>: Avoid making chunks too small.
+Dispatching thousands of tiny chunks introduces CPU-side driver overhead
+and GPU command processor bottlenecks, degrading overall throughput. Use
+<code>glBeginQuery(GL_TIME_ELAPSED, ...)</code> and
+<code>glEndQuery(GL_TIME_ELAPSED)</code> to measure the GPU execution
+time of each chunk directly on the target hardware.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

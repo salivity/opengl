@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How OpenGL Implements Alpha Blending for Transparency - opengl</title>
+    <meta name="description" content="Alpha blending in OpenGL simulates transparent surfaces by mathematically combining the color of a newly processed fragment (the source) with the color already present in the frame buffer (the destination). This article explains the underlying blending eq">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-open-gl-implements-alpha-blending-for-transparency">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How OpenGL Implements Alpha Blending for Transparency - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-open-gl-implements-alpha-blending-for-transparency" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Alpha blending in OpenGL simulates transparent surfaces by mathematically combining the color of a newly processed fragment (the source) with the color already present in the frame buffer (the destination). This article explains the underlying blending eq" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-opengl-implements-alpha-blending-for-transparency">How
+OpenGL Implements Alpha Blending for Transparency</h1>
+<p>Alpha blending in OpenGL simulates transparent surfaces by
+mathematically combining the color of a newly processed fragment (the
+source) with the color already present in the frame buffer (the
+destination). This article explains the underlying blending equation,
+the OpenGL functions used to configure transparency, and the critical
+rendering pipeline challenges associated with the depth buffer and
+primitive draw order.</p>
+<h2 id="the-concept-of-alpha-and-blending">The Concept of Alpha and
+Blending</h2>
+<p>In modern graphics pipelines, colors are represented by four
+components: Red, Green, Blue, and Alpha (RGBA). While RGB dictates the
+hue and brightness, the alpha component dictates opacity, typically
+normalized between <code>0.0</code> (fully transparent) and
+<code>1.0</code> (fully opaque).</p>
+<p>When rendering transparent objects, an incoming fragment cannot
+simply overwrite the pixel behind it. Instead, OpenGL performs a blend
+operation between the two color values:</p>
+<ul>
+<li><strong>Source Color (<span
+class="math inline">\(C_{source}\)</span>):</strong> The RGBA output
+from the fragment shader for the current primitive being drawn.</li>
+<li><strong>Destination Color (<span
+class="math inline">\(C_{destination}\)</span>):</strong> The RGBA value
+currently stored at that pixel coordinate in the frame buffer.</li>
+</ul>
+<h2 id="enabling-blending-in-opengl">Enabling Blending in OpenGL</h2>
+<p>Alpha blending is disabled by default to save computational
+bandwidth. It must be explicitly enabled using:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>glEnable<span class="op">(</span>GL_BLEND<span class="op">);</span></span></code></pre></div>
+<p>Once enabled, every fragment that passes the depth, stencil, and
+scissor tests undergoes blending before being written to the frame
+buffer.</p>
+<h2 id="the-blending-equation-and-factors">The Blending Equation and
+Factors</h2>
+<p>The final color written to the frame buffer is determined by a
+configurable mathematical equation:</p>
+<p><span class="math display">\[\mathbf{C_{result}} =
+(\mathbf{C_{source}} \times \mathbf{F_{source}}) \text{ op }
+(\mathbf{C_{destination}} \times \mathbf{F_{destination}})\]</span></p>
+<p>By default, the operation (<code>op</code>) is addition
+(<code>GL_FUNC_ADD</code>), defined through
+<code>glBlendEquation()</code>.</p>
+<p>The scale factors (<span
+class="math inline">\(\mathbf{F_{source}}\)</span> and <span
+class="math inline">\(\mathbf{F_{destination}}\)</span>) are set via
+<code>glBlendFunc()</code> or <code>glBlendFuncSeparate()</code>. To
+achieve conventional, physically intuitive transparency where an object
+filters the light passing through it, the standard blend configuration
+is:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>glBlendFunc<span class="op">(</span>GL_SRC_ALPHA<span class="op">,</span> GL_ONE_MINUS_SRC_ALPHA<span class="op">);</span></span></code></pre></div>
+<p>In this mode:</p>
+<ul>
+<li><strong><span class="math inline">\(F_{source} =
+\text{Alpha}_{source}\)</span></strong></li>
+<li><strong><span class="math inline">\(F_{destination} = 1.0 -
+\text{Alpha}_{source}\)</span></strong></li>
+</ul>
+<p>If a red glass surface with an alpha of <code>0.3</code> is drawn
+over an opaque blue background:</p>
+<ul>
+<li>The source contributes 30% of its color.</li>
+<li>The destination retains 70% (<span class="math inline">\(1.0 -
+0.3\)</span>) of its original color.</li>
+<li>The two values are summed together to create the blended
+result.</li>
+</ul>
+<h2 id="handling-the-depth-buffer">Handling the Depth Buffer</h2>
+<p>The standard OpenGL depth buffer (Z-buffer) tracks the nearest depth
+value to prevent hidden surfaces from rendering over foreground
+geometry. This creates an issue for alpha blending: if a transparent
+surface writes its depth to the buffer, any geometry behind it drawn
+afterward will be discarded by the depth test, leaving empty background
+spaces.</p>
+<p>To resolve depth conflicts, rendering must adhere to specific
+rules:</p>
+<ol type="1">
+<li><strong>Draw Opaque Objects First:</strong> Render all fully opaque
+objects normally with depth testing and depth writes enabled
+(<code>glDepthMask(GL_TRUE)</code>).</li>
+<li><strong>Sort Transparent Surfaces:</strong> Sort all transparent
+primitives by distance from the camera, from furthest to closest
+(back-to-front).</li>
+<li><strong>Render Transparent Objects Back-to-Front:</strong> Draw the
+sorted transparent objects with blending enabled. Often, depth writing
+is disabled using <code>glDepthMask(GL_FALSE)</code> while keeping depth
+testing enabled (<code>glEnable(GL_DEPTH_TEST)</code>). This allows
+transparent surfaces to be occluded by opaque objects without preventing
+other transparent objects behind or within them from rendering.</li>
+</ol></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

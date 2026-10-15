@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Compute Shader Synchronization and Barriers - opengl</title>
+    <meta name="description" content="OpenGL compute shaders execute workloads across thousands of parallel invocations, requiring explicit synchronization to avoid race conditions and ensure data integrity. This article provides a comprehensive overview of the synchronization mechanisms in O">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-compute-shader-synchronization-and-barriers">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Compute Shader Synchronization and Barriers - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-compute-shader-synchronization-and-barriers" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="OpenGL compute shaders execute workloads across thousands of parallel invocations, requiring explicit synchronization to avoid race conditions and ensure data integrity. This article provides a comprehensive overview of the synchronization mechanisms in O" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-compute-shader-synchronization-and-barriers">OpenGL
+Compute Shader Synchronization and Barriers</h1>
+<p>OpenGL compute shaders execute workloads across thousands of parallel
+invocations, requiring explicit synchronization to avoid race conditions
+and ensure data integrity. This article provides a comprehensive
+overview of the synchronization mechanisms in OpenGL, covering
+intra-workgroup execution barriers, GLSL memory barriers, the
+<code>coherent</code> type qualifier, host-level memory barriers via
+<code>glMemoryBarrier</code>, and CPU-GPU synchronization using fence
+sync objects.</p>
+<h3 id="intra-workgroup-synchronization-glsl">Intra-Workgroup
+Synchronization (GLSL)</h3>
+<p>Compute shaders group invocations into local workgroups. Invocations
+within the same local workgroup can communicate via <code>shared</code>
+variables, but their execution order is non-deterministic. To coordinate
+them, GLSL provides intra-workgroup barriers:</p>
+<ul>
+<li><strong><code>barrier()</code></strong>: Acts as both an execution
+barrier and a shared memory barrier. Every invocation in the local
+workgroup must reach this call before any invocation is permitted to
+proceed beyond it. Additionally, any writes to <code>shared</code>
+variables executed before the <code>barrier()</code> call are guaranteed
+to be visible to all invocations in the workgroup after the
+barrier.</li>
+<li><strong><code>memoryBarrierShared()</code></strong>: Enforces
+ordering for memory transactions specifically targeting
+<code>shared</code> memory variables without halting execution flow. It
+guarantees that writes to shared memory prior to the call are committed
+before subsequent writes.</li>
+<li><strong><code>groupMemoryBarrier()</code></strong>: Provides a
+memory barrier ordering for all memory accesses (both shared variables
+and global buffers) relative to the calling invocation, limited to the
+scope of the local workgroup.</li>
+</ul>
+<h3 id="memory-coherency-and-glsl-memory-barriers">Memory Coherency and
+GLSL Memory Barriers</h3>
+<p>By default, the OpenGL shader execution model assumes memory
+operations are weakly ordered. Writes to Shader Storage Buffer Objects
+(SSBOs) or images are cached per execution unit and are not
+automatically visible across different invocations or across
+workgroups.</p>
+<h4 id="the-coherent-qualifier">The <code>coherent</code> Qualifier</h4>
+<p>When buffer variables or image variables are declared, they should
+use the <code>coherent</code> qualifier if multiple invocations read and
+write to the same memory addresses:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">std430</span><span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">coherent</span> <span class="kw">buffer</span> OutputData <span class="op">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint</span> counter<span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> values<span class="op">[];</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
+<p>The <code>coherent</code> qualifier signals to the compiler and
+hardware that accesses to this memory must bypass local caches or be
+tracked so that updates can become visible to other invocations.</p>
+<h4 id="glsl-memory-barrier-functions">GLSL Memory Barrier
+Functions</h4>
+<p>To force pending writes to flush to memory accessible by other
+invocations, use targeted GLSL memory barrier functions:</p>
+<ul>
+<li><strong><code>memoryBarrier()</code></strong>: Flushes pending
+writes across all memory types (buffers, images, shared variables).</li>
+<li><strong><code>memoryBarrierBuffer()</code></strong>: Ensures that
+all memory transactions on buffer variables (such as SSBOs or atomic
+counters) initiated prior to the call are committed to memory.</li>
+<li><strong><code>memoryBarrierImage()</code></strong>: Ensures that all
+texture image stores (<code>imageStore</code>) initiated prior to the
+call are committed.</li>
+<li><strong><code>memoryBarrierAtomicCounter()</code></strong>: Flushes
+updates made to atomic counter buffers.</li>
+</ul>
+<h3 id="host-side-synchronization-glmemorybarrier">Host-Side
+Synchronization: <code>glMemoryBarrier</code></h3>
+<p>GLSL barriers only coordinate invocations within a single dispatch.
+When subsequent OpenGL commands (such as a draw call, texture sample, or
+another compute dispatch) depend on data produced by a compute shader,
+the host application must call <code>glMemoryBarrier</code>.</p>
+<p><code>glMemoryBarrier</code> defines a barrier between shader writes
+and subsequent read operations performed by specific OpenGL pipeline
+stages. It accepts a bitfield indicating which subsequent operations
+must wait for pending memory writes to complete:</p>
+<ul>
+<li><strong><code>GL_SHADER_STORAGE_BARRIER_BIT</code></strong>: Ensures
+SSBO writes from the compute shader are visible to subsequent shader
+read operations (including subsequent compute dispatches).</li>
+<li><strong><code>GL_TEXTURE_FETCH_BARRIER_BIT</code></strong>: Ensures
+image or buffer writes are visible when sampled as textures via
+<code>sampler*</code> in subsequent rendering passes.</li>
+<li><strong><code>GL_SHADER_IMAGE_ACCESS_BARRIER_BIT</code></strong>:
+Ensures image writes are visible to subsequent <code>imageLoad</code>
+and <code>imageStore</code> operations.</li>
+<li><strong><code>GL_FRAMEBUFFER_BARRIER_BIT</code></strong>: Ensures
+writes are visible when the target memory is subsequently used as a
+framebuffer attachment.</li>
+<li><strong><code>GL_ELEMENT_ARRAY_BARRIER_BIT</code></strong>: Ensures
+buffer writes are visible when the buffer is bound as an index array
+(<code>GL_ELEMENT_ARRAY_BUFFER</code>).</li>
+<li><strong><code>GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT</code></strong>:
+Ensures buffer writes are visible when the buffer provides vertex
+attributes.</li>
+<li><strong><code>GL_COMMAND_BARRIER_BIT</code></strong>: Ensures data
+written into a buffer used for indirect dispatch or draw commands (such
+as <code>glDispatchComputeIndirect</code> or
+<code>glDrawArraysIndirect</code>) is visible before execution.</li>
+<li><strong><code>GL_ALL_BARRIER_BITS</code></strong>: Flushes all
+pending writes to be visible to all subsequent pipeline operations.
+While convenient, it can introduce pipeline stalls and should be avoided
+if performance is critical.</li>
+</ul>
+<p>A typical sequence between compute and rendering:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Dispatch compute work</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>glDispatchCompute<span class="op">(</span>numGroupsX<span class="op">,</span> numGroupsY<span class="op">,</span> numGroupsZ<span class="op">);</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="co">// Ensure compute writes to the SSBO are visible before drawing</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>glMemoryBarrier<span class="op">(</span>GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT<span class="op">);</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="co">// Render using the generated buffer data</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>glBindVertexArray<span class="op">(</span>vao<span class="op">);</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>glDrawArrays<span class="op">(</span>GL_TRIANGLES<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> vertexCount<span class="op">);</span></span></code></pre></div>
+<h3 id="cpu-gpu-synchronization-sync-objects">CPU-GPU Synchronization:
+Sync Objects</h3>
+<p>If the CPU needs to read compute shader results via functions like
+<code>glGetBufferSubData</code> or <code>glMapBufferRange</code>, memory
+barriers alone are insufficient because <code>glMemoryBarrier</code>
+only synchronizes internal GPU pipeline stages.</p>
+<p>To synchronize between the CPU and GPU:</p>
+<ol type="1">
+<li><strong>Insert a Fence</strong>: Call
+<code>glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0)</code> immediately
+after your dispatch and pipeline barrier calls.</li>
+<li><strong>CPU Wait</strong>: Call
+<code>glClientWaitSync(syncObject, GL_SYNC_FLUSH_COMMANDS_BIT, timeoutNanoseconds)</code>
+to block the CPU thread until the GPU finishes all operations prior to
+the fence.</li>
+<li><strong>GPU-Side Stalls (Optional)</strong>: If you need the GPU
+command queue itself to halt without blocking the CPU, use
+<code>glWaitSync</code>.</li>
+<li><strong>Clean Up</strong>: Delete the sync object when no longer
+needed using <code>glDeleteSync(syncObject)</code>.</li>
+</ol></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

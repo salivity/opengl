@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rendering Optimizations Using OpenGL textureGather - opengl</title>
+    <meta name="description" content="The textureGather function in OpenGL offers significant performance advantages by fetching the four texels that would normally be used for bilinear interpolation and returning them in a single four-component vector (vec4). By replacing multiple individual">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/rendering-optimizations-using-open-gl-texture-gather">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Rendering Optimizations Using OpenGL textureGather - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/rendering-optimizations-using-open-gl-texture-gather" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The textureGather function in OpenGL offers significant performance advantages by fetching the four texels that would normally be used for bilinear interpolation and returning them in a single four-component vector (vec4). By replacing multiple individual" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="rendering-optimizations-using-opengl-texturegather">Rendering
+Optimizations Using OpenGL textureGather</h1>
+<p>The <code>textureGather</code> function in OpenGL offers significant
+performance advantages by fetching the four texels that would normally
+be used for bilinear interpolation and returning them in a single
+four-component vector (<code>vec4</code>). By replacing multiple
+individual texture fetch instructions with a single hardware query,
+shaders can drastically cut texture instruction overhead, optimize
+memory bandwidth, and streamline custom filtering operations. This
+article explores key real-time rendering algorithms—including shadow
+mapping, screen-space ambient occlusion, edge-preserving blurs, and
+anti-aliasing—that directly benefit from <code>textureGather</code>.</p>
+<h3 id="how-texturegather-optimizes-gpu-workloads">How textureGather
+Optimizes GPU Workloads</h3>
+<p>In standard sampling, hardware bilinear filtering combines four
+adjacent texels into an interpolated result. However, many advanced
+rendering techniques require access to the raw, unblended data of all
+four neighbors—for instance, to perform custom depth tests or
+edge-detection checks.</p>
+<p>Traditionally, acquiring these four neighbors required four separate
+<code>texture</code> or <code>texelFetch</code> instructions with manual
+coordinate offsets. Calling <code>textureGather</code> (or its variant
+<code>textureGatherOffset</code>) retrieves the four specific texel
+values across a single component (such as depth, red, or alpha) in a
+single instruction. This achieves:</p>
+<ul>
+<li><strong>Reduced Register Pressure &amp; Instruction Count:</strong>
+Replaces four address calculations and sampling calls with one.</li>
+<li><strong>Improved Texture Cache Locality:</strong> Hardware fetches
+the 2x2 texel footprint simultaneously, minimizing cache misses.</li>
+</ul>
+<h3
+id="percentage-closer-filtering-pcf-and-soft-shadows">Percentage-Closer
+Filtering (PCF) and Soft Shadows</h3>
+<p>Shadow map filtering is one of the most prominent beneficiaries of
+<code>textureGather</code>. When implementing Percentage-Closer
+Filtering (PCF) or Percentage-Closer Soft Shadows (PCSS):</p>
+<ol type="1">
+<li><strong>Custom Comparison Operations:</strong> While hardware shadow
+samplers (<code>sampler2DShadow</code>) automatically evaluate depth
+comparisons using PCF, they obscure the underlying raw depth values.
+<code>textureGather</code> allows shaders to fetch the raw depth values
+of four adjacent shadow map texels at once.</li>
+<li><strong>Early-Out and Blended Filtering:</strong> Access to raw
+depth data enables custom kernel shapes, adaptive radius calculation, or
+non-uniform penalty weighting that standard hardware shadow samplers
+cannot perform.</li>
+<li><strong>Hardware Shadow Comparison
+(<code>textureGatherCmp</code>):</strong> For direct boolean comparisons
+against a reference depth, OpenGL also provides
+<code>textureGatherCmp</code>. This function compares all four texels
+against a reference depth value in a single operation, returning a
+<code>vec4</code> of <code>0.0</code> or <code>1.0</code> results. This
+drastically speeds up large-kernel PCF loops (e.g., 16-tap or 64-tap
+kernels).</li>
+</ol>
+<h3 id="screen-space-ambient-occlusion-ssao-and-hbao">Screen-Space
+Ambient Occlusion (SSAO) and HBAO</h3>
+<p>Ambient occlusion techniques operate by comparing the depth and
+surface normal of a target fragment against neighboring pixels in screen
+space:</p>
+<ul>
+<li><strong>Depth Reconstruction:</strong> SSAO algorithms frequently
+read depth buffers to reconstruct view-space positions. Using
+<code>textureGather</code>, an algorithm can read surrounding
+screen-space depth values simultaneously, cutting down the total fetches
+needed to reconstruct sample geometry.</li>
+<li><strong>Bilateral and Edge-Preserving Blurs:</strong> SSAO generates
+noisy output that requires bilateral filtering (a blur that preserves
+sharp geometric edges). A cross-bilateral filter needs to read
+neighboring depth values to determine weight falls-offs.
+<code>textureGather</code> can fetch the four neighborhood depth taps in
+one cycle, allowing fast calculation of depth differences to avoid
+blurring across geometric boundaries.</li>
+</ul>
+<h3 id="fast-approximate-anti-aliasing-fxaa">Fast Approximate
+Anti-Aliasing (FXAA)</h3>
+<p>Post-processing anti-aliasing solutions like FXAA inspect contrast
+differences between adjacent pixels to identify high-frequency
+edges:</p>
+<ul>
+<li>FXAA packs luminance into the alpha channel of the main color
+buffer.</li>
+<li>To detect directional edges (horizontal vs. vertical), FXAA
+evaluates the luminance of neighboring pixels.</li>
+<li>Using <code>textureGather</code> targeting the alpha channel, the
+shader retrieves the luminance values of an entire 2x2 block in a single
+call, accelerating gradient estimation and edge-direction analysis
+before blur passes are applied.</li>
+</ul>
+<h3 id="depth-of-field-and-screen-space-reflections-ssr">Depth-of-Field
+and Screen-Space Reflections (SSR)</h3>
+<ul>
+<li><strong>Hi-Z Downsampling:</strong> Constructing Hierarchical Depth
+(Hi-Z) buffers requires taking the minimum or maximum depth of a 2x2
+cluster when generating mipmaps. <code>textureGather</code> fetches
+these four values instantly, allowing trivial reduction via
+<code>min()</code> or <code>max()</code> calls in compute shaders
+without running separate fetch calls.</li>
+<li><strong>Bilateral Upsampling:</strong> Rendering effects at
+half-resolution (e.g., SSR or volumetric lighting) necessitates
+bilateral upsampling back to full resolution. <code>textureGather</code>
+retrieves the 2x2 low-resolution depth or color footprint to compute
+edge-aware weights in fewer cycles.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

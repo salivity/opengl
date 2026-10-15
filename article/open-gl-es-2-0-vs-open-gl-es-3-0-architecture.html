@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL ES 2.0 vs OpenGL ES 3.0 Architecture - opengl</title>
+    <meta name="description" content="This article examines the primary architectural differences between OpenGL ES 2.0 and OpenGL ES 3.0, highlighting the evolution of mobile graphics pipelines. While OpenGL ES 2.0 introduced a basic programmable shader pipeline, OpenGL ES 3.0 significantly">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-es-2-0-vs-open-gl-es-3-0-architecture">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL ES 2.0 vs OpenGL ES 3.0 Architecture - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-es-2-0-vs-open-gl-es-3-0-architecture" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article examines the primary architectural differences between OpenGL ES 2.0 and OpenGL ES 3.0, highlighting the evolution of mobile graphics pipelines. While OpenGL ES 2.0 introduced a basic programmable shader pipeline, OpenGL ES 3.0 significantly" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-es-20-vs-opengl-es-30-architecture">OpenGL ES 2.0 vs
+OpenGL ES 3.0 Architecture</h1>
+<p>This article examines the primary architectural differences between
+OpenGL ES 2.0 and OpenGL ES 3.0, highlighting the evolution of mobile
+graphics pipelines. While OpenGL ES 2.0 introduced a basic programmable
+shader pipeline, OpenGL ES 3.0 significantly modernized mobile GPU
+architecture by introducing full integer support, standardized texture
+formats, uniform buffer objects, transform feedback, and instanced
+rendering. These enhancements bridge the gap between embedded systems
+and desktop-class graphics capabilities.</p>
+<h3 id="shader-core-and-execution-pipeline">Shader Core and Execution
+Pipeline</h3>
+<p>OpenGL ES 2.0 introduced the programmable pipeline using OpenGL ES
+Shading Language (GLSL ES 1.00). However, its shader architecture was
+limited to floating-point calculations with low, medium, and high
+precision qualifiers (<code>lowp</code>, <code>mediump</code>,
+<code>highp</code>), lacking native integer processing.</p>
+<p>OpenGL ES 3.0 introduced GLSL ES 3.00, which fundamentally altered
+the shader hardware execution model:</p>
+<ul>
+<li><strong>Native Integer and Bitwise Operations:</strong> ES 3.0
+includes genuine 32-bit signed and unsigned integers alongside standard
+bitwise manipulation operations (<code>&lt;&lt;</code>,
+<code>&gt;&gt;</code>, <code>&amp;</code>, <code>|</code>,
+<code>^</code>).</li>
+<li><strong>Modern Interface Syntax:</strong> The legacy
+<code>attribute</code> and <code>varying</code> qualifiers were replaced
+with unified <code>in</code> and <code>out</code> storage qualifiers,
+streamlining stage-to-stage interface linkage.</li>
+<li><strong>Layout Qualifiers:</strong> Developers gain direct control
+over input/output locations in shaders via layout qualifiers (e.g.,
+<code>layout(location = 0)</code>), reducing the need for CPU-side
+binding queries.</li>
+</ul>
+<h3 id="uniform-data-management">Uniform Data Management</h3>
+<p>In OpenGL ES 2.0, uniform values were managed on an individual basis
+or packed into small arrays. Every program switch or uniform update
+required costly API calls to transfer state to the GPU.</p>
+<p>OpenGL ES 3.0 introduced <strong>Uniform Buffer Objects
+(UBOs)</strong>. This architectural change allows blocks of uniforms to
+be stored in dedicated GPU memory buffers. UBOs provide several
+benefits:</p>
+<ul>
+<li>Uniform state can be shared across multiple shader programs without
+re-uploading data.</li>
+<li>Buffer updates can be handled via fast memory copies.</li>
+<li>CPU overhead associated with draw call state setup is significantly
+reduced.</li>
+</ul>
+<h3 id="geometry-processing-and-draw-operations">Geometry Processing and
+Draw Operations</h3>
+<p>OpenGL ES 2.0 possessed a rigid, single-pass vertex pipeline where
+all vertex data had to be consumed immediately by the rasterizer.</p>
+<p>OpenGL ES 3.0 expanded geometry processing with two major
+capabilities:</p>
+<ul>
+<li><strong>Instanced Rendering:</strong> Core support for
+<code>glDrawArraysInstanced</code> and
+<code>glDrawElementsInstanced</code> allows the GPU to render multiple
+copies of a mesh with a single draw call. Per-instance vertex attributes
+(<code>glVertexAttribDivisor</code>) allow distinct transformations per
+instance directly in hardware.</li>
+<li><strong>Transform Feedback:</strong> This feature allows the output
+of the vertex shader to be captured directly into buffer objects before
+reaching the rasterizer. This enables GPU-side particle systems, physics
+calculations, and procedural geometry generation without round trips to
+CPU memory.</li>
+</ul>
+<h3 id="vertex-array-objects-vaos">Vertex Array Objects (VAOs)</h3>
+<p>Managing vertex state in OpenGL ES 2.0 required calling
+<code>glBindBuffer</code>, <code>glVertexAttribPointer</code>, and
+<code>glEnableVertexAttribArray</code> for every attribute on every mesh
+switch.</p>
+<p>OpenGL ES 3.0 moved <strong>Vertex Array Objects (VAOs)</strong> into
+core architecture. A VAO encapsulates the entire state mapping between
+vertex buffers and shader attributes. Switching between complex meshes
+requires binding only a single VAO, drastically lowering CPU-side
+validation and driver overhead during rendering loops.</p>
+<h3 id="texture-and-framebuffer-subsystems">Texture and Framebuffer
+Subsystems</h3>
+<p>The texture architecture underwent an overhaul between the two
+specifications to support more advanced rendering techniques such as
+deferred shading and high dynamic range (HDR) rendering.</p>
+<ul>
+<li><strong>Multiple Render Targets (MRT):</strong> OpenGL ES 2.0 could
+only output to a single color buffer per draw call. ES 3.0 supports
+rendering to multiple color attachments simultaneously, an architectural
+requirement for efficient deferred shading pipelines.</li>
+<li><strong>Sized Internal Formats:</strong> ES 2.0 left internal
+texture format precision largely to the discretion of the driver. ES 3.0
+mandates standard sized internal formats (e.g., <code>RGBA8</code>,
+<code>RGBA16F</code>, <code>R32I</code>), ensuring consistent behavior
+across different hardware vendors.</li>
+<li><strong>New Texture Targets:</strong> ES 3.0 added native support
+for 3D textures, 2D texture arrays, depth textures, and
+floating-point/half-float render targets.</li>
+<li><strong>Standardized Texture Compression:</strong> ES 2.0 had no
+universal hardware-accelerated compression format, forcing developers to
+manage vendor-specific formats like PVRTC, ETC1, and ATC. ES 3.0 made
+<strong>ETC2/EAC</strong> texture compression mandatory across all
+compliant devices.</li>
+</ul>
+<h3 id="gpu-synchronization-and-queries">GPU Synchronization and
+Queries</h3>
+<p>OpenGL ES 2.0 lacked fine-grained mechanisms for CPU-GPU
+synchronization, relying primarily on heavy pipeline stalls like
+<code>glFinish</code> or <code>glFlush</code>.</p>
+<p>OpenGL ES 3.0 introduced modern synchronization primitives:</p>
+<ul>
+<li><strong>Sync Objects and Fences:</strong> CPU execution can wait on
+fine-grained GPU progress via sync fences (<code>glFenceSync</code>,
+<code>glClientWaitSync</code>), preventing unnecessary pipeline
+flushes.</li>
+<li><strong>Occlusion Queries:</strong> ES 3.0 allows hardware-based
+boolean occlusion queries (<code>GL_ANY_SAMPLES_PASSED</code>), enabling
+the engine to conditionally skip drawing hidden geometry based on
+GPU-side depth testing.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

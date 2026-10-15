@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL std140 Layout Data Alignment Limitations - opengl</title>
+    <meta name="description" content="The std140 memory layout in OpenGL provides a standardized packing specification for Uniform Buffer Objects (UBOs) and Shader Storage Buffer Objects (SSBOs), ensuring deterministic memory alignment across different GPU architectures. While this layout eli">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-std-140-layout-data-alignment-limitations">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL std140 Layout Data Alignment Limitations - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-std-140-layout-data-alignment-limitations" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The std140 memory layout in OpenGL provides a standardized packing specification for Uniform Buffer Objects (UBOs) and Shader Storage Buffer Objects (SSBOs), ensuring deterministic memory alignment across different GPU architectures. While this layout eli" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-std140-layout-data-alignment-limitations">OpenGL std140
+Layout Data Alignment Limitations</h1>
+<p>The <code>std140</code> memory layout in OpenGL provides a
+standardized packing specification for Uniform Buffer Objects (UBOs) and
+Shader Storage Buffer Objects (SSBOs), ensuring deterministic memory
+alignment across different GPU architectures. While this layout
+eliminates the need to query uniform offsets at runtime, it enforces
+rigid alignment and padding rules that restrict memory layout
+flexibility, often introducing substantial memory overhead and mapping
+pitfalls between host C++ applications and GLSL shaders.</p>
+<h3 id="scalar-and-vector-alignment-constraints">Scalar and Vector
+Alignment Constraints</h3>
+<p>Under <code>std140</code>, primitive data types are governed by a
+base alignment quantity, denoted as <span
+class="math inline">\(N\)</span> (where <span class="math inline">\(N =
+4\)</span> bytes for 32-bit types such as <code>float</code>,
+<code>int</code>, <code>uint</code>, and <code>bool</code>).</p>
+<ul>
+<li><strong>Scalars (<code>float</code>, <code>int</code>,
+<code>uint</code>, <code>bool</code>):</strong> Have a base alignment of
+4 bytes (<span class="math inline">\(N\)</span>).</li>
+<li><strong>Two-component vectors (<code>vec2</code>,
+<code>ivec2</code>, etc.):</strong> Have a base alignment of 8 bytes
+(<span class="math inline">\(2N\)</span>).</li>
+<li><strong>Three-component vectors (<code>vec3</code>,
+<code>ivec3</code>, etc.):</strong> Have a base alignment of 16 bytes
+(<span class="math inline">\(4N\)</span>).</li>
+<li><strong>Four-component vectors (<code>vec4</code>,
+<code>ivec4</code>, etc.):</strong> Have a base alignment of 16 bytes
+(<span class="math inline">\(4N\)</span>).</li>
+</ul>
+<p>The primary limitation here involves 3-component vectors. A
+<code>vec3</code> takes up 12 bytes of data, but <code>std140</code>
+rounds its alignment up to 16 bytes. Consequently, the 4 bytes
+immediately following a <code>vec3</code> cannot be used by a subsequent
+scalar unless explicitly packed, frequently causing implicit padding
+issues.</p>
+<h3 id="the-16-byte-array-element-limitation">The 16-Byte Array Element
+Limitation</h3>
+<p>The most restrictive limitation of <code>std140</code> occurs with
+arrays. Regardless of the data type stored in an array, the base
+alignment of each array element is rounded up to a multiple of 16 bytes
+(the size of a <code>vec4</code>).</p>
+<ul>
+<li>An array of scalars (<code>float data[4]</code>) does not occupy 16
+contiguous bytes. Instead, each individual <code>float</code> is padded
+to 16 bytes, consuming a total of 64 bytes in memory.</li>
+<li>An array of <code>vec2</code> elements pads each 8-byte element to
+16 bytes.</li>
+</ul>
+<p>This rule causes extreme memory bloat for scalar or 2-component
+vector arrays and prevents direct memory copies (<code>memcpy</code>)
+from standard tightly packed C++ arrays or <code>std::vector</code>
+instances.</p>
+<h3 id="structure-alignment-and-sizing-restrictions">Structure Alignment
+and Sizing Restrictions</h3>
+<p>Structures in <code>std140</code> introduce compound alignment
+constraints:</p>
+<ol type="1">
+<li><strong>Member Offsets:</strong> Each member inside a struct is
+aligned according to its individual type rules.</li>
+<li><strong>Base Structure Alignment:</strong> The base alignment of a
+structure is equal to the largest base alignment of any of its members,
+rounded up to a multiple of 16 bytes.</li>
+<li><strong>Total Structure Padding:</strong> The total size of a
+structure is always rounded up to a multiple of its base alignment (at
+least a multiple of 16 bytes).</li>
+</ol>
+<p>Even if a struct contains only a single <code>float</code> (4 bytes),
+the struct itself will be padded to 16 bytes. In an array of structs,
+each struct begins on a 16-byte boundary, guaranteeing at least 12 bytes
+of padding between single-float struct elements.</p>
+<h3 id="matrix-handling">Matrix Handling</h3>
+<p>Matrices under <code>std140</code> are treated strictly as arrays of
+vectors:</p>
+<ul>
+<li>A column-major <code>mat4</code> is treated as an array of four
+<code>vec4</code> variables (64 bytes).</li>
+<li>A column-major <code>mat3</code> is treated as an array of three
+<code>vec3</code> variables. Because each column vector is padded to 16
+bytes, a <code>mat3</code> consumes 48 bytes (three 16-byte chunks)
+instead of 36 contiguous bytes.</li>
+</ul>
+<h3 id="practical-host-side-implications">Practical Host-Side
+Implications</h3>
+<ul>
+<li><strong>C++ Type Incompatibility:</strong> Types like
+<code>glm::vec3</code> match the 12-byte size of GLSL <code>vec3</code>
+but lack the mandatory 16-byte stride required by <code>std140</code>,
+leading to silent data corruption when passing structures directly to
+<code>glBufferData</code>.</li>
+<li><strong>Manual Padding Requirements:</strong> To safely map data to
+<code>std140</code> blocks without data corruption, host-side C++ code
+must use explicit padding variables or compiler directives such as
+<code>alignas(16)</code>.</li>
+<li><strong>Memory Inefficiency:</strong> Dense data structures stored
+inside uniform buffers using <code>std140</code> can waste up to 75% of
+allocated buffer space due to mandatory 16-byte array and vector
+round-ups.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

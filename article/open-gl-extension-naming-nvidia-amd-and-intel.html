@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Extension Naming: NVIDIA, AMD, and Intel - opengl</title>
+    <meta name="description" content="OpenGL utilizes standardized naming conventions to differentiate vendor-specific, proprietary extensions from standard, cross-vendor, and architecture-neutral features. This article explains the unique vendor identifiers assigned to NVIDIA, AMD, and Intel">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-extension-naming-nvidia-amd-and-intel">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Extension Naming: NVIDIA, AMD, and Intel - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-extension-naming-nvidia-amd-and-intel" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="OpenGL utilizes standardized naming conventions to differentiate vendor-specific, proprietary extensions from standard, cross-vendor, and architecture-neutral features. This article explains the unique vendor identifiers assigned to NVIDIA, AMD, and Intel" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-extension-naming-nvidia-amd-and-intel">OpenGL Extension
+Naming: NVIDIA, AMD, and Intel</h1>
+<p>OpenGL utilizes standardized naming conventions to differentiate
+vendor-specific, proprietary extensions from standard, cross-vendor, and
+architecture-neutral features. This article explains the unique vendor
+identifiers assigned to NVIDIA, AMD, and Intel, demonstrating how these
+abbreviations appear in extension strings, function names, and token
+definitions across the OpenGL specification.</p>
+<p>In OpenGL, proprietary hardware extensions allow GPU manufacturers to
+expose new hardware features before those capabilities are adopted into
+the core specification. Every vendor extension follows a uniform naming
+syntax across three primary elements: the extension name string,
+function prototypes, and enumeration constants (tokens).</p>
+<h3 id="the-general-naming-pattern">The General Naming Pattern</h3>
+<ul>
+<li><strong>Extension String:</strong> Follows the pattern
+<code>GL_[VENDOR]_[feature_name]</code>.</li>
+<li><strong>Function Names:</strong> Follow the pattern
+<code>gl[CommandName][VENDOR]()</code>.</li>
+<li><strong>Tokens / Constants:</strong> Follow the pattern
+<code>GL_[TOKEN_NAME]_[VENDOR]</code>.</li>
+</ul>
+<h3 id="nvidia-identifier-nv-and-nvx">NVIDIA Identifier: NV and NVX</h3>
+<p>NVIDIA uses the vendor tag <strong><code>NV</code></strong> for its
+proprietary, officially supported extensions. When NVIDIA releases
+experimental or undocumented vendor extensions, it uses the tag
+<strong><code>NVX</code></strong>.</p>
+<ul>
+<li><strong>Extension Strings:</strong> <code>GL_NV_mesh_shader</code>,
+<code>GL_NVX_gpu_memory_info</code></li>
+<li><strong>Functions:</strong> <code>glDrawMeshTasksNV()</code></li>
+<li><strong>Tokens:</strong> <code>GL_MESH_SHADER_NV</code>,
+<code>GL_GPU_MEMORY_INFO_DEDICATED_VIDMEM_NVX</code></li>
+</ul>
+<h3 id="amd-identifier-amd-and-ati">AMD Identifier: AMD and ATI</h3>
+<p>AMD currently uses the vendor tag <strong><code>AMD</code></strong>
+for its modern extensions. However, extensions developed prior to and
+immediately following AMD's acquisition of ATI Technologies use the
+legacy <strong><code>ATI</code></strong> identifier. Both may be found
+in driver implementations.</p>
+<ul>
+<li><strong>Extension Strings:</strong>
+<code>GL_AMD_pinned_memory</code>, <code>GL_ATI_meminfo</code></li>
+<li><strong>Functions:</strong>
+<code>glNamedBufferStorageExternalAMD()</code></li>
+<li><strong>Tokens:</strong>
+<code>GL_EXTERNAL_VIRTUAL_MEMORY_BUFFER_AMD</code>,
+<code>GL_VBO_FREE_MEMORY_ATI</code></li>
+</ul>
+<h3 id="intel-identifier-intel">Intel Identifier: INTEL</h3>
+<p>Intel uses the full vendor tag <strong><code>INTEL</code></strong>
+across all proprietary extensions designed for its integrated and
+discrete graphics architectures.</p>
+<ul>
+<li><strong>Extension Strings:</strong>
+<code>GL_INTEL_fragment_shader_ordering</code>,
+<code>GL_INTEL_performance_query</code></li>
+<li><strong>Functions:</strong> <code>glCreatePerfQueryINTEL()</code>,
+<code>glBeginPerfQueryINTEL()</code></li>
+<li><strong>Tokens:</strong>
+<code>GL_PERFQUERY_SINGLE_CONTEXT_INTEL</code></li>
+</ul>
+<h3 id="cross-vendor-and-multi-vendor-distinction">Cross-Vendor and
+Multi-Vendor Distinction</h3>
+<p>Proprietary vendor extensions should not be confused with shared
+extensions:</p>
+<ul>
+<li><strong><code>EXT</code></strong>: Used when two or more hardware
+vendors support the same extension without Khronos Group
+standardization.</li>
+<li><strong><code>ARB</code></strong> or
+<strong><code>KHR</code></strong>: Used for extensions officially
+approved and ratified by the Khronos Architecture Review Board,
+representing broad cross-vendor industry consensus rather than a single
+manufacturer's proprietary implementation.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

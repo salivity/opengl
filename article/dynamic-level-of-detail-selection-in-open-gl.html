@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Level of Detail Selection in OpenGL - opengl</title>
+    <meta name="description" content="Level of Detail (LOD) selection is a 3D rendering optimization technique that adjusts the geometric complexity of a 3D model based on its distance from the camera or its visual importance on the screen. This article explains the fundamentals of LOD select">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/dynamic-level-of-detail-selection-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Dynamic Level of Detail Selection in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/dynamic-level-of-detail-selection-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Level of Detail (LOD) selection is a 3D rendering optimization technique that adjusts the geometric complexity of a 3D model based on its distance from the camera or its visual importance on the screen. This article explains the fundamentals of LOD select" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamic-level-of-detail-selection-in-opengl">Dynamic Level of
+Detail Selection in OpenGL</h1>
+<p>Level of Detail (LOD) selection is a 3D rendering optimization
+technique that adjusts the geometric complexity of a 3D model based on
+its distance from the camera or its visual importance on the screen.
+This article explains the fundamentals of LOD selection and details how
+modern OpenGL pipelines dynamically alter mesh resolution—both through
+CPU-driven discrete buffer selection and GPU-accelerated hardware
+tessellation—to maximize rendering performance without sacrificing
+visual quality.</p>
+<h2 id="understanding-level-of-detail-lod-selection">Understanding Level
+of Detail (LOD) Selection</h2>
+<p>Rendering highly detailed meshes with hundreds of thousands of
+vertices is computationally expensive. When an object is far from the
+camera, it occupies only a few pixels on the screen, meaning the vast
+majority of its geometric detail is lost to sub-pixel rasterization
+while still consuming vertex processing power and memory bandwidth.</p>
+<p>LOD selection solves this by substituting complex meshes with
+simplified variants. The selection is typically governed by a metric
+such as:</p>
+<ul>
+<li><strong>Euclidean Distance:</strong> The distance between the camera
+position and the object's bounding volume center.</li>
+<li><strong>Screen-Space Coverage:</strong> The projected area or pixel
+footprint of the model on the viewport.</li>
+<li><strong>Perceptual Priority:</strong> Factors like motion blur,
+field-of-view peripheral positioning, or depth-of-field focus.</li>
+</ul>
+<p>By reducing vertex and primitive counts for distant or less prominent
+objects, the GPU saves significant processing cycles in the vertex,
+geometry, and rasterization stages.</p>
+<h2 id="discrete-lod-dynamic-switching-via-buffer-swapping">Discrete
+LOD: Dynamic Switching via Buffer Swapping</h2>
+<p>The most common approach to LOD is discrete level of detail. In this
+method, 3D artists or decimation algorithms pre-generate multiple
+versions of a mesh at varying resolutions (e.g., LOD 0 for full detail
+down to LOD 3 for a heavily decimated version).</p>
+<p>In OpenGL, discrete LOD is typically managed by altering draw
+calls:</p>
+<ol type="1">
+<li><strong>Buffer Allocation:</strong> All LOD variants are loaded into
+one or more Vertex Buffer Objects (VBOs) and indexed using an Element
+Buffer Object (EBO/IBO). Packing multiple LODs into a single contiguous
+buffer is often preferred to minimize OpenGL state changes.</li>
+<li><strong>Distance Evaluation:</strong> Each frame, the CPU computes
+the distance from the camera to the model's transformation matrix.</li>
+<li><strong>Draw Call Adjustment:</strong> Based on the calculated
+threshold, the application selects the corresponding index range. The
+switch is executed dynamically using <code>glDrawElements</code> or
+<code>glDrawElementsBaseVertex</code>, passing the byte offset and index
+count specific to that resolution level.</li>
+</ol>
+<p>While discrete LOD requires minimal GPU complexity, it can cause
+visual "popping" when switching between distinct models. This is often
+mitigated through geomorphing in a vertex shader or cross-fading using
+alpha blending.</p>
+<h2 id="continuous-lod-dynamic-tessellation-on-the-gpu">Continuous LOD:
+Dynamic Tessellation on the GPU</h2>
+<p>OpenGL 4.0 and later provides native support for hardware
+tessellation, allowing mesh resolution to be modified dynamically on the
+GPU patch-by-patch rather than per-object on the CPU. This continuous
+approach eliminates popping artifacts and allows fine-grained, real-time
+geometric scaling.</p>
+<p>Dynamic mesh alteration via tessellation utilizes two specialized
+shader stages between the Vertex Shader and the Geometry/Fragment
+Shaders:</p>
+<h3 id="1-tessellation-control-shader-tcs">1. Tessellation Control
+Shader (TCS)</h3>
+<p>The TCS receives base control patches (typically quads or triangles)
+defined using <code>glPatchParameteri</code> and
+<code>glDrawArrays(GL_PATCHES, ...)</code>. Its primary role in dynamic
+LOD is to calculate the tessellation levels:</p>
+<ul>
+<li><code>gl_TessLevelOuter[]</code>: Controls how many times the outer
+edges of the patch are subdivided.</li>
+<li><code>gl_TessLevelInner[]</code>: Controls the internal subdivision
+of the patch.</li>
+</ul>
+<p>The TCS computes these factors dynamically by evaluating the
+screen-space length or the distance of each patch edge relative to the
+camera position. Edges close to the camera receive high tessellation
+factors, while distant edges are assigned lower values.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 450 core</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span> <span class="op">(</span><span class="dt">vertices</span> <span class="op">=</span> <span class="dv">3</span><span class="op">)</span> <span class="dt">out</span><span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">vec3</span> u_CameraPosition<span class="op">;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    <span class="va">gl_out</span><span class="op">[</span><span class="bu">gl_InvocationID</span><span class="op">].</span><span class="fu">gl_Position</span> <span class="op">=</span> <span class="va">gl_in</span><span class="op">[</span><span class="bu">gl_InvocationID</span><span class="op">].</span><span class="fu">gl_Position</span><span class="op">;</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> <span class="op">(</span><span class="bu">gl_InvocationID</span> <span class="op">==</span> <span class="dv">0</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>        <span class="co">// Calculate distance from camera to patch center</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>        <span class="dt">float</span> dist <span class="op">=</span> <span class="bu">distance</span><span class="op">(</span>u_CameraPosition<span class="op">,</span> <span class="va">gl_in</span><span class="op">[</span><span class="dv">0</span><span class="op">].</span><span class="fu">gl_Position</span><span class="op">.</span><span class="fu">xyz</span><span class="op">);</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>        </span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>        <span class="co">// Dynamically scale tessellation factor based on distance</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>        <span class="dt">float</span> tessLevel <span class="op">=</span> <span class="bu">clamp</span><span class="op">(</span><span class="fl">100.0</span> <span class="op">/</span> dist<span class="op">,</span> <span class="fl">1.0</span><span class="op">,</span> <span class="fl">16.0</span><span class="op">);</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>        <span class="bu">gl_TessLevelOuter</span><span class="op">[</span><span class="dv">0</span><span class="op">]</span> <span class="op">=</span> tessLevel<span class="op">;</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>        <span class="bu">gl_TessLevelOuter</span><span class="op">[</span><span class="dv">1</span><span class="op">]</span> <span class="op">=</span> tessLevel<span class="op">;</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>        <span class="bu">gl_TessLevelOuter</span><span class="op">[</span><span class="dv">2</span><span class="op">]</span> <span class="op">=</span> tessLevel<span class="op">;</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>        <span class="bu">gl_TessLevelInner</span><span class="op">[</span><span class="dv">0</span><span class="op">]</span> <span class="op">=</span> tessLevel<span class="op">;</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="2-tessellation-primitive-generator-fixed-function">2.
+Tessellation Primitive Generator (Fixed-Function)</h3>
+<p>The fixed-function primitive generation stage reads the
+<code>gl_TessLevel</code> values set by the TCS and subdivides the patch
+into a dense mesh of smaller primitives (triangles or quads) entirely
+within hardware memory.</p>
+<h3 id="3-tessellation-evaluation-shader-tes">3. Tessellation Evaluation
+Shader (TES)</h3>
+<p>The TES executes once for every new vertex generated by the primitive
+generator. It receives barycentric coordinates
+(<code>gl_TessCoord</code>) representing the vertex position within the
+patch. The TES interpolates the original patch vertex positions and
+samples a displacement map (heightmap) to dynamically extrude surface
+details:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 450 core</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span> <span class="op">(</span><span class="dt">triangles</span><span class="op">,</span> <span class="dt">fractional_odd_spacing</span><span class="op">,</span> <span class="dt">ccw</span><span class="op">)</span> <span class="dt">in</span><span class="op">;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">mat4</span> u_ModelViewProjection<span class="op">;</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">sampler2D</span> u_DisplacementMap<span class="op">;</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="dt">in</span> <span class="dt">vec2</span> v_TexCoord<span class="op">[];</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec2</span> TexCoord<span class="op">;</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Interpolate positions using barycentric coordinates</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> p0 <span class="op">=</span> <span class="bu">gl_TessCoord</span><span class="op">.</span><span class="fu">x</span> <span class="op">*</span> <span class="va">gl_in</span><span class="op">[</span><span class="dv">0</span><span class="op">].</span><span class="fu">gl_Position</span><span class="op">.</span><span class="fu">xyz</span><span class="op">;</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> p1 <span class="op">=</span> <span class="bu">gl_TessCoord</span><span class="op">.</span><span class="fu">y</span> <span class="op">*</span> <span class="va">gl_in</span><span class="op">[</span><span class="dv">1</span><span class="op">].</span><span class="fu">gl_Position</span><span class="op">.</span><span class="fu">xyz</span><span class="op">;</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> p2 <span class="op">=</span> <span class="bu">gl_TessCoord</span><span class="op">.</span><span class="fu">z</span> <span class="op">*</span> <span class="va">gl_in</span><span class="op">[</span><span class="dv">2</span><span class="op">].</span><span class="fu">gl_Position</span><span class="op">.</span><span class="fu">xyz</span><span class="op">;</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> pos <span class="op">=</span> p0 <span class="op">+</span> p1 <span class="op">+</span> p2<span class="op">;</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Interpolate UV coordinates and sample displacement</span></span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>    TexCoord <span class="op">=</span> <span class="bu">gl_TessCoord</span><span class="op">.</span><span class="fu">x</span> <span class="op">*</span> v_TexCoord<span class="op">[</span><span class="dv">0</span><span class="op">]</span> <span class="op">+</span> </span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>               <span class="bu">gl_TessCoord</span><span class="op">.</span><span class="fu">y</span> <span class="op">*</span> v_TexCoord<span class="op">[</span><span class="dv">1</span><span class="op">]</span> <span class="op">+</span> </span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>               <span class="bu">gl_TessCoord</span><span class="op">.</span><span class="fu">z</span> <span class="op">*</span> v_TexCoord<span class="op">[</span><span class="dv">2</span><span class="op">];</span></span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> displacement <span class="op">=</span> <span class="bu">texture</span><span class="op">(</span>u_DisplacementMap<span class="op">,</span> TexCoord<span class="op">).</span><span class="fu">r</span><span class="op">;</span></span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a>    pos<span class="op">.</span><span class="fu">y</span> <span class="op">+=</span> displacement <span class="op">*</span> <span class="fl">10.0</span><span class="op">;</span></span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a>    <span class="bu">gl_Position</span> <span class="op">=</span> u_ModelViewProjection <span class="op">*</span> <span class="dt">vec4</span><span class="op">(</span>pos<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>Using fractional spacing (such as
+<code>fractional_odd_spacing</code>) in the layout qualifier ensures
+that new triangles transition smoothly from zero size as the camera
+approaches, eliminating discrete mesh popping.</p>
+<h2 id="modern-gpu-driven-lod-selection">Modern GPU-Driven LOD
+Selection</h2>
+<p>In high-performance OpenGL rendering engines, LOD selection can be
+offloaded entirely to GPU compute shaders. By using Compute Shaders
+paired with Indirect Drawing functions like
+<code>glDrawElementsIndirect</code>, the GPU can perform bounding-sphere
+visibility testing, frustum culling, and distance evaluation in parallel
+across thousands of instances. The compute shader writes the appropriate
+index offsets and instance counts directly into a
+<code>GL_DRAW_INDIRECT_BUFFER</code>, eliminating CPU-GPU
+synchronization stalls and achieving fully automated, high-throughput
+LOD selection.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

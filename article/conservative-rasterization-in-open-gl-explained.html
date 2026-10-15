@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conservative Rasterization in OpenGL Explained - opengl</title>
+    <meta name="description" content="This article explores conservative rasterization, a specialized GPU rendering technique that alters the standard rasterization pipeline to ensure every pixel touched by a geometric primitive generates a fragment. It covers how conservative rasterization d">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/conservative-rasterization-in-open-gl-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Conservative Rasterization in OpenGL Explained - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/conservative-rasterization-in-open-gl-explained" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explores conservative rasterization, a specialized GPU rendering technique that alters the standard rasterization pipeline to ensure every pixel touched by a geometric primitive generates a fragment. It covers how conservative rasterization d" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="conservative-rasterization-in-opengl-explained">Conservative
+Rasterization in OpenGL Explained</h1>
+<p>This article explores conservative rasterization, a specialized GPU
+rendering technique that alters the standard rasterization pipeline to
+ensure every pixel touched by a geometric primitive generates a
+fragment. It covers how conservative rasterization differs from standard
+sample-point rasterization, its primary use cases in computer
+graphics—such as voxelization and collision detection—and the specific
+OpenGL extensions used to enable and configure this feature across
+different hardware vendors.</p>
+<h3
+id="understanding-standard-vs-conservative-rasterization">Understanding
+Standard vs. Conservative Rasterization</h3>
+<p>In the standard OpenGL rasterization pipeline, a primitive (such as a
+triangle) produces a fragment only if its area covers a specific sample
+point within the pixel grid—typically the exact center of the pixel. If
+a triangle slices through a corner or edge of a pixel without covering
+this central sample point, the pixel is ignored. While this approach
+prevents pixel double-counting in standard rasterization, it creates
+gaps when complete geometric coverage is required.</p>
+<p>Conservative rasterization alters this rule. Instead of testing
+discrete sample points, it tests the entire area of the pixel. If any
+part of a primitive touches or intersects any portion of the pixel
+footprint, the GPU generates a fragment.</p>
+<p>Hardware generally implements this through two variations:</p>
+<ul>
+<li><strong>Overestimated Conservative Rasterization:</strong> Generates
+a fragment if the primitive touches any part of the pixel area. This is
+the default and most widely used mode.</li>
+<li><strong>Underestimated Conservative Rasterization:</strong>
+Generates a fragment only if the primitive completely encloses the
+entire pixel area.</li>
+</ul>
+<h3 id="common-use-cases">Common Use Cases</h3>
+<p>Conservative rasterization is critical for rendering and
+computational algorithms that cannot tolerate false negatives:</p>
+<ul>
+<li><strong>GPU Voxelization:</strong> Converting 3D surface meshes into
+regular 3D grid volumes (voxels) without missing thin geometry or
+surface cracks.</li>
+<li><strong>Occlusion Culling:</strong> Safely determining whether
+objects are hidden without risking false culling of visible
+geometry.</li>
+<li><strong>Collision Detection:</strong> Ensuring that geometric
+contact is never missed due to sampling blind spots.</li>
+<li><strong>Shadow Mapping:</strong> Eliminating light-leaking artifacts
+in techniques like deep shadow maps or cascaded shadow maps.</li>
+</ul>
+<h3 id="opengl-extensions-for-conservative-rasterization">OpenGL
+Extensions for Conservative Rasterization</h3>
+<p>OpenGL does not include conservative rasterization as part of its
+core specification; instead, it is exposed through vendor-specific
+extensions.</p>
+<h4 id="1-nvidia-gl_nv_conservative_raster">1. NVIDIA:
+<code>GL_NV_conservative_raster</code></h4>
+<p>NVIDIA introduced the primary framework for conservative
+rasterization in OpenGL. The <code>GL_NV_conservative_raster</code>
+extension enables overestimated conservative rasterization.</p>
+<p>To use it, applications verify support and enable the state:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>glEnable<span class="op">(</span>GL_CONSERVATIVE_RASTERIZATION_NV<span class="op">);</span></span></code></pre></div>
+<p>This extension also introduces functions to manage subpixel
+precision:</p>
+<ul>
+<li><code>glSubpixelPrecisionBiasNV(GLuint xbits, GLuint ybits)</code>:
+Sets a bias to adjust the precision snapping to accommodate conservative
+bounds across hardware implementations.</li>
+</ul>
+<p>NVIDIA also provides complementary extensions:</p>
+<ul>
+<li><code>GL_NV_conservative_raster_dilate</code>: Extends the
+conservative rasterizer to artificially dilate polygons in screen space
+using <code>glConservativeRasterDilateNV()</code>.</li>
+<li><code>GL_NV_conservative_raster_pre_snap_triangles</code>: Ensures
+that triangles are evaluated conservatively before vertex snapping
+occurs, avoiding geometric inaccuracies.</li>
+<li><code>GL_NV_conservative_raster_underestimation</code>: Exposes the
+underestimated rasterization mode.</li>
+</ul>
+<h4 id="2-intel-gl_intel_conservative_rasterization">2. Intel:
+<code>GL_INTEL_conservative_rasterization</code></h4>
+<p>Intel provides conservative rasterization on supported Gen hardware
+via the <code>GL_INTEL_conservative_rasterization</code> extension.</p>
+<p>Similar to the NVIDIA extension, it is toggled as an OpenGL
+state:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>glEnable<span class="op">(</span>GL_CONSERVATIVE_RASTERIZATION_INTEL<span class="op">);</span></span></code></pre></div>
+<p>When enabled, any pixel whose square area is touched by a triangle
+generates a fragment. This extension operates similarly to the
+overestimated mode of the NVIDIA counterpart.</p>
+<h3 id="practical-implementation-considerations">Practical
+Implementation Considerations</h3>
+<ul>
+<li><strong>Depth Values:</strong> In conservative rasterization,
+fragments generated along the outer edges of a triangle lie outside the
+triangle's actual mathematical boundary. By default, extrapolated depth
+values may exceed standard <code>[0, 1]</code> ranges or cause
+unexpected clipping, requiring careful handling or clamping via depth
+bounds.</li>
+<li><strong>Fragment Shader Invocations:</strong> Conservative
+rasterization significantly increases fragment shader invocations
+because boundary pixels that would normally be skipped are processed. To
+maintain real-time performance, it is often paired with lightweight
+fragment shaders or empty fragment shaders using image load/store
+operations.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

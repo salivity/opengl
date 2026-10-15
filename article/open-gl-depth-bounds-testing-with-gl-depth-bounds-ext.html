@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Depth Bounds Testing with glDepthBoundsEXT - opengl</title>
+    <meta name="description" content="The depth bounds test, exposed via the GLEXTdepthboundstest extension and the glDepthBoundsEXT function, is an optimization feature in OpenGL that discards fragments based on the existing depth buffer content. By restricting rendering operations to an exp">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-depth-bounds-testing-with-gl-depth-bounds-ext">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Depth Bounds Testing with glDepthBoundsEXT - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-depth-bounds-testing-with-gl-depth-bounds-ext" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The depth bounds test, exposed via the GLEXTdepthboundstest extension and the glDepthBoundsEXT function, is an optimization feature in OpenGL that discards fragments based on the existing depth buffer content. By restricting rendering operations to an exp" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-depth-bounds-testing-with-gldepthboundsext">OpenGL Depth
+Bounds Testing with glDepthBoundsEXT</h1>
+<p>The depth bounds test, exposed via the
+<code>GL_EXT_depth_bounds_test</code> extension and the
+<code>glDepthBoundsEXT</code> function, is an optimization feature in
+OpenGL that discards fragments based on the existing depth buffer
+content. By restricting rendering operations to an explicit depth range
+<span class="math inline">\([z_{min}, z_{max}]\)</span> in window
+coordinates, the GPU can bypass expensive rasterization, fragment
+shading, and blending stages for any pixel whose current depth value
+lies outside this window. This article explains the mechanics of the
+depth bounds test, how it interacts with the graphics pipeline, and how
+it is applied to eliminate redundant raster workload.</p>
+<h2 id="mechanics-of-the-depth-bounds-test">Mechanics of the Depth
+Bounds Test</h2>
+<p>Unlike standard depth testing (<code>glDepthFunc</code>), which
+evaluates an incoming fragment's depth against the value currently
+stored in the depth buffer, the depth bounds test evaluates the
+<strong>existing depth buffer value</strong> at the fragment's screen
+coordinates against a predefined numerical interval.</p>
+<p>The test is configured using:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>glEnable<span class="op">(</span>GL_DEPTH_BOUNDS_TEST_EXT<span class="op">);</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>glDepthBoundsEXT<span class="op">(</span>clamp<span class="op">(</span>zmin<span class="op">,</span> <span class="fl">0.0</span><span class="op">,</span> <span class="fl">1.0</span><span class="op">),</span> clamp<span class="op">(</span>zmax<span class="op">,</span> <span class="fl">0.0</span><span class="op">,</span> <span class="fl">1.0</span><span class="op">));</span></span></code></pre></div>
+<p>During fragment processing, the GPU queries the value <span
+class="math inline">\(z_{stored}\)</span> already present in the depth
+buffer at <span class="math inline">\((x, y)\)</span>. If the
+condition:</p>
+<p><span class="math display">\[z_{min} \le z_{stored} \le
+z_{max}\]</span></p>
+<p>evaluates to false, the fragment fails the depth bounds test and is
+discarded immediately. The incoming fragment's own generated depth value
+does not affect this test.</p>
+<h2 id="how-it-prevents-raster-and-shading-work">How it Prevents Raster
+and Shading Work</h2>
+<p>The primary architectural advantage of <code>glDepthBoundsEXT</code>
+is its capability to cull pixel processing before or during early
+pipeline stages:</p>
+<ol type="1">
+<li><strong>Bypassing Fragment Shaders (Early-Z Integration):</strong>
+When hardware-level early depth testing is active, the GPU evaluates
+depth operations prior to invoking the fragment shader. Because the
+depth bounds test relies solely on <span
+class="math inline">\(z_{stored}\)</span>, modern rasterizers can
+evaluate the bounds condition concurrently with or prior to standard
+Early-Z tests. Fragments falling outside the active window are killed
+before fragment shader execution, saving shading cycles and texture
+bandwidth.</li>
+<li><strong>Hierarchical-Z (Hi-Z) Culling:</strong> Modern GPUs organize
+depth into low-resolution tiles (Hierarchical Z). If a tile's minimum
+and maximum stored depths fall entirely outside <span
+class="math inline">\([z_{min}, z_{max}]\)</span>, the GPU rasterizer
+can reject the entire tile at the coarse raster stage. This prevents
+fine-grained rasterization and eliminates subsequent per-fragment
+operations altogether.</li>
+<li><strong>Bandwidth Reduction:</strong> Fragments discarded by the
+depth bounds test perform no color buffer writes, no stencil operations,
+and no depth updates, conserving memory bus bandwidth.</li>
+</ol>
+<h2 id="primary-use-case-deferred-shading-light-volumes">Primary Use
+Case: Deferred Shading Light Volumes</h2>
+<p>The most prominent application of <code>glDepthBoundsEXT</code> is
+optimizing light volume rendering in deferred lighting pipelines.</p>
+<p>When rendering a localized light source (such as a point light or
+spotlight):</p>
+<ul>
+<li>The light affects geometry only within a finite 3D bounding
+volume.</li>
+<li>By projecting the world-space bounding volume of the light onto the
+camera's view axis, the application calculates near and far depth
+extents <span class="math inline">\([z_{min}, z_{max}]\)</span> in
+screen space.</li>
+<li>Setting <code>glDepthBoundsEXT</code> to these extents guarantees
+that light volume geometry is only shaded where the underlying scene
+geometry physically intersects the depth range of the light.</li>
+</ul>
+<p>Without depth bounds testing, pixels covering background or
+foreground surfaces that lie outside the light's radius would still
+execute the lighting fragment shader unless rejected by two-pass stencil
+volume techniques. <code>glDepthBoundsEXT</code> replaces complex
+stencil setups with a single, highly efficient depth-rejection state
+change.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

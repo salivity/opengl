@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spherical Harmonics Irradiance in OpenGL Uniforms - opengl</title>
+    <meta name="description" content="Spherical harmonics (SH) lighting projects low-frequency environment lighting onto an orthonormal sphere basis, reducing complex incoming radiance into a tiny set of scalar coefficients. Because Lambertian diffuse reflection behaves as an effective low-pa">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/spherical-harmonics-irradiance-in-open-gl-uniforms">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Spherical Harmonics Irradiance in OpenGL Uniforms - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/spherical-harmonics-irradiance-in-open-gl-uniforms" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Spherical harmonics (SH) lighting projects low-frequency environment lighting onto an orthonormal sphere basis, reducing complex incoming radiance into a tiny set of scalar coefficients. Because Lambertian diffuse reflection behaves as an effective low-pa" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="spherical-harmonics-irradiance-in-opengl-uniforms">Spherical
+Harmonics Irradiance in OpenGL Uniforms</h1>
+<p>Spherical harmonics (SH) lighting projects low-frequency environment
+lighting onto an orthonormal sphere basis, reducing complex incoming
+radiance into a tiny set of scalar coefficients. Because Lambertian
+diffuse reflection behaves as an effective low-pass filter, developers
+can discard higher-frequency bands and represent entire ambient lighting
+environments using only the first nine coefficients per color channel.
+In modern OpenGL pipelines, this mathematical property allows irradiance
+fields to be packed into compact uniform arrays or symmetric matrices,
+enabling high-performance, textureless ambient diffuse lighting computed
+through a handful of vector operations in the fragment shader.</p>
+<h3 id="the-low-frequency-nature-of-irradiance">The Low-Frequency Nature
+of Irradiance</h3>
+<p>A diffuse surface integrates incoming radiance over a hemisphere
+weighted by the cosine of the angle between the incoming light and the
+surface normal. In their seminal 2001 work, Ravi Ramamoorthi and Pat
+Hanrahan demonstrated that this cosine convolution acts as an aggressive
+low-pass filter.</p>
+<p>Because higher-frequency light variations are smoothed out during
+integration:</p>
+<ul>
+<li>Over 99% of the reflected diffuse energy is captured using only the
+first three spherical harmonic bands (<span class="math inline">\(l = 0,
+1, 2\)</span>).</li>
+<li>The basis requires <span class="math inline">\(n = (l +
+1)^2\)</span> basis functions, meaning only <span
+class="math inline">\(3^2 = 9\)</span> coefficients are required per
+color channel.</li>
+<li>For standard RGB lighting, this equates to exactly 27 floating-point
+values (108 bytes).</li>
+</ul>
+<h3 id="encoding-coefficients-for-opengl-uniforms">Encoding Coefficients
+for OpenGL Uniforms</h3>
+<p>Precomputing the SH coefficients involves projecting the environment
+map or light probes against the first nine spherical harmonic basis
+functions <span class="math inline">\(Y_{lm}(\theta, \phi)\)</span>.
+Once calculated, these values are combined with the cosine convolution
+weights (the diffuse reconstruction factors <span
+class="math inline">\(A_l\)</span>) directly on the CPU.</p>
+<p>In OpenGL, passing 27 floats can be handled in two main formats:</p>
+<h4 id="1-the-vector-array-approach">1. The Vector Array Approach</h4>
+<p>The simplest configuration stores the pre-scaled coefficients in a
+Uniform Buffer Object (UBO) or standard uniform array:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span> <span class="op">(</span><span class="dt">std140</span><span class="op">)</span> <span class="kw">uniform</span> SphericalHarmonics <span class="op">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> shData<span class="op">[</span><span class="dv">7</span><span class="op">];</span> <span class="co">// Packed array holding 9 vec3s across std140-aligned vectors</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
+<p>Alternatively, developers can declare an array of nine 3D vectors
+when alignment overhead is managed manually:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">vec3</span> u_SH<span class="op">[</span><span class="dv">9</span><span class="op">];</span></span></code></pre></div>
+<h4 id="2-the-symmetric-matrix-representation">2. The Symmetric Matrix
+Representation</h4>
+<p>Ramamoorthi and Hanrahan also showed that the quadratic expansion of
+order-3 SH irradiance can be rewritten into a <span
+class="math inline">\(4 \times 4\)</span> symmetric matrix for each
+color channel.</p>
+<p>The irradiance <span class="math inline">\(E(n)\)</span> for a
+surface normal <span class="math inline">\(n = (x, y, z, 1)^T\)</span>
+is evaluated as:</p>
+<p><span class="math display">\[E(n) = n^T M n\]</span></p>
+<p>This transforms the 9 coefficients into a matrix <span
+class="math inline">\(M\)</span> where off-diagonal and diagonal terms
+represent the interactions of the normal components. In OpenGL, this
+requires three <code>mat4</code> uniforms (<code>u_MR</code>,
+<code>u_MG</code>, <code>u_MB</code>), or a single compact array:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">mat4</span> u_SHMatrices<span class="op">[</span><span class="dv">3</span><span class="op">];</span> <span class="co">// One matrix per color channel</span></span></code></pre></div>
+<h3 id="fragment-shader-evaluation">Fragment Shader Evaluation</h3>
+<p>Evaluating the irradiance in the fragment shader does not require any
+expensive trigonometric operations. Because the basis functions for
+<span class="math inline">\(l \le 2\)</span> are simple polynomials of
+the Cartesian coordinates <span class="math inline">\((x, y, z)\)</span>
+of the unit normal vector, evaluation resolves to basic arithmetic.</p>
+<p>For the direct vector formulation, the lighting calculation expands
+as:</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> <span class="fu">EvaluateSH</span><span class="op">(</span><span class="dt">vec3</span> n<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Basis evaluation constants</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">const</span> <span class="dt">float</span> c1 <span class="op">=</span> <span class="fl">0.429043</span><span class="op">;</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">const</span> <span class="dt">float</span> c2 <span class="op">=</span> <span class="fl">0.511664</span><span class="op">;</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">const</span> <span class="dt">float</span> c3 <span class="op">=</span> <span class="fl">0.743125</span><span class="op">;</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">const</span> <span class="dt">float</span> c4 <span class="op">=</span> <span class="fl">0.886227</span><span class="op">;</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">const</span> <span class="dt">float</span> c5 <span class="op">=</span> <span class="fl">0.247708</span><span class="op">;</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Evaluate diffuse irradiance</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> c4 <span class="op">*</span> u_SH<span class="op">[</span><span class="dv">0</span><span class="op">]</span> </span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>         <span class="op">+</span> <span class="fl">2.0</span> <span class="op">*</span> c2 <span class="op">*</span> <span class="op">(</span>u_SH<span class="op">[</span><span class="dv">3</span><span class="op">]</span> <span class="op">*</span> n<span class="op">.</span><span class="fu">x</span> <span class="op">+</span> u_SH<span class="op">[</span><span class="dv">1</span><span class="op">]</span> <span class="op">*</span> n<span class="op">.</span><span class="fu">y</span> <span class="op">+</span> u_SH<span class="op">[</span><span class="dv">2</span><span class="op">]</span> <span class="op">*</span> n<span class="op">.</span><span class="fu">z</span><span class="op">)</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>         <span class="op">+</span> c1 <span class="op">*</span> <span class="op">(</span>u_SH<span class="op">[</span><span class="dv">4</span><span class="op">]</span> <span class="op">*</span> <span class="op">(</span>n<span class="op">.</span><span class="fu">x</span> <span class="op">*</span> n<span class="op">.</span><span class="fu">y</span><span class="op">)</span> <span class="op">+</span> u_SH<span class="op">[</span><span class="dv">5</span><span class="op">]</span> <span class="op">*</span> <span class="op">(</span>n<span class="op">.</span><span class="fu">y</span> <span class="op">*</span> n<span class="op">.</span><span class="fu">z</span><span class="op">)</span> <span class="op">+</span> u_SH<span class="op">[</span><span class="dv">7</span><span class="op">]</span> <span class="op">*</span> <span class="op">(</span>n<span class="op">.</span><span class="fu">x</span> <span class="op">*</span> n<span class="op">.</span><span class="fu">z</span><span class="op">))</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>         <span class="op">+</span> c3 <span class="op">*</span> u_SH<span class="op">[</span><span class="dv">6</span><span class="op">]</span> <span class="op">*</span> <span class="op">(</span>n<span class="op">.</span><span class="fu">z</span> <span class="op">*</span> n<span class="op">.</span><span class="fu">z</span> <span class="op">-</span> <span class="fl">1.0</span> <span class="op">/</span> <span class="fl">3.0</span><span class="op">)</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>         <span class="op">+</span> c5 <span class="op">*</span> u_SH<span class="op">[</span><span class="dv">8</span><span class="op">]</span> <span class="op">*</span> <span class="op">(</span>n<span class="op">.</span><span class="fu">x</span> <span class="op">*</span> n<span class="op">.</span><span class="fu">x</span> <span class="op">-</span> n<span class="op">.</span><span class="fu">y</span> <span class="op">*</span> n<span class="op">.</span><span class="fu">y</span><span class="op">);</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>For the matrix formulation, evaluation is even more direct:</p>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> <span class="fu">EvaluateSHMatrix</span><span class="op">(</span><span class="dt">vec3</span> n<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> v <span class="op">=</span> <span class="dt">vec4</span><span class="op">(</span>n<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> <span class="dt">vec3</span><span class="op">(</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>        <span class="bu">dot</span><span class="op">(</span>v<span class="op">,</span> u_SHMatrices<span class="op">[</span><span class="dv">0</span><span class="op">]</span> <span class="op">*</span> v<span class="op">),</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>        <span class="bu">dot</span><span class="op">(</span>v<span class="op">,</span> u_SHMatrices<span class="op">[</span><span class="dv">1</span><span class="op">]</span> <span class="op">*</span> v<span class="op">),</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>        <span class="bu">dot</span><span class="op">(</span>v<span class="op">,</span> u_SHMatrices<span class="op">[</span><span class="dv">2</span><span class="op">]</span> <span class="op">*</span> v<span class="op">)</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>    <span class="op">);</span></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="performance-advantages">Performance Advantages</h3>
+<ul>
+<li><strong>Zero Texture Bandwidth:</strong> Traditional ambient diffuse
+lighting requires sampling from a prefiltered cubemap, consuming texture
+units, cache bandwidth, and memory storage. SH uniforms completely
+eliminate texture sampling for ambient diffuse terms.</li>
+<li><strong>Ultra-Low Memory Footprint:</strong> At 108 bytes per probe,
+thousands of light probes can be loaded into an OpenGL Uniform Buffer
+Object (UBO) or Shader Storage Buffer Object (SSBO), enabling volumetric
+light grids with minimal VRAM consumption.</li>
+<li><strong>ALU Bound and Vectorized:</strong> Modern GPUs execute dot
+products and fused multiply-adds (MAD/FMA) faster than memory reads,
+making SH irradiance evaluation vastly more compute-efficient and
+cache-friendly than fetching from mipmapped textures.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

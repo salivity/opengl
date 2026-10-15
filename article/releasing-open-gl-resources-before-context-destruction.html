@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Releasing OpenGL Resources Before Context Destruction - opengl</title>
+    <meta name="description" content="Properly releasing OpenGL resources prior to context destruction ensures that GPU memory is reclaimed, dangling driver references are avoided, and application shutdown occurs without crashes or undefined behavior. While modern operating systems and displa">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/releasing-open-gl-resources-before-context-destruction">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Releasing OpenGL Resources Before Context Destruction - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/releasing-open-gl-resources-before-context-destruction" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Properly releasing OpenGL resources prior to context destruction ensures that GPU memory is reclaimed, dangling driver references are avoided, and application shutdown occurs without crashes or undefined behavior. While modern operating systems and displa" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="releasing-opengl-resources-before-context-destruction">Releasing
+OpenGL Resources Before Context Destruction</h1>
+<p>Properly releasing OpenGL resources prior to context destruction
+ensures that GPU memory is reclaimed, dangling driver references are
+avoided, and application shutdown occurs without crashes or undefined
+behavior. While modern operating systems and display drivers reclaim
+allocated memory upon process termination, robust applications must
+explicitly clean up resources when tearing down contexts dynamically or
+restarting graphics subsystems. The teardown process requires binding
+the context, unbinding current state, explicitly deleting generated
+handles, flushing the command pipeline, detaching the context from the
+executing thread, and finally invoking platform-specific destruction
+calls.</p>
+<h3 id="1-make-the-context-current">1. Make the Context Current</h3>
+<p>OpenGL operations only affect the context active on the calling
+thread. Before executing any cleanup commands, verify that the rendering
+context to be destroyed is bound to the thread:</p>
+<ul>
+<li><strong>Windows (WGL):</strong> Call
+<code>wglMakeCurrent(hdc, hglrc)</code>.</li>
+<li><strong>Linux (GLX):</strong> Call
+<code>glXMakeCurrent(display, drawable, context)</code>.</li>
+<li><strong>Cross-Platform / Embedded (EGL):</strong> Call
+<code>eglMakeCurrent(display, drawSurface, readSurface, context)</code>.</li>
+</ul>
+<p>Attempting to delete resources without an active context results in
+no-op commands or silent failure, leaving GPU allocations orphaned until
+driver-level cleanup.</p>
+<h3 id="2-unbind-active-pipeline-state">2. Unbind Active Pipeline
+State</h3>
+<p>Dangling bindings can lead to driver-side reference locks or
+validation errors. Reset global pipeline targets back to zero:</p>
+<ul>
+<li>Unbind the active Vertex Array Object:
+<code>glBindVertexArray(0)</code></li>
+<li>Unbind the active shader program: <code>glUseProgram(0)</code></li>
+<li>Unbind framebuffers:
+<code>glBindFramebuffer(GL_FRAMEBUFFER, 0)</code></li>
+<li>Unbind buffer targets:
+<code>glBindBuffer(GL_ARRAY_BUFFER, 0)</code>,
+<code>glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)</code>, and any uniform
+or storage buffer bindings.</li>
+<li>Unbind active texture units across all used samplers.</li>
+</ul>
+<h3 id="3-delete-opengl-objects">3. Delete OpenGL Objects</h3>
+<p>Iterate through all allocated resource IDs and issue their
+corresponding deletion commands. While deletion can generally occur in
+any order, a bottom-up approach prevents dangling dependencies:</p>
+<ul>
+<li><strong>Framebuffers and Renderbuffers:</strong>
+<code>glDeleteFramebuffers()</code> and
+<code>glDeleteRenderbuffers()</code>.</li>
+<li><strong>Vertex Array Objects (VAOs):</strong>
+<code>glDeleteVertexArrays()</code>.</li>
+<li><strong>Buffers:</strong> <code>glDeleteBuffers()</code> for VBOs,
+EBOs, UBOs, and SSBOs.</li>
+<li><strong>Textures and Samplers:</strong>
+<code>glDeleteTextures()</code> and
+<code>glDeleteSamplers()</code>.</li>
+<li><strong>Shaders and Programs:</strong> Detach shaders using
+<code>glDetachShader()</code>, then delete them with
+<code>glDeleteShader()</code>, and delete compiled programs with
+<code>glDeleteProgram()</code>.</li>
+<li><strong>Queries and Sync Objects:</strong>
+<code>glDeleteQueries()</code> and <code>glDeleteSync()</code>.</li>
+</ul>
+<h3 id="4-flush-the-command-queue">4. Flush the Command Queue</h3>
+<p>OpenGL commands are executed asynchronously. Calling deletion
+functions merely queues the requests. To ensure all deletion commands
+are received and executed by the GPU before the context is torn down,
+invoke:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>glFinish<span class="op">();</span></span></code></pre></div>
+<p>While <code>glFlush()</code> signals the driver to send commands over
+the bus, <code>glFinish()</code> blocks execution until all queued
+commands complete, ensuring all resources are physically freed from
+video memory.</p>
+<h3 id="5-detach-the-context-from-the-thread">5. Detach the Context from
+the Thread</h3>
+<p>Once all internal GL resources are deleted, release the context
+binding from the current thread by passing null parameters to the
+platform-specific binding function:</p>
+<ul>
+<li><strong>WGL:</strong> <code>wglMakeCurrent(NULL, NULL)</code></li>
+<li><strong>GLX:</strong>
+<code>glXMakeCurrent(display, None, NULL)</code></li>
+<li><strong>EGL:</strong>
+<code>eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT)</code></li>
+</ul>
+<h3 id="6-destroy-the-context-and-platform-handles">6. Destroy the
+Context and Platform Handles</h3>
+<p>With the context unlinked and empty of resources, destroy the context
+itself via the platform API:</p>
+<ul>
+<li><strong>WGL:</strong> <code>wglDeleteContext(hglrc)</code></li>
+<li><strong>GLX:</strong>
+<code>glXDestroyContext(display, context)</code></li>
+<li><strong>EGL:</strong>
+<code>eglDestroyContext(display, context)</code></li>
+</ul>
+<p>After context destruction, safely destroy any associated window
+surfaces, device contexts, or windowing system resources (e.g.,
+<code>ReleaseDC</code>, <code>XDestroyWindow</code>, or window library
+functions like <code>glfwDestroyWindow</code>).</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

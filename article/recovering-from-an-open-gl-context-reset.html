@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recovering from an OpenGL Context Reset - opengl</title>
+    <meta name="description" content="When an OpenGL context is lost due to a GPU hang, driver crash, or operating system Timeout Detection and Recovery (TDR) event, the application must execute a strict sequence of restoration procedures to resume rendering. This guide outlines the mandatory">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/recovering-from-an-open-gl-context-reset">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Recovering from an OpenGL Context Reset - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/recovering-from-an-open-gl-context-reset" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="When an OpenGL context is lost due to a GPU hang, driver crash, or operating system Timeout Detection and Recovery (TDR) event, the application must execute a strict sequence of restoration procedures to resume rendering. This guide outlines the mandatory" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="recovering-from-an-opengl-context-reset">Recovering from an
+OpenGL Context Reset</h1>
+<p>When an OpenGL context is lost due to a GPU hang, driver crash, or
+operating system Timeout Detection and Recovery (TDR) event, the
+application must execute a strict sequence of restoration procedures to
+resume rendering. This guide outlines the mandatory steps required to
+recover from a context reset, including querying the reset status,
+destroying the invalidated context, creating a new context, and fully
+rebuilding all GPU resources and pipeline states.</p>
+<h3 id="1-detecting-the-context-reset">1. Detecting the Context
+Reset</h3>
+<p>Before recovery can begin, the client application must detect that a
+reset occurred. When using robust contexts (via
+<code>GL_ARB_robustness</code> or core OpenGL 4.5+):</p>
+<ul>
+<li>Periodically call <code>glGetGraphicsResetStatus()</code>.</li>
+<li>Check for return values other than <code>GL_NO_ERROR</code>,
+specifically <code>GL_GUILTY_CONTEXT_RESET</code>,
+<code>GL_INNOCENT_CONTEXT_RESET</code>, or
+<code>GL_UNKNOWN_CONTEXT_RESET</code>.</li>
+<li>Once a non-zero status is returned, treat the current context as
+dead; no further drawing commands will be executed by the GPU.</li>
+</ul>
+<h3 id="2-teardown-and-platform-context-destruction">2. Teardown and
+Platform Context Destruction</h3>
+<p>Because a context reset invalidates all associated driver-side and
+GPU-side allocations, the application cannot simply clear and reuse the
+existing context handle.</p>
+<ul>
+<li>Detach the lost context from the rendering thread using the platform
+API (e.g., <code>wglMakeCurrent(NULL, NULL)</code>,
+<code>glXMakeCurrent(..., None)</code>, or
+<code>eglMakeCurrent(..., EGL_NO_CONTEXT)</code>).</li>
+<li>Explicitly destroy the context using the platform-specific call
+(<code>wglDeleteContext</code>, <code>glXDestroyContext</code>, or
+<code>eglDestroyContext</code>).</li>
+<li>If the underlying window surface was invalidated by the OS
+compositor during the crash, destroy and re-create the surface or swap
+chain.</li>
+</ul>
+<h3 id="3-recreating-the-opengl-context">3. Recreating the OpenGL
+Context</h3>
+<ul>
+<li>Request a new OpenGL context from the platform API using the
+original context attributes (pixel format, OpenGL version, profile, and
+robustness flags).</li>
+<li>Bind the newly created context to the render thread.</li>
+<li>Re-initialize your OpenGL function pointer loader (e.g., GLAD, GLEW)
+if your platform or loader binds function addresses to specific context
+instances.</li>
+</ul>
+<h3 id="4-re-uploading-all-gpu-resources">4. Re-uploading All GPU
+Resources</h3>
+<p>A context reset completely purges video memory associated with the
+application. The client must reallocate and re-upload all persistent
+assets from host memory or disk:</p>
+<ul>
+<li><strong>Textures and Samplers:</strong> Generate new texture objects
+(<code>glGenTextures</code>), reallocate storage
+(<code>glTexStorage*</code> or <code>glTexImage*</code>), and re-upload
+pixel data alongside mipmaps.</li>
+<li><strong>Buffer Objects:</strong> Re-create Vertex Buffer Objects
+(VBOs), Index Buffer Objects (IBOs), Uniform Buffer Objects (UBOs), and
+Shader Storage Buffer Objects (SSBOs). Re-upload their contents from
+CPU-side memory caches.</li>
+<li><strong>Shaders and Programs:</strong> Recompile all vertex,
+fragment, compute, and geometry shaders. Re-link all program objects and
+program pipelines, and re-query uniform locations if dynamic reflection
+was used.</li>
+<li><strong>Vertex Array Objects (VAOs):</strong> Re-generate VAOs and
+re-bind vertex buffer formats, attributes, and element buffer
+associations.</li>
+<li><strong>Framebuffers (FBOs):</strong> Generate new Framebuffer and
+Renderbuffer objects, allocating storage and re-attaching rebuilt
+textures or depth/stencil renderbuffers.</li>
+</ul>
+<h3 id="5-re-establishing-pipeline-and-global-state">5. Re-establishing
+Pipeline and Global State</h3>
+<p>OpenGL does not persist global machine state across context
+recreation. The default state is re-applied, meaning all
+application-specific configurations must be manually reapplied:</p>
+<ul>
+<li>Re-enable desired capabilities (e.g., <code>GL_DEPTH_TEST</code>,
+<code>GL_BLEND</code>, <code>GL_CULL_FACE</code>,
+<code>GL_STENCIL_TEST</code>).</li>
+<li>Set blending equations and functions (<code>glBlendFunc</code>,
+<code>glBlendEquation</code>).</li>
+<li>Reset depth testing rules (<code>glDepthFunc</code>,
+<code>glDepthMask</code>).</li>
+<li>Re-specify viewport and scissor regions (<code>glViewport</code>,
+<code>glScissor</code>).</li>
+<li>Clear all buffers to clear colors/values to initialize the first
+frame.</li>
+</ul>
+<h3 id="6-synchronizing-application-logic">6. Synchronizing Application
+Logic</h3>
+<ul>
+<li>Invalidate any engine-level cache layers (e.g., internal
+state-trackers that skip redundant <code>glBindTexture</code> or
+<code>glUseProgram</code> calls) to match the true baseline state of the
+fresh context.</li>
+<li>Destroy and regenerate synchronization objects such as
+<code>GLsync</code> fence primitives and timer queries.</li>
+<li>Reset frame counters, frame timers, or presentation pacing systems
+to prevent large delta-time spikes caused by the recovery pause.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fixing Divergent Branching with textureLod in OpenGL - opengl</title>
+    <meta name="description" content="In OpenGL, sampling textures inside non-uniform conditional branches with standard functions like texture() can cause rendering artifacts and undefined behavior. This occurs because the GPU calculates Level of Detail (LoD) using implicit screen-space deri">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/fixing-divergent-branching-with-texture-lod-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Fixing Divergent Branching with textureLod in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/fixing-divergent-branching-with-texture-lod-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In OpenGL, sampling textures inside non-uniform conditional branches with standard functions like texture() can cause rendering artifacts and undefined behavior. This occurs because the GPU calculates Level of Detail (LoD) using implicit screen-space deri" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="fixing-divergent-branching-with-texturelod-in-opengl">Fixing
+Divergent Branching with textureLod in OpenGL</h1>
+<p>In OpenGL, sampling textures inside non-uniform conditional branches
+with standard functions like <code>texture()</code> can cause rendering
+artifacts and undefined behavior. This occurs because the GPU calculates
+Level of Detail (LoD) using implicit screen-space derivatives across
+neighboring fragments in a <span class="math inline">\(2\times2\)</span>
+quad. Using <code>textureLod</code> stabilizes divergent branching by
+providing an explicit mipmap level, removing the need for
+hardware-computed spatial derivatives and ensuring deterministic
+sampling behavior across all execution lanes.</p>
+<h3 id="the-problem-with-implicit-derivatives">The Problem with Implicit
+Derivatives</h3>
+<p>Standard GLSL texture sampling functions (<code>texture</code>,
+<code>textureProj</code>, etc.) rely on the GPU's rasterization
+architecture, which processes fragments in <span
+class="math inline">\(2\times2\)</span> pixel clusters known as quads.
+To select the appropriate mipmap level, the hardware computes implicit
+finite differences between neighboring fragments in the quad using
+hardware equivalents of <code>dFdx</code> and <code>dFdy</code>. This
+calculation establishes the texture coordinate gradient relative to
+screen space.</p>
+<p>When a shader introduces dynamic branching—such as an <code>if</code>
+statement based on a non-uniform condition—neighboring fragments within
+the same quad may take different execution paths. If some fragments
+execute the branch while others do not, the execution lanes for the
+inactive fragments are masked out. Because the gradient calculation
+requires active neighboring data across the entire quad, derivative
+values within the divergent branch become undefined. This typically
+manifests as rapid mipmap switching, severe visual flickering, black
+fringes, or hardware-specific rendering corruption.</p>
+<h3 id="how-texturelod-solves-divergence">How <code>textureLod</code>
+Solves Divergence</h3>
+<p>The <code>textureLod</code> function accepts an explicit LoD
+parameter rather than relying on automatic derivation:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">vec4</span> <span class="bu">textureLod</span><span class="op">(</span>gsampler2D <span class="dt">sampler</span><span class="op">,</span> <span class="dt">vec2</span> P<span class="op">,</span> <span class="dt">float</span> lod<span class="op">);</span></span></code></pre></div>
+<p>By explicitly declaring the target mipmap level (e.g.,
+<code>0.0</code> for full resolution, or a custom precomputed value),
+<code>textureLod</code> bypasses the hardware's automatic gradient
+computation entirely.</p>
+<p>Because spatial derivatives are not evaluated:</p>
+<ol type="1">
+<li><strong>Independent Lane Execution:</strong> Individual fragments in
+a quad can sample textures regardless of the execution state of
+neighboring fragments.</li>
+<li><strong>Deterministic Output:</strong> Every pixel executing the
+branch receives a predictable mipmap level rather than garbage data
+derived from masked or inactive adjacent threads.</li>
+<li><strong>Specification Compliance:</strong> The OpenGL Shading
+Language (GLSL) specification explicitly disallows implicit derivative
+operations in non-uniform flow control; using <code>textureLod</code>
+adheres strictly to valid control flow rules.</li>
+</ol>
+<h3 id="practical-implementation">Practical Implementation</h3>
+<p>When sampling inside conditional statements, replace implicit lookups
+with explicit alternatives:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Unsafe in divergent branches:</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="kw">if</span> <span class="op">(</span>materialID <span class="op">==</span> <span class="dv">2</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    color <span class="op">=</span> <span class="bu">texture</span><span class="op">(</span>diffuseMap<span class="op">,</span> uv<span class="op">);</span> <span class="co">// Undefined behavior if quad diverges</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="co">// Safe in divergent branches:</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="kw">if</span> <span class="op">(</span>materialID <span class="op">==</span> <span class="dv">2</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    color <span class="op">=</span> <span class="bu">textureLod</span><span class="op">(</span>diffuseMap<span class="op">,</span> uv<span class="op">,</span> <span class="fl">0.0</span><span class="op">);</span> <span class="co">// Explicit base level</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>If mipmapping is still required inside a divergent branch, gradients
+can be calculated before the branch executes using <code>dFdx</code> and
+<code>dFdy</code> in uniform flow control, and then passed into
+<code>textureGrad</code>. However, for scenarios where uniform detail or
+a specific mip level is acceptable, <code>textureLod</code> provides the
+most direct and computationally lightweight method to eliminate
+divergence-related sampling artifacts in OpenGL shaders.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

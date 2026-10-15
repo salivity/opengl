@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Depth Mask in Transparent Rendering - opengl</title>
+    <meta name="description" content="In OpenGL, rendering transparent objects correctly requires balancing depth testing with depth writing to prevent visual artifacts. When rendering translucent surfaces, developers use the depth mask function, glDepthMask(GLFALSE), to turn off writes to th">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-depth-mask-in-transparent-rendering">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Depth Mask in Transparent Rendering - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-depth-mask-in-transparent-rendering" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In OpenGL, rendering transparent objects correctly requires balancing depth testing with depth writing to prevent visual artifacts. When rendering translucent surfaces, developers use the depth mask function, glDepthMask(GLFALSE), to turn off writes to th" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-depth-mask-in-transparent-rendering">OpenGL Depth Mask in
+Transparent Rendering</h1>
+<p>In OpenGL, rendering transparent objects correctly requires balancing
+depth testing with depth writing to prevent visual artifacts. When
+rendering translucent surfaces, developers use the depth mask function,
+<code>glDepthMask(GL_FALSE)</code>, to turn off writes to the depth
+buffer while keeping the depth test active. This article explains how
+the depth mask operates at the hardware level, why depth writing breaks
+transparency, and how disabling it preserves the visibility of geometry
+situated behind transparent surfaces.</p>
+<h2 id="the-role-of-the-depth-buffer-and-the-depth-mask">The Role of the
+Depth Buffer and the Depth Mask</h2>
+<p>The OpenGL depth buffer (or Z-buffer) stores depth values for every
+pixel on the screen to determine visibility. During standard rendering,
+each incoming fragment undergoes a depth test: its depth value is
+compared against the value currently stored in the depth buffer. If the
+test passes, the fragment's color is written to the color buffer, and
+its depth value overwrites the existing value in the depth buffer.</p>
+<p>The depth mask controls whether this second step—the write
+operation—takes place. The function <code>glDepthMask</code> accepts a
+boolean parameter:</p>
+<ul>
+<li><code>glDepthMask(GL_TRUE)</code>: Enables writing to the depth
+buffer (default state).</li>
+<li><code>glDepthMask(GL_FALSE)</code>: Disables writing to the depth
+buffer while leaving the current depth buffer data completely
+read-only.</li>
+</ul>
+<h2
+id="why-transparent-render-passes-fail-with-depth-writes-enabled">Why
+Transparent Render Passes Fail with Depth Writes Enabled</h2>
+<p>When drawing opaque objects, writing to the depth buffer is necessary
+to prevent objects that are further away from drawing over objects that
+are closer. However, transparent objects allow light to pass through,
+meaning any geometry located behind a transparent surface must remain
+visible.</p>
+<p>If a transparent fragment writes its depth to the depth buffer:</p>
+<ol type="1">
+<li>It registers itself as the closest surface for that pixel.</li>
+<li>Any subsequent fragments processed behind that transparent surface
+will fail the depth test.</li>
+<li>Those background fragments will be discarded entirely, creating an
+unnatural "cutout" artifact where objects behind transparent surfaces
+vanish instead of being blended.</li>
+</ol>
+<h2 id="how-gldepthmaskgl_false-solves-the-problem">How
+<code>glDepthMask(GL_FALSE)</code> Solves the Problem</h2>
+<p>Setting <code>glDepthMask(GL_FALSE)</code> decouples the depth test
+from the depth write operation. During a transparent render pass:</p>
+<ol type="1">
+<li><strong>Depth Testing Stays Active:</strong> The transparent
+fragment's depth is still compared against the depth buffer. If an
+opaque object is in front of the transparent surface, the transparent
+fragment fails the test and is discarded, preventing it from rendering
+in front of solid walls or objects.</li>
+<li><strong>Color Blending Occurs:</strong> If the fragment passes the
+depth test, it proceeds to the blending stage (configured via
+<code>glBlendFunc</code>), combining its color with the pixels already
+in the color buffer.</li>
+<li><strong>Depth Buffer Remains Unaltered:</strong> Because the depth
+mask is set to false, the fragment's depth value is never written to the
+Z-buffer. The depth buffer continues to store the depth of the nearest
+opaque surface behind the transparency.</li>
+</ol>
+<h2 id="the-standard-two-pass-rendering-pipeline">The Standard Two-Pass
+Rendering Pipeline</h2>
+<p>To achieve correct rendering, graphics engines typically organize
+their render loop into two distinct passes:</p>
+<ol type="1">
+<li><strong>Opaque Pass:</strong>
+<ul>
+<li><code>glDepthMask(GL_TRUE)</code> is enabled.</li>
+<li><code>glEnable(GL_DEPTH_TEST)</code> is enabled.</li>
+<li>All opaque geometry is rendered. The depth buffer is fully populated
+with the closest solid surfaces.</li>
+</ul></li>
+<li><strong>Transparent Pass:</strong>
+<ul>
+<li><code>glEnable(GL_BLEND)</code> is enabled to allow alpha
+blending.</li>
+<li><code>glDepthMask(GL_FALSE)</code> is set to make the depth buffer
+read-only.</li>
+<li>Transparent objects are sorted and drawn in back-to-front
+order.</li>
+<li>Transparent fragments test against the solid geometry in the depth
+buffer to avoid rendering through walls, but they do not overwrite the
+depth values, allowing multiple layers of transparency to blend over the
+background.</li>
+</ul></li>
+</ol>
+<p>Once the transparent pass completes,
+<code>glDepthMask(GL_TRUE)</code> is restored so subsequent frames or
+depth-clearing operations can write to the buffer as expected.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

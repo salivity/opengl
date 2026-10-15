@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Accumulation Buffer for Motion Blur &amp; Anti-Aliasing - opengl</title>
+    <meta name="description" content="In early versions of the OpenGL specification, the accumulation buffer provided a hardware-based method for blending multiple scene renderings into a single high-precision frame. Rather than relying on programmable shaders or multi-pass texture blending,">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-accumulation-buffer-for-motion-blur-anti-aliasing">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Accumulation Buffer for Motion Blur &amp; Anti-Aliasing - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-accumulation-buffer-for-motion-blur-anti-aliasing" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In early versions of the OpenGL specification, the accumulation buffer provided a hardware-based method for blending multiple scene renderings into a single high-precision frame. Rather than relying on programmable shaders or multi-pass texture blending," />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="opengl-accumulation-buffer-for-motion-blur--anti-aliasing">OpenGL
+Accumulation Buffer for Motion Blur &amp; Anti-Aliasing</h1>
+<p>In early versions of the OpenGL specification, the accumulation
+buffer provided a hardware-based method for blending multiple scene
+renderings into a single high-precision frame. Rather than relying on
+programmable shaders or multi-pass texture blending, developers
+leveraged this dedicated memory buffer to execute multi-sampling
+techniques in both the spatial and temporal domains. By systematically
+modifying the camera projection or scene state across multiple passes,
+the accumulation buffer made effects like full-scene anti-aliasing and
+photographic motion blur achievable in fixed-function graphics
+pipelines.</p>
+<h3 id="the-architecture-of-the-accumulation-buffer">The Architecture of
+the Accumulation Buffer</h3>
+<p>The accumulation buffer was an auxiliary frame buffer typically
+backed by a higher bit-depth than the standard color buffer—often 16
+bits per color channel (RGBA) rather than 8 bits. This increased dynamic
+range prevented rounding errors, clamping, and color banding when adding
+values together over multiple rendering passes.</p>
+<p>Control over the accumulation buffer was exposed through a single
+core function: <code>glAccum(GLenum op, GLfloat value)</code>. The
+primary operations included:</p>
+<ul>
+<li><strong><code>GL_LOAD</code></strong>: Multiplies the current read
+buffer (usually the back color buffer) by <code>value</code> and copies
+the result directly into the accumulation buffer, overwriting existing
+contents.</li>
+<li><strong><code>GL_ACCUM</code></strong>: Multiplies the current read
+buffer by <code>value</code> and adds the result to the accumulation
+buffer.</li>
+<li><strong><code>GL_RETURN</code></strong>: Multiplies the accumulated
+pixel values by <code>value</code> and transfers the final image back
+into the writable color buffer for display.</li>
+<li><strong><code>GL_MULT</code></strong> and
+<strong><code>GL_ADD</code></strong>: Multiplied or added a scalar
+directly to the contents of the accumulation buffer.</li>
+</ul>
+<h3 id="generating-full-scene-anti-aliasing">Generating Full-Scene
+Anti-Aliasing</h3>
+<p>Anti-aliasing via the accumulation buffer was achieved through
+spatial jittering. Traditional polygon rasterization produces jagged
+edges (aliasing) because pixels are sampled only at their exact centers.
+The accumulation buffer bypassed this limitation by averaging multiple
+passes where the sampling point was shifted sub-pixel distances.</p>
+<ol type="1">
+<li><strong>Jitter Generation</strong>: A lookup table containing
+predefined sub-pixel offsets (such as an 8-point or 16-point jitter
+pattern) was defined in normalized device coordinates.</li>
+<li><strong>Projection Modification</strong>: Before rendering each
+pass, the camera projection matrix was translated by a fractional pixel
+offset corresponding to the current sample point.</li>
+<li><strong>Accumulation</strong>: The scene was rendered into the back
+buffer. For <span class="math inline">\(N\)</span> samples, the first
+pass was typically transferred via
+<code>glAccum(GL_LOAD, 1.0 / N)</code>, and each subsequent jittered
+pass was added using <code>glAccum(GL_ACCUM, 1.0 / N)</code>.</li>
+<li><strong>Final Composite</strong>: After completing all <span
+class="math inline">\(N\)</span> passes,
+<code>glAccum(GL_RETURN, 1.0)</code> copied the averaged result back to
+the back buffer.</li>
+</ol>
+<p>Because the geometry was evaluated from slightly different
+micro-positions, the high-frequency color discontinuities at triangle
+borders blended into smooth gradients, yielding high-quality full-scene
+anti-aliasing.</p>
+<h3 id="producing-motion-blur">Producing Motion Blur</h3>
+<p>Motion blur applied the same mathematical logic as anti-aliasing, but
+shifted the sampling across the temporal dimension rather than spatial
+sub-pixels.</p>
+<ol type="1">
+<li><strong>Temporal Sub-sampling</strong>: A single frame interval
+(such as <span class="math inline">\(1/60\)</span>th of a second) was
+divided into <span class="math inline">\(N\)</span> discrete time
+slices: <span class="math inline">\(t_0, t_1, \dots,
+t_{N-1}\)</span>.</li>
+<li><strong>State Interpolation</strong>: Dynamic entities and camera
+transformations were updated to their corresponding positions for each
+sub-interval.</li>
+<li><strong>Additive Blending</strong>: Each temporal slice was rendered
+and added into the accumulation buffer using a weight factor. Uniform
+blur used equal weights of <span class="math inline">\(1/N\)</span>,
+while weighted blur applied non-linear distributions (such as a Gaussian
+or decay curve) to simulate physical camera shutter exposure
+profiles.</li>
+<li><strong>Display Output</strong>: Once all time steps were rendered
+and accumulated, <code>glAccum(GL_RETURN, 1.0)</code> reconstructed the
+blurred output, displaying moving objects as smooth, continuous streaks
+along their motion trajectories.</li>
+</ol>
+<h3 id="limitations-and-eventual-deprecation">Limitations and Eventual
+Deprecation</h3>
+<p>While conceptually elegant, the accumulation buffer carried
+substantial overhead. Producing an image with 16 samples required
+drawing all scene geometry 16 times per displayed frame, severely
+impacting vertex throughput and fill rate. Additionally, many consumer
+graphics cards implemented the accumulation buffer in system RAM via
+software emulation rather than dedicated video memory, causing severe
+performance penalties.</p>
+<p>Modern OpenGL specifications deprecated the accumulation buffer in
+Core Profile 3.0 and beyond. It was replaced by more flexible,
+performant techniques: hardware multisample anti-aliasing (MSAA),
+Framebuffer Objects (FBOs) with floating-point texture targets, and
+post-processing velocity buffers implemented via programmable fragment
+and compute shaders.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

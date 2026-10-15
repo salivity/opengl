@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL glClientWaitSync Maximum Duration Behavior - opengl</title>
+    <meta name="description" content="In OpenGL, glClientWaitSync allows the host CPU to block and wait for a fence sync object to be signaled by the GPU, governed by a 64-bit nanosecond timeout parameter. This article outlines the behavior of this duration parameter, detailing how zero timeo">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-gl-client-wait-sync-maximum-duration-behavior">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL glClientWaitSync Maximum Duration Behavior - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-gl-client-wait-sync-maximum-duration-behavior" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In OpenGL, glClientWaitSync allows the host CPU to block and wait for a fence sync object to be signaled by the GPU, governed by a 64-bit nanosecond timeout parameter. This article outlines the behavior of this duration parameter, detailing how zero timeo" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-glclientwaitsync-maximum-duration-behavior">OpenGL
+glClientWaitSync Maximum Duration Behavior</h1>
+<p>In OpenGL, <code>glClientWaitSync</code> allows the host CPU to block
+and wait for a fence sync object to be signaled by the GPU, governed by
+a 64-bit nanosecond <code>timeout</code> parameter. This article
+outlines the behavior of this duration parameter, detailing how zero
+timeouts enable non-blocking polling, how the maximum value
+(<code>GL_TIMEOUT_IGNORED</code>) forces an indefinite wait, and how
+driver implementations handle large durations and thread scheduling.</p>
+<h3 id="the-timeout-parameter-overview">The Timeout Parameter
+Overview</h3>
+<p>The <code>timeout</code> parameter in <code>glClientWaitSync</code>
+is specified as a <code>GLuint64</code> value representing time in
+nanoseconds:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>GLenum glClientWaitSync<span class="op">(</span>GLsync sync<span class="op">,</span> GLbitfield flags<span class="op">,</span> GLuint64 timeout<span class="op">);</span></span></code></pre></div>
+<p>This parameter dictates the maximum time the calling CPU thread will
+sleep before returning control to the application if the fence sync
+object remains unsignaled.</p>
+<h3 id="zero-timeout-non-blocking-polling">Zero Timeout: Non-Blocking
+Polling</h3>
+<p>Passing a timeout of <code>0</code> transforms
+<code>glClientWaitSync</code> into a non-blocking status check:</p>
+<ul>
+<li><strong>Immediate Return:</strong> The driver queries whether the
+sync object has been signaled by the GPU commands issued prior to the
+fence.</li>
+<li><strong>Return Values:</strong>
+<ul>
+<li><code>GL_ALREADY_SIGNALED</code>: The sync condition was satisfied
+before the function call.</li>
+<li><code>GL_TIMEOUT_EXPIRED</code>: The sync condition has not yet been
+met.</li>
+</ul></li>
+<li>This is the standard pattern for polling a fence across multiple
+application frames or within an engine's main loop without stalling the
+rendering thread.</li>
+</ul>
+<h3 id="maximum-timeout-gl_timeout_ignored">Maximum Timeout:
+<code>GL_TIMEOUT_IGNORED</code></h3>
+<p>The maximum permissible constant for the duration parameter is
+<code>GL_TIMEOUT_IGNORED</code>, defined as the maximum unsigned 64-bit
+integer (<code>0xFFFFFFFFFFFFFFFFull</code>):</p>
+<ul>
+<li><strong>Indefinite Blocking:</strong> When passed, the timeout
+mechanism is disabled. The CPU thread blocks indefinitely until the sync
+object condition is met or an error occurs.</li>
+<li><strong>Return State:</strong> Upon completion, the function returns
+<code>GL_CONDITION_SATISFIED</code> rather than timing out.</li>
+<li><strong>Deadlock Risk:</strong> If the GPU hangs, encounters a
+Device Lost event, or commands before the fence are never flushed, the
+application thread can freeze permanently.</li>
+</ul>
+<h3 id="large-finite-durations-and-driver-limits">Large Finite Durations
+and Driver Limits</h3>
+<p>When supplying explicit, large finite nanosecond durations,
+underlying platform and driver behaviors come into effect:</p>
+<ol type="1">
+<li><strong>Internal Deadline Calculation:</strong> Most drivers
+calculate an absolute wake-up time via
+<code>current_system_time + timeout</code>. Extremely large values near
+<code>UINT64_MAX</code> (that are not <code>GL_TIMEOUT_IGNORED</code>)
+can cause 64-bit integer arithmetic overflows on some implementations,
+potentially causing <code>glClientWaitSync</code> to return
+<code>GL_WAIT_FAILED</code> or fail immediately with
+<code>GL_TIMEOUT_EXPIRED</code>.</li>
+<li><strong>Clock Resolution and Rounding:</strong> Operating systems do
+not guarantee single-nanosecond scheduling precision. The timeout
+duration is clamped and rounded up to the nearest resolution of the host
+operating system's kernel scheduler or monotonic high-resolution
+timer.</li>
+<li><strong>Implicit Timeout Caps:</strong> Certain drivers enforce
+internal maximum wait thresholds to safeguard against complete host
+stalls, returning <code>GL_TIMEOUT_EXPIRED</code> after a driver-defined
+duration even if a higher finite value was specified.</li>
+</ol>
+<h3 id="pipeline-flushing-requirement">Pipeline Flushing
+Requirement</h3>
+<p>Regardless of the duration value, if the fence object has not yet
+been submitted to the GPU command buffer, polling or waiting can block
+needlessly. Passing the <code>GL_SYNC_FLUSH_COMMANDS_BIT</code> in the
+<code>flags</code> parameter ensures that the command stream is flushed
+to the hardware before the wait duration begins. Omission of this flag
+alongside long timeouts can cause unnecessary CPU stalls while the GPU
+sits idle waiting for batched commands.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Screen-Space Planar Reflections in OpenGL - opengl</title>
+    <meta name="description" content="Screen-space planar reflection mapping for flat surfaces, such as water planes, is a hybrid rendering technique in OpenGL that generates dynamic reflections by repurposing data already rendered to the screen buffer. By constraining the reflection calculat">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/screen-space-planar-reflections-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Screen-Space Planar Reflections in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/screen-space-planar-reflections-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Screen-space planar reflection mapping for flat surfaces, such as water planes, is a hybrid rendering technique in OpenGL that generates dynamic reflections by repurposing data already rendered to the screen buffer. By constraining the reflection calculat" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="screen-space-planar-reflections-in-opengl">Screen-Space Planar
+Reflections in OpenGL</h1>
+<p>Screen-space planar reflection mapping for flat surfaces, such as
+water planes, is a hybrid rendering technique in OpenGL that generates
+dynamic reflections by repurposing data already rendered to the screen
+buffer. By constraining the reflection calculations to a single
+mathematical plane, the technique evaluates screen-space color and depth
+buffers to determine what reflected geometry is visible from the
+camera's perspective. This article explains the geometric theory, the
+screen-space raymarching and reprojection mechanics, and the
+implementation pipeline used to render realistic water surfaces
+efficiently in OpenGL.</p>
+<h3 id="the-mathematics-of-the-planar-surface">The Mathematics of the
+Planar Surface</h3>
+<p>A flat surface like a water plane is defined in world space by an
+infinite plane equation:</p>
+<p><span class="math display">\[Ax + By + Cz + D = 0\]</span></p>
+<p>where <span class="math inline">\(\mathbf{n} = [A, B, C]^T\)</span>
+represents the normalized surface normal vector, and <span
+class="math inline">\(D\)</span> represents the distance from the world
+origin to the plane.</p>
+<p>When light hits this plane, the view vector from the camera reflects
+across the surface normal according to the law of reflection:</p>
+<p><span class="math display">\[\mathbf{R} = \mathbf{V} - 2(\mathbf{V}
+\cdot \mathbf{n})\mathbf{n}\]</span></p>
+<p>Because the plane is uniform and two-dimensional, reflections can be
+simplified compared to arbitrary, curved geometry. The reflected
+world-space ray originating from the water surface is mapped directly
+into normalized device coordinates (NDC) to search for intersections
+within the existing scene color and depth buffers.</p>
+<h3 id="the-screen-space-reflection-mechanism">The Screen-Space
+Reflection Mechanism</h3>
+<p>Unlike traditional planar reflections that require a secondary
+rendering pass with an inverted virtual camera, screen-space planar
+reflections (SSPR) extract color data directly from the primary camera's
+color buffer. The algorithm proceeds through the following steps:</p>
+<ol type="1">
+<li><strong>Scene Pre-pass:</strong> The opaque scene geometry (terrain,
+buildings, skybox) is rendered into a standard Framebuffer Object (FBO)
+containing a color texture and a depth texture.</li>
+<li><strong>Water Surface Rasterization:</strong> The water plane is
+drawn using a custom fragment shader.</li>
+<li><strong>Ray Generation:</strong> For each fragment on the water
+surface, the shader reconstructs the world-space position and constructs
+a reflected view ray pointing into the scene.</li>
+<li><strong>Screen-Space Raymarching:</strong> The shader steps along
+the reflected ray in screen space, comparing the ray's depth against the
+depth value stored in the depth buffer:
+<ul>
+<li>At each step, the 3D ray position is projected into NDC space (using
+the projection matrix) and converted to UV texture coordinates (<span
+class="math inline">\([0, 1]\)</span> range).</li>
+<li>The depth texture is sampled at these UV coordinates.</li>
+<li>If the ray's current depth is greater than the sampled depth, an
+intersection (hit) is registered.</li>
+</ul></li>
+<li><strong>Color Retrieval:</strong> Once a hit is detected, the color
+buffer is sampled at the hit coordinates to fetch the reflected
+color.</li>
+</ol>
+<h3 id="direct-planar-reprojection-sspr">Direct Planar Reprojection
+(SSPR)</h3>
+<p>For strictly flat planes, an alternative to iterative raymarching is
+direct screen-space reprojection. Because every point reflected across a
+plane mirrors to an exact conjugate point:</p>
+<ol type="1">
+<li>Visible scene pixels are reflected across the water plane geometry
+mathematically.</li>
+<li>The reflected points are reprojected back into screen space to
+determine which pixel on the water plane receives that reflected
+color.</li>
+<li>A compute shader or a scatter pass writes these colors into a planar
+reflection texture.</li>
+<li>The water shader reads this texture using standard UV coordinates
+during the forward pass.</li>
+</ol>
+<p>This eliminates raymarching artifacts, avoids precision misses on
+thin geometry, and operates in constant time.</p>
+<h3 id="handling-water-surface-perturbations">Handling Water Surface
+Perturbations</h3>
+<p>Calm water acts as a mirror, but real water surfaces feature waves
+and ripples. In OpenGL, this is handled through normal mapping:</p>
+<ul>
+<li>A normal map (or combination of animated flow maps) perturbs the
+flat plane's geometric normal vector per fragment.</li>
+<li>The perturbed normal alters the reflection vector before
+screen-space sampling occurs.</li>
+<li>In practice, this introduces an offset to the sampled screen-space
+UV coordinates:</li>
+</ul>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">vec2</span> distortedUV <span class="op">=</span> hitUV <span class="op">+</span> <span class="op">(</span>normal<span class="op">.</span><span class="fu">xz</span> <span class="op">*</span> distortionFactor<span class="op">);</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="dt">vec4</span> reflectionColor <span class="op">=</span> <span class="bu">texture</span><span class="op">(</span>screenColorTexture<span class="op">,</span> distortedUV<span class="op">);</span></span></code></pre></div>
+<h3 id="limitations-and-fallback-strategies">Limitations and Fallback
+Strategies</h3>
+<p>Screen-space planar reflection relies entirely on visible pixels
+within the viewport. This introduces specific graphical limitations:</p>
+<ul>
+<li><strong>Off-Screen Missing Information:</strong> If the geometry
+being reflected is occluded or outside the camera's field of view, the
+depth search fails.</li>
+<li><strong>Edge Fading:</strong> To prevent harsh cutoffs where
+reflected rays leave the screen boundary, a screen-edge attenuation
+factor is applied, fading the reflection out near the borders of the
+viewport.</li>
+<li><strong>Fallbacks:</strong> When a ray fails to find a valid
+intersection in the depth buffer, the shader falls back to an
+environment cubemap or skybox color.</li>
+</ul>
+<h3 id="final-shading-integration">Final Shading Integration</h3>
+<p>The final fragment color on the water plane is synthesized by
+combining the screen-space reflection with refraction and surface
+properties using the Fresnel effect:</p>
+<p><span class="math display">\[F = F_0 + (1 - F_0)(1 - \mathbf{V} \cdot
+\mathbf{n})^5\]</span></p>
+<p>The Fresnel factor determines the ratio between the refracted scene
+color (sampled from below the water plane) and the screen-space
+reflected color, producing physically grounded reflections that grow
+more intense at grazing viewing angles.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

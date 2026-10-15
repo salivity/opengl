@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Matrix Palette Skinning in OpenGL Shaders - opengl</title>
+    <meta name="description" content="Matrix palette skinning is a hardware-accelerated technique that deforms a 3D mesh smoothly across a moving skeletal armature. In an OpenGL pipeline, this process offloads vertex transformations to the GPU by passing a collection of bone transformation ma">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/matrix-palette-skinning-in-open-gl-shaders">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Matrix Palette Skinning in OpenGL Shaders - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/matrix-palette-skinning-in-open-gl-shaders" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Matrix palette skinning is a hardware-accelerated technique that deforms a 3D mesh smoothly across a moving skeletal armature. In an OpenGL pipeline, this process offloads vertex transformations to the GPU by passing a collection of bone transformation ma" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="matrix-palette-skinning-in-opengl-shaders">Matrix Palette
+Skinning in OpenGL Shaders</h1>
+<p>Matrix palette skinning is a hardware-accelerated technique that
+deforms a 3D mesh smoothly across a moving skeletal armature. In an
+OpenGL pipeline, this process offloads vertex transformations to the GPU
+by passing a collection of bone transformation matrices—known as the
+matrix palette—into the vertex shader along with per-vertex bone indices
+and influence weights. By calculating a weighted average of these
+matrices for every vertex in real time, the shader produces natural
+deformations around joints without requiring the CPU to recompute the
+mesh geometry each frame.</p>
+<h3 id="the-matrix-palette">The Matrix Palette</h3>
+<p>The matrix palette is an array of <span class="math inline">\(4
+\times 4\)</span> transformation matrices representing the current state
+of the skeleton. Each matrix in the palette transforms a vertex from its
+original position in "bind pose" (mesh space) into the current animated
+pose space of a specific bone.</p>
+<p>In OpenGL, this palette is supplied to the vertex shader using one of
+three mechanisms depending on the required bone count and target
+hardware:</p>
+<ul>
+<li><strong>Uniform Arrays:</strong> For simple skeletons (typically
+under 64 to 128 bones), a standard
+<code>uniform mat4 u_Bones[MAX_BONES];</code> array is sufficient.</li>
+<li><strong>Uniform Buffer Objects (UBOs):</strong> Provide higher
+capacity and faster updates between multiple shader programs.</li>
+<li><strong>Texture Buffer Objects (TBOs) or Shader Storage Buffer
+Objects (SSBOs):</strong> Used for complex rigs with hundreds of bones,
+bypassing standard uniform memory limits.</li>
+</ul>
+<p>Each bone matrix is pre-multiplied on the CPU as:</p>
+<p><span class="math display">\[\text{SkinningMatrix} =
+\text{CurrentBoneTransform} \times
+\text{InverseBindPoseMatrix}\]</span></p>
+<p>The inverse bind pose matrix resets the vertex from model space
+relative to the bone's origin, and the current bone transform moves it
+to the animated position.</p>
+<h3 id="per-vertex-bone-attributes">Per-Vertex Bone Attributes</h3>
+<p>To bind vertices to the skeleton, every vertex buffer object (VBO)
+includes two specialized vertex attributes:</p>
+<ol type="1">
+<li><strong>Bone Indices (<code>ivec4</code> or
+<code>uvec4</code>):</strong> Pointers to the indices in the matrix
+palette that influence this vertex.</li>
+<li><strong>Bone Weights (<code>vec4</code>):</strong> Scalar values
+defining how much influence each corresponding bone exerts on the
+vertex.</li>
+</ol>
+<p>Most rendering pipelines limit bone influences to four per vertex,
+which aligns cleanly with standard four-component GLSL vector types
+(<code>vec4</code>). If a vertex is influenced by fewer than four bones,
+the unused components are padded with zero weights. Crucially, the sum
+of all weights for a single vertex must equal 1.0:</p>
+<p><span class="math display">\[\sum_{i=0}^{n-1} \text{Weight}_i =
+1.0\]</span></p>
+<p>If weights do not sum to 1.0, the vertex will suffer from unintended
+scaling artifacts during animation.</p>
+<h3 id="vertex-shader-implementation">Vertex Shader Implementation</h3>
+<p>Inside the GLSL vertex shader, skinning can be calculated by linearly
+blending the matrices first (Linear Blend Skinning), or by transforming
+the vertex position by each bone matrix individually and accumulating
+the results. Blending the matrices into a single composite skin matrix
+is generally more computationally efficient.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 330 core</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">in</span> <span class="dt">vec3</span> a_Position<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">1</span><span class="op">)</span> <span class="dt">in</span> <span class="dt">vec3</span> a_Normal<span class="op">;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">2</span><span class="op">)</span> <span class="dt">in</span> <span class="dt">ivec4</span> a_BoneIDs<span class="op">;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">3</span><span class="op">)</span> <span class="dt">in</span> <span class="dt">vec4</span> a_Weights<span class="op">;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">mat4</span> u_ViewProjection<span class="op">;</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">mat4</span> u_Bones<span class="op">[</span><span class="dv">100</span><span class="op">];</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec3</span> v_Normal<span class="op">;</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Construct the blended skinning matrix</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>    <span class="dt">mat4</span> skinMatrix <span class="op">=</span> u_Bones<span class="op">[</span>a_BoneIDs<span class="op">[</span><span class="dv">0</span><span class="op">]]</span> <span class="op">*</span> a_Weights<span class="op">[</span><span class="dv">0</span><span class="op">]</span> <span class="op">+</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>                      u_Bones<span class="op">[</span>a_BoneIDs<span class="op">[</span><span class="dv">1</span><span class="op">]]</span> <span class="op">*</span> a_Weights<span class="op">[</span><span class="dv">1</span><span class="op">]</span> <span class="op">+</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>                      u_Bones<span class="op">[</span>a_BoneIDs<span class="op">[</span><span class="dv">2</span><span class="op">]]</span> <span class="op">*</span> a_Weights<span class="op">[</span><span class="dv">2</span><span class="op">]</span> <span class="op">+</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>                      u_Bones<span class="op">[</span>a_BoneIDs<span class="op">[</span><span class="dv">3</span><span class="op">]]</span> <span class="op">*</span> a_Weights<span class="op">[</span><span class="dv">3</span><span class="op">];</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Transform the vertex position</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> skinnedPosition <span class="op">=</span> skinMatrix <span class="op">*</span> <span class="dt">vec4</span><span class="op">(</span>a_Position<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>    <span class="bu">gl_Position</span> <span class="op">=</span> u_ViewProjection <span class="op">*</span> skinnedPosition<span class="op">;</span></span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Transform normals (assuming uniform scaling)</span></span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>    <span class="dt">mat3</span> normalMatrix <span class="op">=</span> <span class="dt">mat3</span><span class="op">(</span>skinMatrix<span class="op">);</span></span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a>    v_Normal <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span>normalMatrix <span class="op">*</span> a_Normal<span class="op">);</span></span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="handling-normals-and-tangents">Handling Normals and
+Tangents</h3>
+<p>Surface vectors like normals and tangents must also be deformed by
+the skinning matrix to ensure lighting remains accurate as the mesh
+flexes. Because normals represent directions rather than points, they
+are transformed using only the upper-left <span class="math inline">\(3
+\times 3\)</span> portion of the blended skin matrix
+(<code>mat3(skinMatrix)</code>). If the bone transformations include
+non-uniform scaling, the normal must instead be transformed by the
+inverse transpose of the blended matrix to prevent distortion:</p>
+<p><span class="math display">\[\text{NormalMatrix} =
+\text{transpose}(\text{inverse}(\text{mat3}(skinMatrix)))\]</span></p>
+<p>Because calculating inverse matrices per-vertex in a shader is
+computationally expensive, pipelines that require non-uniform scaling
+typically calculate this orientation data or limit bone transforms to
+rigid rotations and uniform scales.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

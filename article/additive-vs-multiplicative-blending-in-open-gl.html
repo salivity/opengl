@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Additive vs Multiplicative Blending in OpenGL - opengl</title>
+    <meta name="description" content="This article examines the core differences between additive blending and multiplicative blending in OpenGL, detailing their mathematical formulations, implementation using glBlendFunc, and typical rendering use cases. Readers will learn how these two blen">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/additive-vs-multiplicative-blending-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Additive vs Multiplicative Blending in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/additive-vs-multiplicative-blending-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article examines the core differences between additive blending and multiplicative blending in OpenGL, detailing their mathematical formulations, implementation using glBlendFunc, and typical rendering use cases. Readers will learn how these two blen" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="additive-vs-multiplicative-blending-in-opengl">Additive vs
+Multiplicative Blending in OpenGL</h1>
+<p>This article examines the core differences between additive blending
+and multiplicative blending in OpenGL, detailing their mathematical
+formulations, implementation using <code>glBlendFunc</code>, and typical
+rendering use cases. Readers will learn how these two blending modes
+manipulate color buffers differently to achieve either light-emitting
+effects or light-absorbing effects in computer graphics.</p>
+<h2 id="the-opengl-blending-equation">The OpenGL Blending Equation</h2>
+<p>OpenGL determines the final pixel color written to the framebuffer
+using the blending equation:</p>
+<p><span class="math display">\[\text{Final Color} = (\text{Source
+Color} \times \text{Source Factor}) + (\text{Destination Color} \times
+\text{Destination Factor})\]</span></p>
+<p>The source color represents the incoming fragment, while the
+destination color represents the pixel currently residing in the
+framebuffer. The distinction between additive and multiplicative
+blending lies in how these factors are configured.</p>
+<h2 id="what-is-additive-blending">What is Additive Blending?</h2>
+<p>Additive blending adds the color values of the incoming fragment
+directly to the existing pixels in the framebuffer.</p>
+<h3 id="opengl-configuration">OpenGL Configuration</h3>
+<p>The standard configuration for pure additive blending is:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>glBlendFunc<span class="op">(</span>GL_ONE<span class="op">,</span> GL_ONE<span class="op">);</span></span></code></pre></div>
+<p>Alternatively, to factor in the texture's alpha channel:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>glBlendFunc<span class="op">(</span>GL_SRC_ALPHA<span class="op">,</span> GL_ONE<span class="op">);</span></span></code></pre></div>
+<h3 id="visual-characteristics-and-math">Visual Characteristics and
+Math</h3>
+<ul>
+<li><strong>Formula:</strong> <span class="math inline">\(\text{Final
+Color} = \text{Source Color} + \text{Destination Color}\)</span></li>
+<li><strong>Behavior:</strong> Colors accumulate toward pure white
+<code>(1.0, 1.0, 1.0)</code>.</li>
+<li><strong>Neutral Color:</strong> Pure black
+<code>(0.0, 0.0, 0.0)</code> has no effect on the output. Adding black
+leaves the underlying pixel unchanged.</li>
+<li><strong>Overdraw Result:</strong> Stacking multiple additive layers
+increases the brightness of the scene.</li>
+</ul>
+<h3 id="primary-use-cases">Primary Use Cases</h3>
+<ul>
+<li>Fire, flames, and sparks</li>
+<li>Energy shields and lasers</li>
+<li>Light glows, lens flares, and blooms</li>
+<li>Holograms and ethereal magic effects</li>
+</ul>
+<h2 id="what-is-multiplicative-blending">What is Multiplicative
+Blending?</h2>
+<p>Multiplicative blending multiplies the color values of the incoming
+fragment by the values of the existing framebuffer pixels.</p>
+<h3 id="opengl-configuration-1">OpenGL Configuration</h3>
+<p>The standard configuration for multiplicative blending is:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>glBlendFunc<span class="op">(</span>GL_DST_COLOR<span class="op">,</span> GL_ZERO<span class="op">);</span></span></code></pre></div>
+<p>Or equivalently:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>glBlendFunc<span class="op">(</span>GL_ZERO<span class="op">,</span> GL_SRC_COLOR<span class="op">);</span></span></code></pre></div>
+<h3 id="visual-characteristics-and-math-1">Visual Characteristics and
+Math</h3>
+<ul>
+<li><strong>Formula:</strong> <span class="math inline">\(\text{Final
+Color} = \text{Source Color} \times \text{Destination
+Color}\)</span></li>
+<li><strong>Behavior:</strong> Colors scale downward toward pure black
+<code>(0.0, 0.0, 0.0)</code> because color channels are normalized
+between <code>0.0</code> and <code>1.0</code>.</li>
+<li><strong>Neutral Color:</strong> Pure white
+<code>(1.0, 1.0, 1.0)</code> has no effect on the output, functioning as
+an identity element.</li>
+<li><strong>Overdraw Result:</strong> Stacking multiple multiplicative
+layers darkens the scene.</li>
+</ul>
+<h3 id="primary-use-cases-1">Primary Use Cases</h3>
+<ul>
+<li>Projected shadows and ambient occlusion</li>
+<li>Lightmaps baked onto textures</li>
+<li>Tinted or stained glass</li>
+<li>Dirt, grime, and blood decals on surfaces</li>
+</ul>
+<h2 id="key-technical-comparisons">Key Technical Comparisons</h2>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Feature</th>
+<th style="text-align: left;">Additive Blending</th>
+<th style="text-align: left;">Multiplicative Blending</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td
+style="text-align: left;"><strong><code>glBlendFunc</code></strong></td>
+<td style="text-align: left;"><code>(GL_ONE, GL_ONE)</code></td>
+<td style="text-align: left;"><code>(GL_DST_COLOR, GL_ZERO)</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Mathematical
+Operation</strong></td>
+<td style="text-align: left;">Addition (<span class="math inline">\(S +
+D\)</span>)</td>
+<td style="text-align: left;">Multiplication (<span
+class="math inline">\(S \times D\)</span>)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Luminance Effect</strong></td>
+<td style="text-align: left;">Increases brightness</td>
+<td style="text-align: left;">Decreases brightness</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Neutral Element</strong></td>
+<td style="text-align: left;">Black (<code>0.0</code>) leaves surface
+unchanged</td>
+<td style="text-align: left;">White (<code>1.0</code>) leaves surface
+unchanged</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Saturation Target</strong></td>
+<td style="text-align: left;">Pure White
+(<code>1.0, 1.0, 1.0</code>)</td>
+<td style="text-align: left;">Pure Black
+(<code>0.0, 0.0, 0.0</code>)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Physical Analogy</strong></td>
+<td style="text-align: left;">Light emission (combining light
+beams)</td>
+<td style="text-align: left;">Light absorption (filtering through
+stained glass)</td>
+</tr>
+</tbody>
+</table>
+<p>In summary, additive blending simulates emitted light by combining
+color values toward white, making it ideal for glowing visual effects.
+Multiplicative blending simulates absorption by scaling values down
+toward black, making it ideal for shadows, filters, and surface
+shading.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

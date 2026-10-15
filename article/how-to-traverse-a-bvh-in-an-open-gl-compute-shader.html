@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How to Traverse a BVH in an OpenGL Compute Shader - opengl</title>
+    <meta name="description" content="Traversing Bounding Volume Hierarchies (BVHs) within an OpenGL compute shader enables hardware-agnostic ray tracing by using standard compute pipelines instead of dedicated ray tracing extensions. This process requires flattening the hierarchical tree int">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-to-traverse-a-bvh-in-an-open-gl-compute-shader">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How to Traverse a BVH in an OpenGL Compute Shader - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-to-traverse-a-bvh-in-an-open-gl-compute-shader" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Traversing Bounding Volume Hierarchies (BVHs) within an OpenGL compute shader enables hardware-agnostic ray tracing by using standard compute pipelines instead of dedicated ray tracing extensions. This process requires flattening the hierarchical tree int" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-to-traverse-a-bvh-in-an-opengl-compute-shader">How to
+Traverse a BVH in an OpenGL Compute Shader</h1>
+<p>Traversing Bounding Volume Hierarchies (BVHs) within an OpenGL
+compute shader enables hardware-agnostic ray tracing by using standard
+compute pipelines instead of dedicated ray tracing extensions. This
+process requires flattening the hierarchical tree into GPU-accessible
+buffers, implementing ray-box and ray-primitive intersection routines,
+and managing a traversal algorithm within the shader's execution model.
+By utilizing Shader Storage Buffer Objects (SSBOs) to store nodes and
+primitives, a compute shader can efficiently query scene geometry per
+thread to find ray intersections.</p>
+<h3 id="flattening-and-uploading-the-bvh">Flattening and Uploading the
+BVH</h3>
+<p>Compute shaders cannot navigate native CPU memory pointers, so the
+BVH tree must be flattened into a linear array. This structure is
+typically stored and accessed via an SSBO.</p>
+<p>A linear BVH node typically contains:</p>
+<ul>
+<li>Axis-Aligned Bounding Box (AABB) bounds: <code>vec3 min</code> and
+<code>vec3 max</code>.</li>
+<li>Child or leaf information packed into integer indices. For example,
+an interior node can store an index to its left child (with the right
+child placed immediately adjacent at <code>left + 1</code>), while a
+leaf node stores an offset into a primitive buffer and the number of
+primitives it contains.</li>
+</ul>
+<p>Negative values or bit-flags in the child index field are commonly
+used to distinguish interior nodes from leaf nodes.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> BVHNode <span class="op">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> aabbMin<span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> leftChild<span class="op">;</span> <span class="co">// Leaf if negative, interior node index if positive</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> aabbMax<span class="op">;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> primitiveCount<span class="op">;</span> <span class="co">// Number of triangles if leaf</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">std430</span><span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">readonly</span> <span class="kw">buffer</span> NodeBuffer <span class="op">{</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    BVHNode nodes<span class="op">[];</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">std430</span><span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">1</span><span class="op">)</span> <span class="dt">readonly</span> <span class="kw">buffer</span> TriangleBuffer <span class="op">{</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> <span class="dt">vertices</span><span class="op">[];</span> <span class="co">// Packed triangle vertices</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
+<h3 id="ray-box-intersection">Ray-Box Intersection</h3>
+<p>Efficient traversal relies on the slab method for ray-AABB
+intersection. Precomputing the reciprocal of the ray direction avoids
+costly divisions inside the traversal loop:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="dt">bool</span> <span class="fu">intersectAABB</span><span class="op">(</span><span class="dt">vec3</span> rayOrigin<span class="op">,</span> <span class="dt">vec3</span> invDir<span class="op">,</span> <span class="dt">vec3</span> boxMin<span class="op">,</span> <span class="dt">vec3</span> boxMax<span class="op">,</span> <span class="dt">float</span> tCurrent<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> t0 <span class="op">=</span> <span class="op">(</span>boxMin <span class="op">-</span> rayOrigin<span class="op">)</span> <span class="op">*</span> invDir<span class="op">;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> t1 <span class="op">=</span> <span class="op">(</span>boxMax <span class="op">-</span> rayOrigin<span class="op">)</span> <span class="op">*</span> invDir<span class="op">;</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> tMin <span class="op">=</span> <span class="bu">min</span><span class="op">(</span>t0<span class="op">,</span> t1<span class="op">);</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> tMax <span class="op">=</span> <span class="bu">max</span><span class="op">(</span>t0<span class="op">,</span> t1<span class="op">);</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> tNear <span class="op">=</span> <span class="bu">max</span><span class="op">(</span><span class="bu">max</span><span class="op">(</span>tMin<span class="op">.</span><span class="fu">x</span><span class="op">,</span> tMin<span class="op">.</span><span class="fu">y</span><span class="op">),</span> tMin<span class="op">.</span><span class="fu">z</span><span class="op">);</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> tFar <span class="op">=</span> <span class="bu">min</span><span class="op">(</span><span class="bu">min</span><span class="op">(</span>tMax<span class="op">.</span><span class="fu">x</span><span class="op">,</span> tMax<span class="op">.</span><span class="fu">y</span><span class="op">),</span> tMax<span class="op">.</span><span class="fu">z</span><span class="op">);</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> tNear <span class="op">&lt;=</span> tFar <span class="op">&amp;&amp;</span> tFar <span class="op">&gt;</span> <span class="fl">0.0</span> <span class="op">&amp;&amp;</span> tNear <span class="op">&lt;</span> tCurrent<span class="op">;</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="stack-based-traversal-loop">Stack-Based Traversal Loop</h3>
+<p>Because GLSL does not support recursion, traversal is performed
+iteratively using a local array that acts as an execution stack. Since a
+balanced BVH has a depth rarely exceeding 32 to 64 levels, an integer
+array of size 32 or 64 is sufficient to maintain the node indices being
+evaluated.</p>
+<p>The general traversal loop proceeds as follows:</p>
+<ol type="1">
+<li><strong>Initialization:</strong> Push the root node index (0) onto
+the stack. Initialize the nearest hit distance <code>tHit</code> to
+infinity.</li>
+<li><strong>Pop and Evaluate:</strong> While the stack is not empty, pop
+the top node index.</li>
+<li><strong>Bounding Box Test:</strong> Test the ray against the current
+node's AABB. If it misses or if the intersection distance is greater
+than <code>tHit</code>, discard the node.</li>
+<li><strong>Subtree Traversal:</strong>
+<ul>
+<li><strong>If Interior Node:</strong> Test both children. To optimize
+execution, sort the children by ray distance and push the farther child
+onto the stack first, ensuring the closer child is popped and evaluated
+first.</li>
+<li><strong>If Leaf Node:</strong> Loop through the primitives
+associated with the leaf, perform ray-triangle intersection (e.g., using
+the Möller–Trumbore algorithm), and update <code>tHit</code> whenever a
+closer intersection occurs.</li>
+</ul></li>
+</ol>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> stack<span class="op">[</span><span class="dv">64</span><span class="op">];</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> stackPtr <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>stack<span class="op">[</span>stackPtr<span class="op">++]</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> <span class="co">// Push root</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> tHit <span class="op">=</span> <span class="fl">1e30</span><span class="op">;</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> invRayDir <span class="op">=</span> <span class="fl">1.0</span> <span class="op">/</span> rayDir<span class="op">;</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="kw">while</span> <span class="op">(</span>stackPtr <span class="op">&gt;</span> <span class="dv">0</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> nodeIdx <span class="op">=</span> stack<span class="op">[--</span>stackPtr<span class="op">];</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>    BVHNode node <span class="op">=</span> nodes<span class="op">[</span>nodeIdx<span class="op">];</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> <span class="op">(!</span><span class="fu">intersectAABB</span><span class="op">(</span>rayOrigin<span class="op">,</span> invRayDir<span class="op">,</span> node<span class="op">.</span><span class="fu">aabbMin</span><span class="op">,</span> node<span class="op">.</span><span class="fu">aabbMax</span><span class="op">,</span> tHit<span class="op">))</span> <span class="op">{</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>        <span class="kw">continue</span><span class="op">;</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> <span class="op">(</span>node<span class="op">.</span><span class="fu">leftChild</span> <span class="op">&lt;</span> <span class="dv">0</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>        <span class="co">// Leaf node: intersect primitives</span></span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>        <span class="dt">int</span> firstPrim <span class="op">=</span> <span class="op">-</span>node<span class="op">.</span><span class="fu">leftChild</span> <span class="op">-</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a>        <span class="kw">for</span> <span class="op">(</span><span class="dt">int</span> i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> node<span class="op">.</span><span class="fu">primitiveCount</span><span class="op">;</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a>            <span class="fu">intersectTriangle</span><span class="op">(</span>rayOrigin<span class="op">,</span> rayDir<span class="op">,</span> firstPrim <span class="op">+</span> i<span class="op">,</span> tHit<span class="op">);</span></span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span> <span class="kw">else</span> <span class="op">{</span></span>
+<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a>        <span class="co">// Interior node: push children</span></span>
+<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a>        <span class="co">// In this setup, rightChild = node.leftChild + 1</span></span>
+<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a>        stack<span class="op">[</span>stackPtr<span class="op">++]</span> <span class="op">=</span> node<span class="op">.</span><span class="fu">leftChild</span> <span class="op">+</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb3-26"><a href="#cb3-26" aria-hidden="true" tabindex="-1"></a>        stack<span class="op">[</span>stackPtr<span class="op">++]</span> <span class="op">=</span> node<span class="op">.</span><span class="fu">leftChild</span><span class="op">;</span></span>
+<span id="cb3-27"><a href="#cb3-27" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb3-28"><a href="#cb3-28" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="performance-optimization">Performance Optimization</h3>
+<ul>
+<li><strong>Stack Size and Register Pressure:</strong> Keeping the stack
+in local registers is critical. Large stacks increase register usage,
+reducing thread occupancy across compute units.</li>
+<li><strong>Warp Divergence:</strong> Adjacent pixels may traverse
+entirely different branches of the BVH, causing thread divergence.
+Sorting primary rays by direction or Morton code prior to shading
+minimizes divergent branches within thread warps.</li>
+<li><strong>Memory Alignment:</strong> Align all structures to 16-byte
+boundaries (following <code>std430</code> layout rules) to prevent
+unaligned memory loads from the global SSBO storage.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

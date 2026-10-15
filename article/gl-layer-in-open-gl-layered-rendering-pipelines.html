@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>gl_Layer in OpenGL Layered Rendering Pipelines - opengl</title>
+    <meta name="description" content="Layered rendering in OpenGL allows an application to draw into multiple slices of a layered framebuffer attachment—such as a 2D texture array, 3D texture, or cubemap—within a single draw call. The built-in shading language variable glLayer acts as the rou">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/gl-layer-in-open-gl-layered-rendering-pipelines">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="gl_Layer in OpenGL Layered Rendering Pipelines - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/gl-layer-in-open-gl-layered-rendering-pipelines" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Layered rendering in OpenGL allows an application to draw into multiple slices of a layered framebuffer attachment—such as a 2D texture array, 3D texture, or cubemap—within a single draw call. The built-in shading language variable glLayer acts as the rou" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="gl_layer-in-opengl-layered-rendering-pipelines">gl_Layer in
+OpenGL Layered Rendering Pipelines</h1>
+<p>Layered rendering in OpenGL allows an application to draw into
+multiple slices of a layered framebuffer attachment—such as a 2D texture
+array, 3D texture, or cubemap—within a single draw call. The built-in
+shading language variable <code>gl_Layer</code> acts as the routing
+mechanism in this pipeline, dictating precisely which slice or face of a
+layered attachment receives each generated primitive. By dynamically
+assigning layer indices during shader execution, developers can
+streamline rendering tasks that historically required multiple passes,
+drastically reducing CPU-to-GPU state overhead.</p>
+<h3 id="what-is-gl_layer">What is <code>gl_Layer</code>?</h3>
+<p><code>gl_Layer</code> is a built-in output variable in GLSL that
+accepts an integer value. When rendering to a layered framebuffer object
+(FBO), the value assigned to <code>gl_Layer</code> instructs the
+hardware rasterizer to send the current primitive to the attachment
+layer corresponding to that index.</p>
+<p>If layered rendering is active and a primitive does not explicitly
+write to <code>gl_Layer</code>, the layer index defaults to zero. If the
+assigned index falls outside the range of valid layers for the currently
+bound framebuffer, the primitive is discarded.</p>
+<h3 id="pipeline-stages-and-execution">Pipeline Stages and
+Execution</h3>
+<p>Historically, <code>gl_Layer</code> was strictly an output of the
+Geometry Shader (GS). In a typical geometry shader workflow:</p>
+<ol type="1">
+<li>The application binds a layered texture (e.g.,
+<code>GL_TEXTURE_2D_ARRAY</code> or <code>GL_TEXTURE_CUBE_MAP</code>) to
+an FBO attachment using <code>glFramebufferTexture</code>.</li>
+<li>The geometry shader processes incoming primitives and determines the
+destination layer.</li>
+<li>The shader writes the target index to <code>gl_Layer</code> for
+every emitted vertex via <code>EmitVertex()</code>.</li>
+<li>A single incoming primitive can be amplified and duplicated across
+multiple layers by altering <code>gl_Layer</code> between batches of
+<code>EmitVertex()</code> and <code>EndPrimitive()</code> calls.</li>
+</ol>
+<p>With the introduction of extensions such as
+<code>GL_ARB_shader_viewport_layer_array</code> (and core adoption in
+OpenGL 4.5), <code>gl_Layer</code> can also be written directly from
+Vertex Shaders and Tessellation Shaders. This eliminates the geometry
+shader stage entirely, circumventing the performance penalties
+traditionally associated with geometry shader amplification.</p>
+<h3 id="key-use-cases">Key Use Cases</h3>
+<ul>
+<li><strong>Omnidirectional Point-Light Shadows:</strong> Instead of
+rendering a scene six times with six separate draw calls to populate
+each face of a cubemap, a single pass can direct geometry to the
+appropriate cubemap face (indices 0 through 5) using
+<code>gl_Layer</code>.</li>
+<li><strong>Cascaded Shadow Maps (CSM):</strong> Slices of a 2D texture
+array representing different shadow cascades can be populated
+concurrently.</li>
+<li><strong>Stereoscopic and VR Rendering:</strong> Geometry can be
+duplicated to left and right eye viewports or texture array slices in a
+single execution pass.</li>
+<li><strong>Voxelization and 3D Texture Generation:</strong> Primitives
+can be routed along slices of a 3D texture based on dominant projection
+axes.</li>
+</ul>
+<h3 id="performance-impact">Performance Impact</h3>
+<p>The primary advantage of <code>gl_Layer</code> is the minimization of
+draw calls and pipeline reconfiguration. By replacing multiple distinct
+rendering passes with a single layered pass, applications reduce CPU
+driver overhead, avoid redundant vertex buffer binding, and improve
+overall GPU throughput.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

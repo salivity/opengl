@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CUDA OpenGL Interop Synchronization Rules - opengl</title>
+    <meta name="description" content="Sharing data between NVIDIA CUDA engines and OpenGL enables high-performance computing and real-time visualization without costly CPU-side memory transfers. However, because CUDA and OpenGL maintain separate command queues and execution contexts, strict s">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/cuda-open-gl-interop-synchronization-rules">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="CUDA OpenGL Interop Synchronization Rules - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/cuda-open-gl-interop-synchronization-rules" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Sharing data between NVIDIA CUDA engines and OpenGL enables high-performance computing and real-time visualization without costly CPU-side memory transfers. However, because CUDA and OpenGL maintain separate command queues and execution contexts, strict s" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="cuda-opengl-interop-synchronization-rules">CUDA OpenGL Interop
+Synchronization Rules</h1>
+<p>Sharing data between NVIDIA CUDA engines and OpenGL enables
+high-performance computing and real-time visualization without costly
+CPU-side memory transfers. However, because CUDA and OpenGL maintain
+separate command queues and execution contexts, strict synchronization
+rules must be observed to prevent data races, screen tearing, and
+graphics pipeline stalls. This article details the core synchronization
+mechanisms governing CUDA-to-OpenGL interoperability, covering resource
+states, legacy map/unmap semantics, and modern semaphore-driven
+synchronization.</p>
+<h3 id="resource-registration-and-mapping-lifecycle">Resource
+Registration and Mapping Lifecycle</h3>
+<p>When using the CUDA Graphics Interoperability API
+(<code>cudaGraphicsGLRegisterBuffer</code>,
+<code>cudaGraphicsGLRegisterImage</code>), the graphics resource follows
+a strict state machine:</p>
+<ol type="1">
+<li><strong>Registered State:</strong> The OpenGL buffer (such as a
+Pixel Buffer Object or Vertex Buffer Object) or texture is registered
+with CUDA. This is an expensive operation and must be performed once
+during initialization, not per frame.</li>
+<li><strong>Mapped State:</strong> CUDA requests exclusive access via
+<code>cudaGraphicsMapResources()</code>. While mapped, OpenGL must
+<strong>not</strong> attempt to read, write, or bind the underlying
+resource. Doing so results in undefined behavior or pipeline
+corruption.</li>
+<li><strong>Unmapped State:</strong> CUDA yields access back to OpenGL
+via <code>cudaGraphicsUnmapResources()</code>. Once unmapped, the
+resource is safe for OpenGL to bind and draw. CUDA kernels must not
+access the device pointers obtained during the mapped state.</li>
+</ol>
+<h3 id="legacy-synchronization-via-map-and-unmap">Legacy Synchronization
+via Map and Unmap</h3>
+<p>In the standard interoperability model, synchronization is tied
+directly to the mapping calls:</p>
+<ul>
+<li><strong>Implicit Stream Synchronization:</strong> When
+<code>cudaGraphicsMapResources(count, resources, stream)</code> is
+invoked, CUDA inserts an implicit wait on the specified CUDA stream. The
+CUDA stream will not execute subsequent kernels until all prior OpenGL
+commands affecting those resources have fully completed.</li>
+<li><strong>Unmapping and OpenGL Resumption:</strong> Calling
+<code>cudaGraphicsUnmapResources(count, resources, stream)</code>
+enqueues an unmap operation into the CUDA stream. However, to guarantee
+that OpenGL does not render stale data, the application must ensure the
+unmap operation has finished before issuing rendering commands. This is
+typically achieved by synchronizing the CUDA stream
+(<code>cudaStreamSynchronize</code>) or using OpenGL sync objects
+(fences).</li>
+</ul>
+<p>While straightforward, frequent map and unmap calls introduce
+CPU-side driver overhead and can serialize the GPU pipeline.</p>
+<h3 id="modern-explicit-synchronization-via-external-semaphores">Modern
+Explicit Synchronization via External Semaphores</h3>
+<p>Modern high-performance pipelines bypass frequent mapping by using
+the <code>EXT_external_objects</code> OpenGL extension paired with CUDA
+External Resource Interoperability
+(<code>cudaImportExternalMemory</code>,
+<code>cudaImportExternalSemaphore</code>). Under this paradigm,
+resources remain permanently mapped, and execution ordering is enforced
+through GPU-side semaphores:</p>
+<ol type="1">
+<li><strong>OpenGL-to-CUDA Transition:</strong>
+<ul>
+<li>OpenGL finishes rendering or reading the buffer.</li>
+<li>OpenGL signals a semaphore using
+<code>glSignalSemaphoreEXT()</code>.</li>
+<li>CUDA waits on this semaphore inside a specific stream using
+<code>cudaWaitExternalSemaphoresAsync()</code>. CUDA execution halts in
+that stream until OpenGL reaches the signal point.</li>
+</ul></li>
+<li><strong>CUDA-to-OpenGL Transition:</strong>
+<ul>
+<li>The CUDA engine executes its compute kernels on the shared
+memory.</li>
+<li>CUDA signals a second external semaphore upon completion using
+<code>cudaSignalExternalSemaphoresAsync()</code>.</li>
+<li>OpenGL calls <code>glWaitSemaphoreEXT()</code> on its context before
+issuing draw calls that sample or read the shared data.</li>
+</ul></li>
+</ol>
+<p>This approach executes purely on the GPU timeline without CPU
+blocking, maintaining maximum throughput and preventing pipeline
+bubbles.</p>
+<h3 id="essential-synchronization-rules-summary">Essential
+Synchronization Rules Summary</h3>
+<ul>
+<li><strong>Mutual Exclusion:</strong> Never issue OpenGL draw or read
+commands on an interop resource while a CUDA kernel is actively reading
+or writing to it.</li>
+<li><strong>Stream Association:</strong> Always bind interop mapping or
+semaphore operations to a dedicated <code>cudaStream_t</code> rather
+than the default (null) stream to avoid accidental serialization of the
+entire CUDA context.</li>
+<li><strong>Context Consistency:</strong> The OpenGL context owning the
+shared resource must be current on the host thread when calling
+registration, mapping, and unmapping functions.</li>
+<li><strong>Flushing Requirements:</strong> If synchronizing via
+CPU-side primitives rather than external semaphores, call
+<code>glFlush()</code> after OpenGL operations to ensure commands are
+dispatched to the GPU before CUDA waits on them.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

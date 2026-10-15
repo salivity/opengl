@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Surface Tension in OpenGL Compute Shaders - opengl</title>
+    <meta name="description" content="This article explores how surface tension calculations operate within a compute-based fluid particle simulation in OpenGL. It covers the mathematical formulation using Smoothed Particle Hydrodynamics (SPH), the multi-pass GPU architecture required for nei">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/surface-tension-in-open-gl-compute-shaders">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Surface Tension in OpenGL Compute Shaders - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/surface-tension-in-open-gl-compute-shaders" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explores how surface tension calculations operate within a compute-based fluid particle simulation in OpenGL. It covers the mathematical formulation using Smoothed Particle Hydrodynamics (SPH), the multi-pass GPU architecture required for nei" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="surface-tension-in-opengl-compute-shaders">Surface Tension in
+OpenGL Compute Shaders</h1>
+<p>This article explores how surface tension calculations operate within
+a compute-based fluid particle simulation in OpenGL. It covers the
+mathematical formulation using Smoothed Particle Hydrodynamics (SPH),
+the multi-pass GPU architecture required for neighbor evaluation, the
+derivation of interface normals and curvature, and how OpenGL Compute
+Shaders execute these physical models efficiently through Shader Storage
+Buffer Objects (SSBOs).</p>
+<hr />
+<h3 id="particle-representation-and-gpu-memory-layout">Particle
+Representation and GPU Memory Layout</h3>
+<p>In an OpenGL-based fluid simulation, particles are stored within
+Shader Storage Buffer Objects (SSBOs). Each particle is assigned a state
+containing its position, velocity, density, pressure, and accumulated
+forces. These buffers are bound to compute shader stages via binding
+points:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">std430</span><span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="kw">buffer</span> ParticlePositions <span class="op">{</span> <span class="dt">vec4</span> positions<span class="op">[];</span> <span class="op">};</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">std430</span><span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">1</span><span class="op">)</span> <span class="kw">buffer</span> ParticleVelocities <span class="op">{</span> <span class="dt">vec4</span> velocities<span class="op">[];</span> <span class="op">};</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">std430</span><span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">2</span><span class="op">)</span> <span class="kw">buffer</span> ParticleProperties <span class="op">{</span> <span class="dt">vec4</span> properties<span class="op">[];</span> <span class="op">};</span> <span class="co">// x: density, y: pressure</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">std430</span><span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">3</span><span class="op">)</span> <span class="kw">buffer</span> ParticleForces     <span class="op">{</span> <span class="dt">vec4</span> forces<span class="op">[];</span> <span class="op">};</span></span></code></pre></div>
+<p>Using <code>vec4</code> alignment ensures data matches the GPU's
+native memory alignment standards, avoiding padding overhead and
+misaligned read/write cycles.</p>
+<h3 id="spatial-partitioning-and-neighbor-discovery">Spatial
+Partitioning and Neighbor Discovery</h3>
+<p>Surface tension is an inter-particle force that only acts within a
+defined smoothing kernel radius <span class="math inline">\(h\)</span>.
+Calculating interactions across all particle pairs results in an <span
+class="math inline">\(O(N^2)\)</span> algorithmic complexity, which is
+impractical for real-time applications.</p>
+<p>To solve this, a preliminary compute pipeline partitions the
+simulation domain into a uniform 3D grid:</p>
+<ol type="1">
+<li><strong>Cell Hash Computation</strong>: A compute pass calculates a
+spatial grid cell index for each particle: <span
+class="math inline">\(\text{hash} = \lfloor x / h \rfloor + \lfloor y /
+h \rfloor \times D_x + \lfloor z / h \rfloor \times D_x
+D_y\)</span>.</li>
+<li><strong>Sorting</strong>: Particles are sorted by grid cell index
+using a GPU-accelerated parallel radix sort or bitonic sort.</li>
+<li><strong>Cell Start/End Construction</strong>: An index table records
+the starting and ending offsets of each cell within the sorted particle
+array.</li>
+</ol>
+<p>Subsequent passes iterate only through the 27 neighboring cells (the
+current cell plus 26 adjacent neighbors) to locate nearby interacting
+particles.</p>
+<h3 id="the-mathematics-of-surface-tension-in-sph">The Mathematics of
+Surface Tension in SPH</h3>
+<p>Surface tension arises from attractive intermolecular forces
+(cohesion) between fluid molecules. Inside the fluid volume, these
+forces cancel out. At the boundary, an imbalance creates a net inward
+force that minimizes surface area. In compute shaders, two primary
+models are implemented:</p>
+<h4 id="1-color-field-and-curvature-müllers-formulation">1. Color Field
+and Curvature (Müller’s Formulation)</h4>
+<p>Müller’s model defines a smooth marker function called the "color
+field" (<span class="math inline">\(c\)</span>), which equals 1 at fluid
+particles and 0 outside. For particle <span
+class="math inline">\(i\)</span>:</p>
+<p><span class="math display">\[c_i = \sum_j \frac{m_j}{\rho_j}
+W(\mathbf{r}_i - \mathbf{r}_j, h)\]</span></p>
+<p>Where <span class="math inline">\(m_j\)</span> is particle mass,
+<span class="math inline">\(\rho_j\)</span> is particle density, and
+<span class="math inline">\(W\)</span> is a radially symmetric smoothing
+kernel (typically the Poly6 kernel).</p>
+<p>The gradient of this color field yields the inward-pointing surface
+normal vector <span class="math inline">\(\mathbf{n}_i\)</span>:</p>
+<p><span class="math display">\[\mathbf{n}_i = \nabla c_i = \sum_j
+\frac{m_j}{\rho_j} \nabla W(\mathbf{r}_i - \mathbf{r}_j, h)\]</span></p>
+<p>The surface curvature <span class="math inline">\(\kappa\)</span> is
+derived from the divergence of the normalized normal vector, often
+computed using the Laplacian of the color field:</p>
+<p><span class="math display">\[\kappa_i = -\frac{\nabla^2
+c_i}{|\mathbf{n}_i|}\]</span></p>
+<p>The surface tension force <span
+class="math inline">\(\mathbf{F}_{\text{st}}\)</span> is applied only
+when <span class="math inline">\(|\mathbf{n}_i|\)</span> exceeds a
+defined threshold (to prevent false forces in the fluid's interior):</p>
+<p><span class="math display">\[\mathbf{F}_{i, \text{st}} = -\sigma
+\kappa_i \frac{\mathbf{n}_i}{|\mathbf{n}_i|} = -\sigma \nabla^2 c_i
+\frac{\mathbf{n}_i}{|\mathbf{n}_i|}\]</span></p>
+<p>Where <span class="math inline">\(\sigma\)</span> is the tension
+coefficient of the fluid.</p>
+<h4 id="2-pairwise-cohesion-akincis-formulation">2. Pairwise Cohesion
+(Akinci’s Formulation)</h4>
+<p>Because the second-order derivative (<span
+class="math inline">\(\nabla^2 c\)</span>) in Müller's model is prone to
+numerical instability, modern engines often implement Akinci's pairwise
+approach. This separates surface tension into a direct cohesion force
+<span class="math inline">\(\mathbf{F}_{\text{cohesion}}\)</span> and a
+surface minimization force <span
+class="math inline">\(\mathbf{F}_{\text{curvature}}\)</span>:</p>
+<p><span class="math display">\[\mathbf{F}_{i, \text{cohesion}} =
+-\sigma \sum_j m_j C(\|\mathbf{r}_i - \mathbf{r}_j\|) \frac{\mathbf{r}_i
+- \mathbf{r}_j}{\|\mathbf{r}_i - \mathbf{r}_j\|}\]</span></p>
+<p><span class="math display">\[\mathbf{F}_{i, \text{curvature}} =
+-\sigma \sum_j (\mathbf{n}_i - \mathbf{n}_j)\]</span></p>
+<p>Where <span class="math inline">\(C(r)\)</span> is a spline kernel
+designed specifically to provide strong cohesion at medium distances and
+zero force at short distances to prevent particle clustering.</p>
+<h3 id="compute-shader-execution-stages">Compute Shader Execution
+Stages</h3>
+<p>To implement this pipeline in OpenGL, multiple compute shader
+dispatches are coordinated via host code using execution barriers:</p>
+<ol type="1">
+<li><p><strong>Pass 1: Density and Normal Evaluation</strong></p>
+<ul>
+<li>Computes density <span class="math inline">\(\rho_i\)</span> via
+summation over neighbors.</li>
+<li>Computes the interface normal vector <span
+class="math inline">\(\mathbf{n}_i\)</span> by evaluating the color
+field gradient.</li>
+<li>Writes the normal vectors to an intermediate SSBO.</li>
+</ul></li>
+<li><p><strong>Synchronization</strong>:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>glMemoryBarrier<span class="op">(</span>GL_SHADER_STORAGE_BARRIER_BIT<span class="op">);</span></span></code></pre></div></li>
+<li><p><strong>Pass 2: Force Evaluation</strong></p>
+<ul>
+<li>Binds the normal vector SSBO as input.</li>
+<li>Reads neighboring normals to calculate the Laplacian <span
+class="math inline">\(\nabla^2 c_i\)</span> or normal differences <span
+class="math inline">\((\mathbf{n}_i - \mathbf{n}_j)\)</span>.</li>
+<li>Combines surface tension with pressure forces, viscosity forces, and
+gravity: <span class="math display">\[\mathbf{F}_{\text{total}} =
+\mathbf{F}_{\text{pressure}} + \mathbf{F}_{\text{viscosity}} +
+\mathbf{F}_{\text{st}} + m\mathbf{g}\]</span></li>
+<li>Writes the final force into the forces SSBO.</li>
+</ul></li>
+<li><p><strong>Synchronization</strong>:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>glMemoryBarrier<span class="op">(</span>GL_SHADER_STORAGE_BARRIER_BIT<span class="op">);</span></span></code></pre></div></li>
+<li><p><strong>Pass 3: Time Integration</strong></p>
+<ul>
+<li>Employs Symplectic Euler or Verlet integration: <span
+class="math display">\[\mathbf{v}_{t+\Delta t} = \mathbf{v}_t +
+\frac{\mathbf{F}_{\text{total}}}{m}\Delta t\]</span> <span
+class="math display">\[\mathbf{x}_{t+\Delta t} = \mathbf{x}_t +
+\mathbf{v}_{t+\Delta t}\Delta t\]</span></li>
+<li>Handles boundary collisions with domain walls.</li>
+</ul></li>
+</ol>
+<h3 id="optimization-strategies">Optimization Strategies</h3>
+<p>Compute-based surface tension calculations are bound by memory
+bandwidth and thread divergence during neighbor evaluations. Performance
+is preserved using several key techniques:</p>
+<ul>
+<li><strong>Shared Memory Caching</strong>: Nearby particle positions
+can be collectively loaded into compute workgroup <code>shared</code>
+memory arrays to eliminate redundant global SSBO memory fetches.</li>
+<li><strong>Kernel Truncation</strong>: Specialized smoothing kernels
+that flatten to zero at the cutoff radius <span
+class="math inline">\(h\)</span> remove the need for non-linear branches
+in the inner interaction loop.</li>
+<li><strong>Vectorized Pack Formats</strong>: Storing normal vectors and
+scalar curvature values in packed <code>vec4</code> buffers allows
+OpenGL to maximize memory bus throughput during write operations.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

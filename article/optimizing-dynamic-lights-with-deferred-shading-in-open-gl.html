@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Optimizing Dynamic Lights with Deferred Shading in OpenGL - opengl</title>
+    <meta name="description" content="Deferred shading optimizes dynamic lighting calculations by decoupling geometry rendering from lighting evaluation, transforming the computational complexity from $O(\text{objects} \times \text{lights})$ into $O(\text{objects} + \text{lights})$. In modern">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/optimizing-dynamic-lights-with-deferred-shading-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Optimizing Dynamic Lights with Deferred Shading in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/optimizing-dynamic-lights-with-deferred-shading-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Deferred shading optimizes dynamic lighting calculations by decoupling geometry rendering from lighting evaluation, transforming the computational complexity from $O(\text{objects} \times \text{lights})$ into $O(\text{objects} + \text{lights})$. In modern" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="optimizing-dynamic-lights-with-deferred-shading-in-opengl">Optimizing
+Dynamic Lights with Deferred Shading in OpenGL</h1>
+<p>Deferred shading optimizes dynamic lighting calculations by
+decoupling geometry rendering from lighting evaluation, transforming the
+computational complexity from <span
+class="math inline">\(O(\text{objects} \times \text{lights})\)</span>
+into <span class="math inline">\(O(\text{objects} +
+\text{lights})\)</span>. In modern real-time rendering with OpenGL, this
+decoupling is achieved using Multiple Render Targets (MRT) to store
+scene properties—such as positions, normals, and albedo—into offscreen
+textures known collectively as the G-buffer (Geometry Buffer). By
+deferring lighting calculations to a separate post-processing stage that
+operates solely on visible fragments stored in the G-buffer, the
+graphics pipeline avoids calculating expensive light equations on
+occluded geometry and scales efficiently with hundreds of dynamic light
+sources.</p>
+<h3 id="the-forward-rendering-bottleneck">The Forward Rendering
+Bottleneck</h3>
+<p>In traditional forward rendering, every object in a scene calculates
+its lighting contribution for every active light source during the
+geometry rasterization phase. If an object is rendered and subsequently
+covered by another object closer to the camera, the lighting
+calculations for the covered fragments are discarded, resulting in
+wasted computation known as overdraw. As scenes scale to include dozens
+or hundreds of dynamic lights, performance drops significantly because
+each fragment shader execution scales multiplicatively with the number
+of lights and mesh complexity.</p>
+<h3 id="leveraging-opengl-multiple-render-targets-mrt">Leveraging OpenGL
+Multiple Render Targets (MRT)</h3>
+<p>Deferred shading addresses this bottleneck by dividing rendering into
+two distinct passes: the Geometry Pass and the Lighting Pass. OpenGL
+Multiple Render Targets make the Geometry Pass computationally viable by
+outputting multiple data streams simultaneously from a single fragment
+shader pass.</p>
+<ol type="1">
+<li><p><strong>Framebuffer Object (FBO) Setup</strong>: An offscreen FBO
+is initialized with multiple texture attachments. Typically, this
+includes separate 2D textures for:</p>
+<ul>
+<li><strong>World/View Space Normals</strong>: Usually formatted as
+high-precision floating-point textures (e.g.,
+<code>GL_RGB16F</code>).</li>
+<li><strong>Albedo and Specular Values</strong>: Standard color data
+formatted as <code>GL_RGBA8</code>.</li>
+<li><strong>World/View Space Positions</strong>: Either stored directly
+in a <code>GL_RGB16F</code> texture or reconstructed mathematically in
+the lighting pass from a standard depth attachment
+(<code>GL_DEPTH_COMPONENT24</code>).</li>
+</ul></li>
+<li><p><strong>Binding Draw Buffers</strong>: In OpenGL, MRT is enabled
+using <code>glDrawBuffers()</code>, which instructs the GPU to map the
+shader outputs to the respective FBO color attachments:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>GLenum attachments<span class="op">[</span><span class="dv">3</span><span class="op">]</span> <span class="op">=</span> <span class="op">{</span> GL_COLOR_ATTACHMENT0<span class="op">,</span> GL_COLOR_ATTACHMENT1<span class="op">,</span> GL_COLOR_ATTACHMENT2 <span class="op">};</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>glDrawBuffers<span class="op">(</span><span class="dv">3</span><span class="op">,</span> attachments<span class="op">);</span></span></code></pre></div></li>
+<li><p><strong>Writing to the G-Buffer</strong>: During the geometry
+pass, scene objects are rendered once without any lighting calculations.
+The fragment shader simply writes geometric and material data directly
+to the bound textures:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span> <span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">out</span> <span class="dt">vec3</span> gPosition<span class="op">;</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span> <span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">1</span><span class="op">)</span> <span class="dt">out</span> <span class="dt">vec3</span> gNormal<span class="op">;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span> <span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">2</span><span class="op">)</span> <span class="dt">out</span> <span class="dt">vec4</span> gAlbedoSpec<span class="op">;</span></span></code></pre></div></li>
+</ol>
+<h3 id="dynamic-light-calculations-in-screen-space">Dynamic Light
+Calculations in Screen Space</h3>
+<p>Once the G-buffer is populated, the Lighting Pass executes in screen
+space. Because the G-buffer stores the parameters of only the nearest,
+visible surfaces (as determined by the hardware depth test), the
+lighting pass executes only on pixels that actually contribute to the
+final image.</p>
+<h4 id="screen-aligned-quads-vs-light-volumes">Screen-Aligned Quads vs.
+Light Volumes</h4>
+<ul>
+<li><strong>Directional/Global Lights</strong>: Handled by rendering a
+single full-screen quad. The fragment shader samples the G-buffer
+textures at the current pixel coordinate, extracts the normal, position,
+and material values, and computes standard Phong or PBR lighting
+equations.</li>
+<li><strong>Point and Spot Lights</strong>: Handled using proxy
+geometry, such as low-polygon spheres or cones that encompass the
+light’s radius of attenuation. Instead of evaluating the entire screen,
+OpenGL renders these light volumes with additive blending
+(<code>glBlendFunc(GL_ONE, GL_ONE)</code>). Only the fragments
+intersected by the light volume sample the G-buffer and evaluate the
+lighting equation. Fragments outside the light volume are rejected
+immediately by the rasterizer and depth/stencil tests, preventing
+unnecessary arithmetic operations.</li>
+</ul>
+<h3 id="performance-gains">Performance Gains</h3>
+<p>Deferred shading via OpenGL MRT fundamentally alters performance
+characteristics:</p>
+<ul>
+<li><strong>Elimination of Overdraw for Lighting</strong>: Complex
+illumination equations are computed at most once per visible screen
+pixel per overlapping light source, completely eliminating lighting
+calculations on occluded fragments.</li>
+<li><strong>Predictable Performance</strong>: Lighting cost becomes
+independent of geometric complexity. A complex high-poly model incurs
+the same lighting computation cost as a simple quad occupying the same
+screen area.</li>
+<li><strong>Scalable Dynamic Lighting</strong>: By restricting
+calculations to visible fragments within defined light boundaries,
+scenes can feature hundreds of dynamic lights in real time without
+saturating shader execution pipelines.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Draw Indirect Rendering in OpenGL - opengl</title>
+    <meta name="description" content="Multi-Draw Indirect (MDI) is an advanced OpenGL rendering feature that offloads draw call management from the CPU to the GPU by reading command arguments directly from buffer memory. In the context of scene graph traversal, MDI fundamentally shifts how hi">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/multi-draw-indirect-rendering-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Multi-Draw Indirect Rendering in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/multi-draw-indirect-rendering-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Multi-Draw Indirect (MDI) is an advanced OpenGL rendering feature that offloads draw call management from the CPU to the GPU by reading command arguments directly from buffer memory. In the context of scene graph traversal, MDI fundamentally shifts how hi" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="multi-draw-indirect-rendering-in-opengl">Multi-Draw Indirect
+Rendering in OpenGL</h1>
+<p>Multi-Draw Indirect (MDI) is an advanced OpenGL rendering feature
+that offloads draw call management from the CPU to the GPU by reading
+command arguments directly from buffer memory. In the context of scene
+graph traversal, MDI fundamentally shifts how hierarchical scene data is
+dispatched, eliminating CPU driver bottlenecks, enabling GPU-side
+culling, and collapsing thousands of separate node draw operations into
+a single API call. This article explains how Multi-Draw Indirect
+operates and details the architectural performance advantages it
+introduces to scene graph processing in OpenGL.</p>
+<h3 id="understanding-multi-draw-indirect">Understanding Multi-Draw
+Indirect</h3>
+<p>Introduced in OpenGL 4.3 via the
+<code>GL_ARB_multi_draw_indirect</code> extension, Multi-Draw Indirect
+allows applications to issue multiple draw commands using a single
+OpenGL call, such as <code>glMultiDrawArraysIndirect</code> or
+<code>glMultiDrawElementsIndirect</code>.</p>
+<p>In traditional rendering, the CPU repeatedly calls functions like
+<code>glDrawElementsInstancedBaseVertex</code>, passing draw parameters
+such as element count, instance count, and offsets directly through the
+CPU-bound API. In contrast, MDI sources these parameters from a buffer
+object bound to the <code>GL_DRAW_INDIRECT_BUFFER</code> target. The
+buffer contains an array of <code>DrawElementsIndirectCommand</code>
+structures:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">typedef</span> <span class="kw">struct</span> <span class="op">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    GLuint count<span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    GLuint instanceCount<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    GLuint firstIndex<span class="op">;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    GLint  baseVertex<span class="op">;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    GLuint baseInstance<span class="op">;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="op">}</span> DrawElementsIndirectCommand<span class="op">;</span></span></code></pre></div>
+<p>Because the parameters reside in a GPU buffer, the CPU can either
+write this data once or the GPU itself (via compute shaders) can
+generate, alter, and dispatch draw calls dynamically.</p>
+<h3 id="scene-graph-traversal-bottlenecks">Scene Graph Traversal
+Bottlenecks</h3>
+<p>A conventional scene graph organizes 3D worlds hierarchically using
+nodes containing transform matrices, bounding volumes, and geometry
+references. Rendering such a graph historically involves recursive CPU
+traversal:</p>
+<ol type="1">
+<li>Traverse parent-to-child relationships to accumulate global
+transform matrices.</li>
+<li>Perform CPU-side view frustum or occlusion culling per node.</li>
+<li>Bind per-node resources (textures, shaders, uniform buffers).</li>
+<li>Dispatch an individual draw call for every visible mesh node.</li>
+</ol>
+<p>In complex scenes with thousands of discrete objects, this paradigm
+introduces severe CPU-bound driver overhead. The CPU spends significant
+frame time translating API calls, updating uniform buffers, and managing
+state transitions, leaving the GPU underutilized.</p>
+<h3 id="benefits-of-mdi-for-scene-graph-traversal">Benefits of MDI for
+Scene Graph Traversal</h3>
+<p>Applying Multi-Draw Indirect to scene graph architecture addresses
+these bottlenecks across several key areas:</p>
+<h4 id="1-decoupling-traversal-from-draw-call-dispatch">1. Decoupling
+Traversal from Draw Call Dispatch</h4>
+<p>With MDI, the CPU's role shifts from issuing immediate drawing
+commands to managing scene data in GPU buffers. During scene graph
+traversal, the CPU evaluates node transforms and writes the resulting
+matrices into a Shader Storage Buffer Object (SSBO). Instead of calling
+a draw function at every leaf node, traversal simply records or indexes
+commands into the indirect buffer, collapsing the entire draw phase into
+a single call at the end of the frame.</p>
+<h4 id="2-gpu-driven-culling">2. GPU-Driven Culling</h4>
+<p>Because the indirect draw buffer is a standard GPU storage buffer,
+compute shaders can evaluate the scene graph's leaf nodes. A compute
+pass can perform parallel bounding-box frustum culling and occlusion
+testing against depth pyramids. If an object is visible, the compute
+shader writes its draw arguments into the indirect buffer and increments
+the draw count atomically. The CPU does not need to read back visibility
+data, avoiding pipeline stalls and synchronization latency.</p>
+<h4 id="3-heterogeneous-batching-via-gl_drawid">3. Heterogeneous
+Batching via <code>gl_DrawID</code></h4>
+<p>MDI introduces the built-in GLSL variable <code>gl_DrawID</code>,
+which identifies the specific sub-command within the multi-draw batch.
+This enables the rendering of heterogeneous objects—meshes with
+different transforms, materials, and vertex offsets—in a single draw
+call. Materials and matrix data are placed in large arrays within SSBOs,
+and shaders use <code>gl_DrawID</code> to look up the correct
+transformations and material properties per node without requiring
+intermediate CPU state switches.</p>
+<h4 id="4-compatibility-with-bindless-textures">4. Compatibility with
+Bindless Textures</h4>
+<p>When paired with the <code>GL_ARB_bindless_texture</code> extension,
+MDI eliminates the need to break batches for texture state changes.
+Scene graph nodes can reference 64-bit texture handles stored in GPU
+memory. As the multi-draw executes, shaders sample textures dynamically
+based on indices derived from <code>gl_DrawID</code> or node IDs,
+allowing vast, visually diverse scene graphs to be rendered in one
+unified pass.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

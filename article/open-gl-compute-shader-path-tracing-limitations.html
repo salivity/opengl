@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Compute Shader Path Tracing Limitations - opengl</title>
+    <meta name="description" content="Implementing a path tracer using OpenGL compute shaders enables cross-platform, physically based rendering, but it introduces significant architectural bottlenecks that prevent it from matching modern ray tracing performance. This article outlines the cor">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-compute-shader-path-tracing-limitations">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Compute Shader Path Tracing Limitations - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-compute-shader-path-tracing-limitations" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Implementing a path tracer using OpenGL compute shaders enables cross-platform, physically based rendering, but it introduces significant architectural bottlenecks that prevent it from matching modern ray tracing performance. This article outlines the cor" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-compute-shader-path-tracing-limitations">OpenGL Compute
+Shader Path Tracing Limitations</h1>
+<p>Implementing a path tracer using OpenGL compute shaders enables
+cross-platform, physically based rendering, but it introduces
+significant architectural bottlenecks that prevent it from matching
+modern ray tracing performance. This article outlines the core
+limitations governing this approach, focusing on the absence of
+fixed-function acceleration, memory access inefficiencies, compute unit
+occupancy constraints, and divergence issues inherent to general-purpose
+graphics processing unit (GPUT) programming within the legacy OpenGL
+pipeline.</p>
+<h2 id="1-lack-of-native-hardware-ray-tracing-acceleration">1. Lack of
+Native Hardware Ray Tracing Acceleration</h2>
+<p>The single largest bottleneck is OpenGL’s inability to access
+dedicated ray tracing hardware, such as NVIDIA RT Cores or AMD Ray
+Accelerators. In modern APIs like Vulkan or DirectX 12, hardware units
+handle Bounding Volume Hierarchy (BVH) traversal and ray-triangle
+intersection tests autonomously. In an OpenGL compute shader, BVH
+traversal must be written entirely in software via Shader Storage Buffer
+Objects (SSBOs). Executing traversal logic through general-purpose
+arithmetic logic units (ALUs) consumes execution cycles that modern APIs
+bypass entirely.</p>
+<h2 id="2-warp-divergence-and-execution-serialization">2. Warp
+Divergence and Execution Serialization</h2>
+<p>GPUs execute threads in lockstep groups (warps of 32 threads on
+NVIDIA, wavefronts of 32 or 64 on AMD). Path tracing is inherently
+non-uniform:</p>
+<ul>
+<li><strong>Branch Divergence:</strong> Different rays hit different
+surfaces requiring different material evaluation logic (e.g., diffuse
+reflection versus complex dielectric refraction).</li>
+<li><strong>Loop Divergence:</strong> Secondary and shadow rays travel
+different distances through the BVH; some terminate immediately while
+others traverse deeply.</li>
+</ul>
+<p>When threads within the same warp take different execution paths or
+loop for a different number of iterations, the GPU serializes execution,
+idling threads until the longest-running thread finishes its branch.</p>
+<h2 id="3-high-register-pressure-and-low-occupancy">3. High Register
+Pressure and Low Occupancy</h2>
+<p>Traversing a BVH and calculating complex material physics in a single
+compute shader requires maintaining significant local state—such as
+current ray origins, directions, throughput, intersection data, and
+traversal stacks (even when using stackless traversal schemes like ropes
+or KD-trees). This demands a high number of registers per thread. As
+register usage spikes, the GPU hardware scheduler is forced to reduce
+the number of active warps per Streaming Multiprocessor (SM),
+drastically lowering occupancy and severely diminishing the GPU's
+ability to hide memory latency.</p>
+<h2 id="4-incoherent-memory-access-patterns">4. Incoherent Memory Access
+Patterns</h2>
+<p>Primary rays generated from a pinhole camera display strong spatial
+coherence, hitting adjacent scene geometry and sharing cache lines.
+However, once diffuse bounces occur, secondary rays scatter in
+pseudo-random directions. This destroys spatial and temporal cache
+locality in the L1 and L2 caches. Because the compute shader must
+continuously fetch BVH nodes, triangle indices, vertex positions, and
+texture maps from global memory across scattered memory addresses, the
+memory controllers become saturated with high-latency, uncoalesced
+memory reads.</p>
+<h2 id="5-inflexible-thread-scheduling">5. Inflexible Thread
+Scheduling</h2>
+<p>Modern ray tracing pipelines offer mechanisms such as Shader
+Execution Reordering (SER) to regroup divergent rays on the fly
+according to their spatial or material coherence. OpenGL compute shaders
+offer no native dynamic re-scheduling capabilities. A work group
+dispatched via <code>glDispatchCompute</code> must retain its thread
+composition from start to finish, causing computational throughput to
+degrade significantly on deeper light bounces as the majority of threads
+terminate early while a minority continue to bounce.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Why Linear Interpolation Causes Screen Space Distortion - opengl</title>
+    <meta name="description" content="In 3D computer graphics, directly interpolating vertex attributes linearly across screen pixels produces severe visual distortion, such as warped textures and bent geometry. This occurs because the perspective projection that maps 3D world coordinates ont">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/why-linear-interpolation-causes-screen-space-distortion">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Why Linear Interpolation Causes Screen Space Distortion - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/why-linear-interpolation-causes-screen-space-distortion" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In 3D computer graphics, directly interpolating vertex attributes linearly across screen pixels produces severe visual distortion, such as warped textures and bent geometry. This occurs because the perspective projection that maps 3D world coordinates ont" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="why-linear-interpolation-causes-screen-space-distortion">Why
+Linear Interpolation Causes Screen Space Distortion</h1>
+<p>In 3D computer graphics, directly interpolating vertex attributes
+linearly across screen pixels produces severe visual distortion, such as
+warped textures and bent geometry. This occurs because the perspective
+projection that maps 3D world coordinates onto a 2D display is
+non-linear with respect to depth. To preserve correct spatial
+relationships, modern graphics pipelines like OpenGL perform perspective
+division by the homogeneous coordinate <span
+class="math inline">\(w\)</span>, transforming coordinates into
+normalized device coordinates and enabling perspective-correct
+interpolation.</p>
+<h3 id="the-mathematics-of-perspective-projection">The Mathematics of
+Perspective Projection</h3>
+<p>To project a 3D scene onto a 2D monitor, a camera frustum must be
+mapped into clip space via a projection matrix. In a real-world
+perspective view, objects farther away appear smaller. Mathematically,
+the projected position on the screen is inversely proportional to the
+camera-space depth (<span class="math inline">\(z\)</span>).</p>
+<p>When a 4D homogeneous clip-space coordinate <span
+class="math inline">\((x_c, y_c, z_c, w_c)\)</span> is produced by the
+vertex shader, <span class="math inline">\(w_c\)</span> typically holds
+the negated camera-space depth (<span
+class="math inline">\(-z_e\)</span>). To transform this into Normalized
+Device Coordinates (NDC), OpenGL performs perspective division:</p>
+<p><span class="math display">\[x_{ndc} = \frac{x_c}{w_c}, \quad y_{ndc}
+= \frac{y_c}{w_c}, \quad z_{ndc} = \frac{z_c}{w_c}\]</span></p>
+<p>Because the divisor <span class="math inline">\(w_c\)</span> varies
+across the surface of any primitive that is tilted relative to the
+camera, the mapping from 3D camera space to 2D screen space is
+non-linear.</p>
+<h3 id="why-screen-space-linear-interpolation-fails">Why Screen-Space
+Linear Interpolation Fails</h3>
+<p>Rasterization converts primitives into individual fragments on a 2D
+grid. If the hardware performs standard linear (affine) interpolation
+across screen space, it assumes uniform spacing. For an attribute <span
+class="math inline">\(A\)</span> (such as a texture coordinate <span
+class="math inline">\(U\)</span> or <span
+class="math inline">\(V\)</span>) between two vertices, standard
+screen-space linear interpolation computes values as:</p>
+<p><span class="math display">\[A(t) = (1 - t)A_0 + tA_1 \quad
+\text{where } t \in [0, 1]\]</span></p>
+<p>While equal increments of <span class="math inline">\(t\)</span>
+cover equal distances on the 2D screen, they do not correspond to equal
+distances in 3D world space. Because of foreshortening, a pixel near the
+far end of a receding polygon represents a much larger area of world
+space than a pixel near the front end.</p>
+<p>Interpolating linearly across 2D pixels treats depth as constant. On
+textured surfaces, this results in "texture swimming" or unnatural
+warping along the shared diagonal edge of a quad, as textures stretch
+unevenly depending on camera angle.</p>
+<h3 id="the-mechanism-of-perspective-correct-interpolation">The
+Mechanism of Perspective-Correct Interpolation</h3>
+<p>To solve this distortion, attribute interpolation must account for
+the non-linear relationship introduced by perspective projection. While
+the attribute <span class="math inline">\(A\)</span> does not vary
+linearly in screen space, the quantity <span
+class="math inline">\(\frac{A}{w}\)</span> and the reciprocal of depth
+<span class="math inline">\(\frac{1}{w}\)</span> <em>do</em> vary
+linearly across screen space.</p>
+<p>Rasterizers achieve perspective-correct interpolation through a
+three-step process:</p>
+<ol type="1">
+<li><strong>Pre-Division at Vertices:</strong> Before rasterization,
+each vertex attribute <span class="math inline">\(A\)</span> is divided
+by its clip-space homogeneous coordinate <span
+class="math inline">\(w\)</span>, producing <span
+class="math inline">\(\frac{A}{w}\)</span>. The reciprocal <span
+class="math inline">\(\frac{1}{w}\)</span> is also computed for each
+vertex.</li>
+<li><strong>Linear Screen-Space Interpolation:</strong> The rasterizer
+linearly interpolates both <span
+class="math inline">\(\frac{A}{w}\)</span> and <span
+class="math inline">\(\frac{1}{w}\)</span> across the 2D surface of the
+primitive using standard barycentric coordinates.</li>
+<li><strong>Reconstruction per Fragment:</strong> At each fragment, the
+interpolated attribute is divided by the interpolated reciprocal of
+<span class="math inline">\(w\)</span>:</li>
+</ol>
+<p><span class="math display">\[A_{\text{correct}} =
+\frac{\left(\frac{A}{w}\right)_{\text{interpolated}}}{\left(\frac{1}{w}\right)_{\text{interpolated}}}\]</span></p>
+<p>This per-fragment division cancels out the non-linear effects of the
+perspective transformation, mapping the interpolated values precisely to
+their correct geometric positions in 3D space. Without this step,
+graphics hardware cannot accurately represent depth foreshortening on
+planar surfaces.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

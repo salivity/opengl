@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Ring Buffers with Persistent Mapping - opengl</title>
+    <meta name="description" content="This article explains the ring buffer (circular buffer) pattern and how to implement it in OpenGL using persistent mapped buffers. Combining a circular allocation strategy with persistent mapping eliminates driver overhead, prevents CPU-GPU pipeline stall">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-ring-buffers-with-persistent-mapping">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Ring Buffers with Persistent Mapping - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-ring-buffers-with-persistent-mapping" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains the ring buffer (circular buffer) pattern and how to implement it in OpenGL using persistent mapped buffers. Combining a circular allocation strategy with persistent mapping eliminates driver overhead, prevents CPU-GPU pipeline stall" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-ring-buffers-with-persistent-mapping">OpenGL Ring Buffers
+with Persistent Mapping</h1>
+<p>This article explains the ring buffer (circular buffer) pattern and
+how to implement it in OpenGL using persistent mapped buffers. Combining
+a circular allocation strategy with persistent mapping eliminates driver
+overhead, prevents CPU-GPU pipeline stalls, and provides a
+high-throughput mechanism for streaming dynamic geometry and uniform
+data directly to the GPU.</p>
+<h3 id="what-is-a-ring-buffer-pattern">What Is a Ring Buffer
+Pattern?</h3>
+<p>A ring buffer, or circular buffer, is a fixed-size memory structure
+that behaves as if the end of the buffer wraps around to the beginning.
+It uses two indices or offsets:</p>
+<ul>
+<li><strong>Head (Write Offset):</strong> Managed by the producer (the
+CPU) to write new data.</li>
+<li><strong>Tail (Read Offset):</strong> Monitored or cleared by the
+consumer (the GPU) after processing data.</li>
+</ul>
+<p>As new data arrives, the head moves forward. When the head reaches
+the end of the allocated memory, it loops back to offset zero. The
+fundamental requirement is that the producer must never advance the head
+past the tail; doing so would overwrite data the GPU is actively
+reading.</p>
+<p>In graphics programming, this pattern is ideal for dynamic per-frame
+data—such as particle systems, transient UI geometry, or per-draw
+uniforms—because it reuses a single, contiguous block of VRAM without
+frequent reallocations.</p>
+<h3 id="persistent-mapped-buffers-in-opengl">Persistent Mapped Buffers
+in OpenGL</h3>
+<p>Introduced in OpenGL 4.4 via <code>ARB_buffer_storage</code>,
+persistent mapped buffers allow the CPU to map a pointer to GPU memory
+once and retain access to it indefinitely across frames. Unlike
+traditional methods (<code>glBufferData</code> or
+<code>glBufferSubData</code>) that involve driver-side copies and
+synchronization stalls, persistent mapping grants direct memory
+access.</p>
+<p>Creating a persistent buffer requires <code>glBufferStorage</code>
+with specific flags:</p>
+<ul>
+<li><code>GL_MAP_WRITE_BIT</code>: Allows the CPU to write to the mapped
+memory.</li>
+<li><code>GL_MAP_PERSISTENT_BIT</code>: Keeps the buffer mapped while
+the GPU executes commands that use it.</li>
+<li><code>GL_MAP_COHERENT_BIT</code>: Ensures writes from the CPU become
+visible to the GPU automatically without manual flushes via
+<code>glFlushMappedBufferRange</code>.</li>
+</ul>
+<h3 id="structuring-a-ring-buffer-in-opengl">Structuring a Ring Buffer
+in OpenGL</h3>
+<h4 id="1-allocation-and-mapping">1. Allocation and Mapping</h4>
+<p>Create an immutable buffer sized to handle multiple frames or draw
+batches worth of data. Map the buffer pointer immediately after
+allocation and store it for the application's lifetime.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>GLsizeiptr bufferSize <span class="op">=</span> <span class="dv">64</span> <span class="op">*</span> <span class="dv">1024</span> <span class="op">*</span> <span class="dv">1024</span><span class="op">;</span> <span class="co">// 64 MB</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>GLbitfield flags <span class="op">=</span> GL_MAP_WRITE_BIT <span class="op">|</span> GL_MAP_PERSISTENT_BIT <span class="op">|</span> GL_MAP_COHERENT_BIT<span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>GLuint vbo<span class="op">;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>glGenBuffers<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="op">&amp;</span>vbo<span class="op">);</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>glBindBuffer<span class="op">(</span>GL_ARRAY_BUFFER<span class="op">,</span> vbo<span class="op">);</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>glBufferStorage<span class="op">(</span>GL_ARRAY_BUFFER<span class="op">,</span> bufferSize<span class="op">,</span> <span class="kw">nullptr</span><span class="op">,</span> flags<span class="op">);</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span><span class="op">*</span> mappedPtr <span class="op">=</span> glMapBufferRange<span class="op">(</span>GL_ARRAY_BUFFER<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> bufferSize<span class="op">,</span> flags<span class="op">);</span></span></code></pre></div>
+<h4 id="2-segmenting-and-writing-data">2. Segmenting and Writing
+Data</h4>
+<p>The buffer is partitioned into blocks (e.g., matching the data size
+needed for a draw call or a full frame). Track the current byte
+offset:</p>
+<ol type="1">
+<li>Check if the required data size fits in the remaining space before
+the end of the buffer.</li>
+<li>If it does not, wrap the write offset back to index
+<code>0</code>.</li>
+<li>Copy data to <code>(uint8_t*)mappedPtr + currentOffset</code>.</li>
+<li>Issue draw calls using <code>currentOffset</code> to define vertex
+layout offsets or base instance pointers.</li>
+<li>Advance <code>currentOffset</code> by the size of the written
+payload (aligned to hardware requirements, typically 16, 64, or 256
+bytes depending on the buffer target).</li>
+</ol>
+<h4 id="3-managing-synchronization-with-fences">3. Managing
+Synchronization with Fences</h4>
+<p>Because persistent mapping removes driver-managed synchronization,
+you must ensure the CPU does not overwrite memory that the GPU has not
+finished processing. This is accomplished using OpenGL sync fences
+(<code>GLsync</code>).</p>
+<p>Divide the ring buffer into logical regions (commonly 3 partitions
+for triple-buffering). When transitioning between regions:</p>
+<ol type="1">
+<li><p><strong>Insert a Fence:</strong> After submitting draw calls that
+read from a partition, insert a fence into the command stream:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>regionFences<span class="op">[</span>currentRegion<span class="op">]</span> <span class="op">=</span> glFenceSync<span class="op">(</span>GL_SYNC_GPU_COMMANDS_COMPLETE<span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span></code></pre></div></li>
+<li><p><strong>Wait on Previous Fences:</strong> Before writing to a
+wrapped partition, check if the fence for that partition has
+cleared:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="op">(</span>regionFences<span class="op">[</span>targetRegion<span class="op">])</span> <span class="op">{</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    GLenum waitReturn <span class="op">=</span> glClientWaitSync<span class="op">(</span>regionFences<span class="op">[</span>targetRegion<span class="op">],</span> GL_SYNC_FLUSH_COMMANDS_BIT<span class="op">,</span> TIMEOUT_NANOSECONDS<span class="op">);</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span>waitReturn <span class="op">==</span> GL_ALREADY_SIGNALED <span class="op">||</span> waitReturn <span class="op">==</span> GL_CONDITION_SATISFIED<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>        glDeleteSync<span class="op">(</span>regionFences<span class="op">[</span>targetRegion<span class="op">]);</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>        regionFences<span class="op">[</span>targetRegion<span class="op">]</span> <span class="op">=</span> <span class="kw">nullptr</span><span class="op">;</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div></li>
+</ol>
+<p>This architecture allows the CPU to write frames ahead while ensuring
+the GPU reads uninterrupted, achieving true zero-copy data
+streaming.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Using Alignas for OpenGL Uniform Buffers in C++ - opengl</title>
+    <meta name="description" content="When transferring data from CPU memory to OpenGL Uniform Buffer Objects (UBOs), mismatches between host and device memory alignment frequently lead to silent data corruption. Modern C++ provides the alignas specifier to enforce strict alignment requiremen">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/using-alignas-for-open-gl-uniform-buffers-in-c">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Using Alignas for OpenGL Uniform Buffers in C++ - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/using-alignas-for-open-gl-uniform-buffers-in-c" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="When transferring data from CPU memory to OpenGL Uniform Buffer Objects (UBOs), mismatches between host and device memory alignment frequently lead to silent data corruption. Modern C++ provides the alignas specifier to enforce strict alignment requiremen" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="using-alignas-for-opengl-uniform-buffers-in-c">Using Alignas for
+OpenGL Uniform Buffers in C++</h1>
+<p>When transferring data from CPU memory to OpenGL Uniform Buffer
+Objects (UBOs), mismatches between host and device memory alignment
+frequently lead to silent data corruption. Modern C++ provides the
+<code>alignas</code> specifier to enforce strict alignment requirements
+on user-defined structs. This article explains how <code>alignas</code>
+bridges the gap between C++ memory layouts and GLSL memory layouts like
+<code>std140</code>, eliminating the need for brittle manual padding and
+ensuring data integrity between the CPU and GPU.</p>
+<h2 id="the-memory-layout-challenge-in-opengl">The Memory Layout
+Challenge in OpenGL</h2>
+<p>OpenGL buffers bound to uniform blocks typically adhere to predefined
+memory layout qualifiers in GLSL, most commonly <code>std140</code>. The
+<code>std140</code> specification defines explicit alignment and offset
+rules for every data type:</p>
+<ul>
+<li><strong>Scalars (<code>float</code>, <code>int</code>,
+<code>uint</code>):</strong> 4-byte alignment.</li>
+<li><strong>Two-component vectors (<code>vec2</code>):</strong> 8-byte
+alignment.</li>
+<li><strong>Three- and four-component vectors (<code>vec3</code>,
+<code>vec4</code>):</strong> 16-byte alignment.</li>
+<li><strong>Arrays and nested structures:</strong> Every element is
+rounded up to a 16-byte boundary (base alignment of
+<code>vec4</code>).</li>
+</ul>
+<p>Standard C++ compilers do not follow <code>std140</code>. By default,
+C++ aligns types based on CPU architecture conventions. For example, a
+<code>glm::vec3</code> or an array of three <code>float</code> values is
+typically aligned to 4 or 12 bytes on the CPU, whereas the GPU expects
+16-byte alignment for a GLSL <code>vec3</code>. Without alignment
+correction, copying a C++ struct directly into a buffer via
+<code>glBufferData</code> or <code>glBufferSubData</code> causes
+subsequent fields to be read from incorrect memory offsets in the
+shader.</p>
+<h2 id="the-role-of-alignas">The Role of <code>alignas</code></h2>
+<p>The <code>alignas</code> specifier, introduced in C++11, explicitly
+dictates the alignment requirement of a variable, member field, or type
+definition. When constructing structs intended for UBO mapping,
+<code>alignas</code> allows you to force individual members or the
+entire structure to match the alignment boundaries mandated by the
+GPU.</p>
+<p>Instead of inserting arbitrary dummy variables (such as
+<code>float padding[3]</code>) to push data into position,
+<code>alignas</code> instructs the compiler directly to position the
+member at the required boundary, creating a cleaner and less error-prone
+structure.</p>
+<h3 id="practical-example">Practical Example</h3>
+<p>Consider a GLSL uniform block using <code>std140</code>:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">std140</span><span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="kw">uniform</span> SceneData <span class="op">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> lightDirection<span class="op">;</span> <span class="co">// Requires 16-byte base alignment</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> lightIntensity<span class="op">;</span> <span class="co">// 4 bytes, placed immediately at byte offset 12 in std140? No, lightDirection takes 16 bytes.</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> ambientColor<span class="op">;</span>   <span class="co">// Requires 16-byte base alignment</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
+<p>Under <code>std140</code>, <code>lightDirection</code> requires
+16-byte alignment. Even though it only contains 12 bytes of data, the
+following field cannot start until the next valid alignment boundary, or
+the structure offset will shift.</p>
+<p>In C++, using <code>alignas</code> ensures the memory representation
+aligns perfectly with the shader expectations:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;glm/glm.hpp&gt;</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> SceneData <span class="op">{</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">alignas</span><span class="op">(</span><span class="dv">16</span><span class="op">)</span> glm<span class="op">::</span>vec3 lightDirection<span class="op">;</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">alignas</span><span class="op">(</span><span class="dv">4</span><span class="op">)</span>  <span class="dt">float</span> lightIntensity<span class="op">;</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    <span class="kw">alignas</span><span class="op">(</span><span class="dv">16</span><span class="op">)</span> glm<span class="op">::</span>vec4 ambientColor<span class="op">;</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
+<p>Here:</p>
+<ul>
+<li><code>lightDirection</code> is guaranteed to start on a 16-byte
+boundary.</li>
+<li><code>lightIntensity</code> follows, occupying 4 bytes.</li>
+<li><code>ambientColor</code> is explicitly forced to the next 16-byte
+boundary, automatically inserting the required 12 bytes of internal
+padding between <code>lightIntensity</code> and
+<code>ambientColor</code>.</li>
+</ul>
+<h2 id="struct-alignment-and-sizing">Struct Alignment and Sizing</h2>
+<p>In <code>std140</code>, any uniform structure itself must have its
+overall size rounded up to a multiple of 16 bytes. You can apply
+<code>alignas</code> to the struct declaration itself to guarantee that
+arrays of these structs maintain the correct stride:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> <span class="kw">alignas</span><span class="op">(</span><span class="dv">16</span><span class="op">)</span> Light <span class="op">{</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    <span class="kw">alignas</span><span class="op">(</span><span class="dv">16</span><span class="op">)</span> glm<span class="op">::</span>vec4 position<span class="op">;</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    <span class="kw">alignas</span><span class="op">(</span><span class="dv">16</span><span class="op">)</span> glm<span class="op">::</span>vec4 color<span class="op">;</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">alignas</span><span class="op">(</span><span class="dv">4</span><span class="op">)</span>  <span class="dt">float</span> intensity<span class="op">;</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">alignas</span><span class="op">(</span><span class="dv">4</span><span class="op">)</span>  <span class="dt">float</span> radius<span class="op">;</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Struct is automatically padded to a multiple of 16 bytes.</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
+<p>Applying <code>alignas(16)</code> to the struct ensures that
+<code>sizeof(Light)</code> evaluates to a multiple of 16 bytes,
+preventing offset drift when passing an array of <code>Light</code>
+structures to a uniform buffer array.</p>
+<h2 id="compile-time-validation">Compile-Time Validation</h2>
+<p>Because memory layout bugs are difficult to diagnose at runtime, pair
+<code>alignas</code> with compile-time assertions. Using
+<code>static_assert</code> allows you to verify that member offsets and
+the overall size match the expected GLSL layout:</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;cstddef&gt;</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="kw">static_assert</span><span class="op">(</span><span class="kw">sizeof</span><span class="op">(</span>SceneData<span class="op">)</span> <span class="op">==</span> <span class="dv">48</span><span class="op">,</span> <span class="st">&quot;SceneData size does not match std140 layout requirements&quot;</span><span class="op">);</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="kw">static_assert</span><span class="op">(</span>offsetof<span class="op">(</span>SceneData<span class="op">,</span> ambientColor<span class="op">)</span> <span class="op">==</span> <span class="dv">32</span><span class="op">,</span> <span class="st">&quot;Offset of ambientColor is incorrect&quot;</span><span class="op">);</span></span></code></pre></div>
+<p>Using <code>alignas</code> in conjunction with
+<code>static_assert</code> provides robust, cross-platform, and
+self-documenting C++ code for uploading uniform data directly to OpenGL
+hardware buffers.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

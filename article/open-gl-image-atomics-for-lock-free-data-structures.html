@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Image Atomics for Lock-Free Data Structures - opengl</title>
+    <meta name="description" content="Image atomics in OpenGL provide hardware-level synchronization that enables massively parallel shader invocations to read, modify, and write texture data without data races. By providing operations that execute as indivisible units, image atomics eliminat">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-image-atomics-for-lock-free-data-structures">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Image Atomics for Lock-Free Data Structures - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-image-atomics-for-lock-free-data-structures" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Image atomics in OpenGL provide hardware-level synchronization that enables massively parallel shader invocations to read, modify, and write texture data without data races. By providing operations that execute as indivisible units, image atomics eliminat" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-image-atomics-for-lock-free-data-structures">OpenGL Image
+Atomics for Lock-Free Data Structures</h1>
+<p>Image atomics in OpenGL provide hardware-level synchronization that
+enables massively parallel shader invocations to read, modify, and write
+texture data without data races. By providing operations that execute as
+indivisible units, image atomics eliminate the need for traditional
+locking mechanisms, serving as the foundational building block for
+constructing high-performance, lock-free GPU data structures such as
+linked lists, work queues, and hash tables.</p>
+<h3 id="the-challenge-of-gpu-concurrency">The Challenge of GPU
+Concurrency</h3>
+<p>Modern GPUs execute thousands of threads concurrently across multiple
+compute units. When multiple shader invocations—such as fragment shaders
+or compute shaders—attempt to modify the same memory location
+simultaneously, standard read and write operations lead to race
+conditions and memory corruption.</p>
+<p>Traditional CPU synchronization primitives, like mutual exclusion
+locks (mutexes), are impractical on the GPU. Blocking a thread or
+putting it to sleep can stall an entire warp or wavefront, drastically
+reducing throughput and often causing hardware deadlocks due to the
+lockstep nature of Single Instruction, Multiple Threads (SIMT)
+execution. Lock-free programming is necessary to maintain high
+throughput and avoid thread stalls.</p>
+<h3 id="core-functions-of-image-atomics">Core Functions of Image
+Atomics</h3>
+<p>OpenGL exposes image atomics through GLSL functions that operate on
+variables bound to image units. These functions perform
+read-modify-write sequences atomically at the memory controller
+level:</p>
+<ul>
+<li><strong><code>imageAtomicAdd</code> /
+<code>imageAtomicSub</code></strong>: Atomically adds or subtracts a
+value, returning the original value. Ideal for shared counters and
+linear index allocation.</li>
+<li><strong><code>imageAtomicMin</code> /
+<code>imageAtomicMax</code></strong>: Computes minimum or maximum
+values, useful for bounding-box updates or dynamic depth bounds.</li>
+<li><strong><code>imageAtomicExchange</code></strong>: Swaps an existing
+value with a new value atomically, commonly used to update pointer
+references.</li>
+<li><strong><code>imageAtomicCompSwap</code></strong>: Compares the
+value in memory with a test value; if they match, it swaps in a new
+value. This Compare-And-Swap (CAS) operation is the fundamental
+primitive for arbitrary lock-free algorithms.</li>
+</ul>
+<h3 id="constructing-lock-free-structures">Constructing Lock-Free
+Structures</h3>
+<h4 id="per-pixel-linked-lists-order-independent-transparency">Per-Pixel
+Linked Lists (Order-Independent Transparency)</h4>
+<p>A classic application of image atomics is Order-Independent
+Transparency (A-buffer algorithms). Each pixel retains a head pointer
+pointing into a globally shared buffer of fragment nodes. When a
+fragment executes:</p>
+<ol type="1">
+<li>It uses <code>atomicCounterIncrement</code> or
+<code>imageAtomicAdd</code> on a global index to allocate a new node
+slot in an SSBO.</li>
+<li>It uses <code>imageAtomicExchange</code> on the head-pointer texture
+at its current pixel coordinate, inserting the new node index while
+simultaneously retrieving the previous head pointer.</li>
+<li>The fragment writes its color, depth, and previous head pointer into
+the allocated node.</li>
+</ol>
+<p>Because the exchange operation is atomic, no fragments overwrite one
+another, and no locks are held.</p>
+<h4 id="lock-free-queues-and-worklists">Lock-Free Queues and
+Worklists</h4>
+<p>In multi-pass compute pipelines, shaders dynamically generate work
+for subsequent passes. An atomic counter acting as an allocation pointer
+allows any thread to claim a slot in an output buffer using
+<code>imageAtomicAdd</code>. Threads append their data simultaneously
+without coordinating through centralized CPU dispatches.</p>
+<h4 id="lock-free-hash-tables">Lock-Free Hash Tables</h4>
+<p>Using <code>imageAtomicCompSwap</code>, shaders can implement
+open-addressing hash tables directly on the GPU:</p>
+<ol type="1">
+<li>A thread computes the hash of a key to find a target slot in a
+texture or buffer.</li>
+<li>It executes <code>imageAtomicCompSwap</code> to compare the slot's
+current value against an empty marker.</li>
+<li>If the slot is empty, the key is inserted successfully. If it
+contains another key, the thread probes the next slot iteratively until
+insertion succeeds.</li>
+</ol>
+<h3 id="memory-coherency-and-synchronization">Memory Coherency and
+Synchronization</h3>
+<p>For image atomics to work reliably across different shader
+invocations, memory visibility must be explicitly managed:</p>
+<ul>
+<li><strong>The <code>coherent</code> Qualifier</strong>: Image
+variables used for atomic operations must be declared with the
+<code>coherent</code> qualifier in GLSL. This bypasses local
+thread-group caches to guarantee that updates are immediately visible to
+all invocations across the GPU.</li>
+<li><strong>Memory Barriers</strong>: The
+<code>memoryBarrierImage()</code> and <code>groupMemoryBarrier()</code>
+functions enforce execution and memory order, ensuring that atomic
+updates and dependent memory writes complete before subsequent read
+operations take place.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

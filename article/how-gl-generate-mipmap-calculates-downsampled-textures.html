@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How glGenerateMipmap Calculates Downsampled Textures - opengl</title>
+    <meta name="description" content="This article examines how OpenGL&#39;s glGenerateMipmap function computes the downsampled mipmap chain for textures directly on the graphics processing unit (GPU). It details the mathematical dimension halving, the spatial filtering algorithms used by GPU dri">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-gl-generate-mipmap-calculates-downsampled-textures">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How glGenerateMipmap Calculates Downsampled Textures - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-gl-generate-mipmap-calculates-downsampled-textures" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article examines how OpenGL&#39;s glGenerateMipmap function computes the downsampled mipmap chain for textures directly on the graphics processing unit (GPU). It details the mathematical dimension halving, the spatial filtering algorithms used by GPU dri" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-glgeneratemipmap-calculates-downsampled-textures">How
+glGenerateMipmap Calculates Downsampled Textures</h1>
+<p>This article examines how OpenGL's <code>glGenerateMipmap</code>
+function computes the downsampled mipmap chain for textures directly on
+the graphics processing unit (GPU). It details the mathematical
+dimension halving, the spatial filtering algorithms used by GPU drivers,
+hardware execution pipelines (such as blitting and compute shaders), and
+critical considerations such as sRGB color-space conversions and
+non-power-of-two dimensions.</p>
+<h3 id="the-mipmap-pyramid-and-dimension-reduction">The Mipmap Pyramid
+and Dimension Reduction</h3>
+<p>When <code>glGenerateMipmap</code> is called, the GPU builds a
+complete pyramid of progressively lower-resolution images, starting from
+the defined base level (typically level 0) down to a <span
+class="math inline">\(1 \times 1\)</span> texel image.</p>
+<p>For any given level <span class="math inline">\(k\)</span>, the
+dimensions of the next mipmap level <span
+class="math inline">\(k+1\)</span> are derived by halving the width,
+height, and depth, rounding down to the nearest integer, with a minimum
+clamp of 1:</p>
+<p><span class="math display">\[\text{width}_{k+1} = \max(1, \lfloor
+\text{width}_k / 2 \rfloor)\]</span> <span
+class="math display">\[\text{height}_{k+1} = \max(1, \lfloor
+\text{height}_k / 2 \rfloor)\]</span> <span
+class="math display">\[\text{depth}_{k+1} = \max(1, \lfloor
+\text{depth}_k / 2 \rfloor)\]</span></p>
+<p>This process continues recursively until all dimensions reach 1.</p>
+<h3 id="downsampling-filter-kernels">Downsampling Filter Kernels</h3>
+<p>The OpenGL specification allows the exact downsampling algorithm to
+be implementation-dependent, but almost all modern GPU hardware and
+drivers employ a box filter (area averaging) due to its high efficiency
+in hardware.</p>
+<ul>
+<li><strong>2D Textures:</strong> A <span class="math inline">\(2 \times
+2\)</span> texel footprint from level <span
+class="math inline">\(k\)</span> is averaged to compute one texel in
+level <span class="math inline">\(k+1\)</span>. Each of the four texels
+contributes an equal 25% weight to the destination texel: <span
+class="math display">\[\text{Texel}_{k+1}(x, y) = \frac{1}{4}
+\sum_{i=0}^{1} \sum_{j=0}^{1} \text{Texel}_k(2x + i, 2y +
+j)\]</span></li>
+<li><strong>3D Textures:</strong> A <span class="math inline">\(2 \times
+2 \times 2\)</span> block of 8 texels is averaged, each contributing
+12.5% weight.</li>
+<li><strong>1D Textures:</strong> Adjacent pairs of texels are averaged
+with equal 50% weights.</li>
+</ul>
+<h4 id="handling-odd-and-non-power-of-two-npot-dimensions">Handling Odd
+and Non-Power-of-Two (NPOT) Dimensions</h4>
+<p>When a dimension is odd, standard <span class="math inline">\(2
+\times 2\)</span> averaging leaves an uneven number of texels. Depending
+on the driver and hardware:</p>
+<ol type="1">
+<li>The kernel may adjust coverage weights proportionally so border
+texels do not distort the average.</li>
+<li>The GPU may utilize hardware texture samplers using normalized
+coordinates with bilinear filtering, automatically sampling at the exact
+center between adjacent texels to let hardware linear interpolation
+approximate the box average.</li>
+</ol>
+<h3 id="gpu-execution-mechanisms">GPU Execution Mechanisms</h3>
+<p>Rather than performing these operations on the CPU,
+<code>glGenerateMipmap</code> executes entirely on the GPU via one of
+several internal driver pathways:</p>
+<ol type="1">
+<li><strong>Hardware Blit / Rasterization Passes:</strong> The driver
+binds level <span class="math inline">\(k+1\)</span> as a framebuffer
+attachment (or an internal render target) and renders a screen-aligned
+quad, sampling from level <span class="math inline">\(k\)</span> using
+hardware bilinear filtering. Because hardware bilinear units can fetch
+and blend four texels in a single cycle, this method executes extremely
+fast.</li>
+<li><strong>Compute Shaders:</strong> Modern drivers frequently
+implement <code>glGenerateMipmap</code> via internal compute shaders. A
+compute workgroup reads a tile of texels from level <span
+class="math inline">\(k\)</span> into shared memory (LDS/Threadgroup
+memory), performs local reductions, and writes the downsampled outputs
+to level <span class="math inline">\(k+1\)</span> (and often <span
+class="math inline">\(k+2\)</span> within the same pass) using image
+stores.</li>
+<li><strong>Dedicated Copy/Media Engines:</strong> Certain architectures
+route sub-resource downsampling to dedicated 2D hardware copy engines
+equipped with fixed-function scaling units.</li>
+</ol>
+<h3 id="color-space-and-srgb-correctness">Color Space and sRGB
+Correctness</h3>
+<p>Downsampling in a non-linear color space causes perceptual darkening
+and incorrect contrast. When <code>glGenerateMipmap</code> is called on
+an sRGB-formatted texture (such as <code>GL_SRGB8</code> or
+<code>GL_SRGB8_ALPHA8</code>):</p>
+<ol type="1">
+<li>The GPU reads non-linear sRGB texels and hardware-converts them to
+linear floating-point values via the sRGB transfer function.</li>
+<li>The box filter calculates the mathematical mean in linear
+space.</li>
+<li>The resulting linear average is converted back into non-linear sRGB
+space before being written to level <span
+class="math inline">\(k+1\)</span>.</li>
+</ol>
+<p>If a standard non-sRGB texture format (such as <code>GL_RGBA8</code>)
+is used for gamma-encoded color data, the GPU blindly averages the gamma
+values directly, causing perceptual loss of brightness in distant mip
+levels.</p>
+<h3 id="precision-and-filter-quality-limitations">Precision and Filter
+Quality Limitations</h3>
+<p>Because <code>glGenerateMipmap</code> prioritizes generation speed
+over advanced signal processing:</p>
+<ul>
+<li>It does not implement wide-support windowed sinc filters (such as
+Lanczos or Kaiser filters), which can lead to slight aliasing or
+high-frequency loss on high-contrast textures.</li>
+<li>Intermediate results are generally stored at the format's native
+precision (e.g., 8-bit per channel), which can cause rounding errors
+across deep mip chains.</li>
+</ul>
+<p>For offline asset pipelines or scenarios demanding high-fidelity
+anti-aliasing without energy loss, developers generate mipmaps manually
+using custom compute shaders or CPU-based filtering algorithms prior to
+uploading the data to OpenGL.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vector Displacement Mapping in OpenGL Vertex Processing - opengl</title>
+    <meta name="description" content="Vector displacement mapping (VDM) is an advanced rendering technique that transforms low-polygon meshes into highly detailed 3D surfaces directly on the GPU. Unlike traditional grayscale displacement maps that only push vertices along a single surface nor">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/vector-displacement-mapping-in-open-gl-vertex-processing">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vector Displacement Mapping in OpenGL Vertex Processing - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/vector-displacement-mapping-in-open-gl-vertex-processing" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Vector displacement mapping (VDM) is an advanced rendering technique that transforms low-polygon meshes into highly detailed 3D surfaces directly on the GPU. Unlike traditional grayscale displacement maps that only push vertices along a single surface nor" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="vector-displacement-mapping-in-opengl-vertex-processing">Vector
+Displacement Mapping in OpenGL Vertex Processing</h1>
+<p>Vector displacement mapping (VDM) is an advanced rendering technique
+that transforms low-polygon meshes into highly detailed 3D surfaces
+directly on the GPU. Unlike traditional grayscale displacement maps that
+only push vertices along a single surface normal, VDMs encode full
+three-dimensional offset vectors within their color channels. By
+sampling these textures during the OpenGL vertex processing
+stage—specifically within vertex or tessellation shaders—the graphics
+pipeline dynamically offsets geometry in any direction, effectively
+sculpting complex features such as overhangs, cavities, and biological
+folds onto simple base meshes in real time.</p>
+<h3
+id="understanding-vector-displacement-vs-standard-displacement">Understanding
+Vector Displacement vs. Standard Displacement</h3>
+<p>Standard height maps use a single scalar value per texel to displace
+geometry strictly along the existing normal vector of a vertex. This
+limitation prevents standard displacement from creating complex
+structural silhouettes, such as mushrooms, scales, or deep
+undercuts.</p>
+<p>Vector displacement maps overcome this by storing a three-dimensional
+displacement vector <span class="math inline">\((\Delta x, \Delta y,
+\Delta z)\)</span> across the red, green, and blue color channels of a
+floating-point texture. Because these vectors can point in any direction
+relative to the surface, the GPU can pull, push, and slide geometry
+across multiple axes simultaneously.</p>
+<h3 id="the-role-of-coordinate-spaces">The Role of Coordinate
+Spaces</h3>
+<p>VDM vectors are typically authored in either object space or tangent
+space:</p>
+<ul>
+<li><strong>Object Space:</strong> Vector coordinates are relative to
+the object's local origin. This format is computationally cheap because
+the vectors can be added directly to the object-space vertex positions.
+However, it cannot be used on deforming or animated meshes (such as
+rigged characters), as the displacement will not flex with the
+underlying skeleton.</li>
+<li><strong>Tangent Space:</strong> Vector coordinates are stored
+relative to the local surface orientation defined by the normal,
+tangent, and bitangent vectors (the TBN frame). While this requires
+transforming the vector in the shader using a TBN matrix, it allows the
+displaced geometry to deform naturally along with animated
+surfaces.</li>
+</ul>
+<h3 id="implementing-vdm-in-the-opengl-pipeline">Implementing VDM in the
+OpenGL Pipeline</h3>
+<p>Because a low-detail mesh possesses too few vertices to display
+complex displacement on its own, vector displacement in modern OpenGL
+typically relies on vertex texture fetch (VTF) combined with hardware
+tessellation.</p>
+<h4 id="1-mesh-subdivision-tessellation-shaders">1. Mesh Subdivision
+(Tessellation Shaders)</h4>
+<p>To generate the surface density required for high-frequency details,
+the low-detail model is first processed through the Tessellation Control
+Shader (TCS) and Tessellation Evaluation Shader (TES):</p>
+<ul>
+<li>The <strong>TCS</strong> calculates dynamic tessellation levels
+based on camera distance or screen-space size to manage
+performance.</li>
+<li>The OpenGL primitive generator subdivides the coarse base patch into
+a dense grid of new vertices.</li>
+</ul>
+<h4 id="2-texture-sampling-in-the-tessellation-evaluation-shader">2.
+Texture Sampling in the Tessellation Evaluation Shader</h4>
+<p>Once the new vertices are generated, displacement is evaluated in the
+<strong>TES</strong> (or in a standard Vertex Shader if geometry is
+pre-tessellated).</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Example snippet within an OpenGL Tessellation Evaluation Shader</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="dt">in</span> <span class="dt">vec3</span> tePosition<span class="op">[];</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="dt">in</span> <span class="dt">vec2</span> teTexCoord<span class="op">[];</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="dt">in</span> <span class="dt">vec3</span> teNormal<span class="op">[];</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="dt">in</span> <span class="dt">vec3</span> teTangent<span class="op">[];</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">sampler2D</span> vdmTexture<span class="op">;</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">float</span> displacementScale<span class="op">;</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Interpolate UV coordinates and TBN vectors across the patch</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec2</span> uv <span class="op">=</span> <span class="fu">interpolate2D</span><span class="op">(</span>teTexCoord<span class="op">);</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> N <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span><span class="fu">interpolate3D</span><span class="op">(</span>teNormal<span class="op">));</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> T <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span><span class="fu">interpolate3D</span><span class="op">(</span>teTangent<span class="op">));</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> B <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span><span class="bu">cross</span><span class="op">(</span>N<span class="op">,</span> T<span class="op">));</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>    <span class="dt">mat3</span> TBN <span class="op">=</span> <span class="dt">mat3</span><span class="op">(</span>T<span class="op">,</span> B<span class="op">,</span> N<span class="op">);</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Sample the vector displacement texture (unpacking from [0, 1] to [-1, 1] if normalized)</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> displacementVector <span class="op">=</span> <span class="bu">texture</span><span class="op">(</span>vdmTexture<span class="op">,</span> uv<span class="op">).</span><span class="fu">rgb</span> <span class="op">*</span> <span class="fl">2.0</span> <span class="op">-</span> <span class="fl">1.0</span><span class="op">;</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Transform displacement to object space</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> objectSpaceOffset <span class="op">=</span> TBN <span class="op">*</span> <span class="op">(</span>displacementVector <span class="op">*</span> displacementScale<span class="op">);</span></span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Apply the offset to the interpolated base position</span></span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> finalPosition <span class="op">=</span> <span class="fu">interpolate3D</span><span class="op">(</span>tePosition<span class="op">)</span> <span class="op">+</span> objectSpaceOffset<span class="op">;</span></span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a>    <span class="bu">gl_Position</span> <span class="op">=</span> projectionMatrix <span class="op">*</span> viewMatrix <span class="op">*</span> modelMatrix <span class="op">*</span> <span class="dt">vec4</span><span class="op">(</span>finalPosition<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="normal-and-lighting-recalculation">Normal and Lighting
+Recalculation</h3>
+<p>Displacing vertices in three dimensions invalidates the original mesh
+normals. To maintain realistic lighting, updated surface normals must be
+derived after displacement:</p>
+<ol type="1">
+<li><strong>Analytical Derivative Calculation:</strong> If the
+displacement map is mathematically defined, analytical partial
+derivatives can yield exact normal vectors.</li>
+<li><strong>Finite Difference Sampling:</strong> The shader samples the
+VDM texture at neighboring texels <span class="math inline">\((\pm
+\Delta u, \pm \Delta v)\)</span> to reconstruct tangent vectors on the
+displaced surface, taking the cross product of these vectors to form the
+new normal.</li>
+<li><strong>Accompanying Normal Maps:</strong> A secondary,
+high-resolution normal map matching the displaced topology can be
+sampled during the fragment shader stage to handle fine micro-surface
+lighting without requiring continuous vertex recalculation.</li>
+</ol></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

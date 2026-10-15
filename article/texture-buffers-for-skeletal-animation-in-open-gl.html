@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Texture Buffers for Skeletal Animation in OpenGL - opengl</title>
+    <meta name="description" content="Skeletal animation requires passing large arrays of dynamic transformation matrices to vertex shaders to deform 3D meshes realistically. While standard Uniform Buffer Objects (UBOs) are frequently used for this purpose, their strict hardware-dependent siz">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/texture-buffers-for-skeletal-animation-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Texture Buffers for Skeletal Animation in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/texture-buffers-for-skeletal-animation-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Skeletal animation requires passing large arrays of dynamic transformation matrices to vertex shaders to deform 3D meshes realistically. While standard Uniform Buffer Objects (UBOs) are frequently used for this purpose, their strict hardware-dependent siz" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="texture-buffers-for-skeletal-animation-in-opengl">Texture
+Buffers for Skeletal Animation in OpenGL</h1>
+<p>Skeletal animation requires passing large arrays of dynamic
+transformation matrices to vertex shaders to deform 3D meshes
+realistically. While standard Uniform Buffer Objects (UBOs) are
+frequently used for this purpose, their strict hardware-dependent size
+limits restrict the number of bones and animated instances rendered
+simultaneously. Texture Buffer Objects (TBOs) solve this scalability
+issue by exposing large, linearly allocated buffer memory through
+OpenGL’s texture pipeline. This article explores how texture storage
+buffers bridge the CPU-GPU pipeline to deliver real-time, dynamic
+skeletal matrix data to vertex shaders, detailing the data layout, CPU
+setup, and GLSL extraction process.</p>
+<h3 id="the-limits-of-uniform-buffer-objects">The Limits of Uniform
+Buffer Objects</h3>
+<p>In hardware-accelerated skeletal animation, each vertex relies on a
+set of bone indices and weights to blend between several bone
+transformation matrices. A complete skeleton often consists of dozens to
+hundreds of bones, each represented by a <span class="math inline">\(4
+\times 4\)</span> floating-point matrix (64 bytes).</p>
+<p>Standard UBOs are constrained by the implementation-defined limit
+<code>GL_MAX_UNIFORM_BLOCK_SIZE</code>, which is commonly capped at 64
+KB. While sufficient for a single character with 100 bones (requiring
+6.4 KB), it quickly becomes a bottleneck when performing hardware
+instancing, where hundreds of unique animated characters require
+distinct sets of matrices per frame.</p>
+<h3 id="how-texture-buffer-objects-function">How Texture Buffer Objects
+Function</h3>
+<p>A Texture Buffer Object (TBO) is an OpenGL texture backed by the raw
+data storage of a standard buffer object (<code>glGenBuffers</code>).
+Unlike conventional 1D, 2D, or 3D textures, a TBO:</p>
+<ul>
+<li>Does not store data in proprietary or swizzled internal texture
+layouts.</li>
+<li>Does not support mipmapping, wrapping modes, or hardware filtering
+(such as linear interpolation).</li>
+<li>Directly exposes raw linear memory, accessible via the
+<code>texelFetch</code> function in GLSL.</li>
+<li>Provides access to storage sizes limited only by
+<code>GL_MAX_TEXTURE_BUFFER_SIZE</code>, which typically spans from tens
+of megabytes to gigabytes.</li>
+</ul>
+<p>This allows developers to manage matrix arrays as a linear flat
+buffer on the CPU, upload them directly via standard buffer update
+mechanisms, and address them in shaders like an unbounded array.</p>
+<h3 id="packing-matrices-into-texture-storage">Packing Matrices into
+Texture Storage</h3>
+<p>Because standard texture buffers generally treat data as individual
+texels rather than composite matrix types, <span class="math inline">\(4
+\times 4\)</span> matrices must be stored across multiple consecutive
+texels.</p>
+<p>The standard approach uses the <code>GL_RGBA32F</code> internal
+format:</p>
+<ul>
+<li>One <code>vec4</code> texel stores 4 single-precision floating-point
+numbers (16 bytes).</li>
+<li>One <span class="math inline">\(4 \times 4\)</span> matrix consists
+of 16 floats (64 bytes), occupying exactly 4 consecutive texels.</li>
+<li>A skeleton with <span class="math inline">\(N\)</span> bones
+occupies <span class="math inline">\(4 \times N\)</span> texels. If
+rendering multiple instances, instance <span
+class="math inline">\(I\)</span> offsets its read position by <span
+class="math inline">\(I \times 4 \times N\)</span>.</li>
+</ul>
+<h3 id="host-side-implementation">Host-Side Implementation</h3>
+<p>Setting up a dynamic matrix texture buffer involves creating a
+regular buffer, attaching it to a texture target, and updating it per
+frame.</p>
+<ol type="1">
+<li><p><strong>Buffer Creation and Allocation:</strong> A standard
+OpenGL buffer is generated and allocated with sufficient memory to hold
+the matrices for all animated characters.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>GLuint matrixBuffer<span class="op">;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>glGenBuffers<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="op">&amp;</span>matrixBuffer<span class="op">);</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>glBindBuffer<span class="op">(</span>GL_TEXTURE_BUFFER<span class="op">,</span> matrixBuffer<span class="op">);</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>glBufferData<span class="op">(</span>GL_TEXTURE_BUFFER<span class="op">,</span> totalMatrixBytes<span class="op">,</span> <span class="kw">nullptr</span><span class="op">,</span> GL_DYNAMIC_DRAW<span class="op">);</span></span></code></pre></div></li>
+<li><p><strong>Binding to a Texture Handle:</strong> A texture ID is
+generated, bound to <code>GL_TEXTURE_BUFFER</code>, and linked to the
+buffer storage.</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>GLuint matrixTexture<span class="op">;</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>glGenTextures<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="op">&amp;</span>matrixTexture<span class="op">);</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>glBindTexture<span class="op">(</span>GL_TEXTURE_BUFFER<span class="op">,</span> matrixTexture<span class="op">);</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>glTexBuffer<span class="op">(</span>GL_TEXTURE_BUFFER<span class="op">,</span> GL_RGBA32F<span class="op">,</span> matrixBuffer<span class="op">);</span></span></code></pre></div></li>
+<li><p><strong>Frame Updates:</strong> Each frame, CPU-calculated or
+compute-shader-evaluated animation matrices are uploaded to the buffer
+using <code>glBufferSubData</code>, persistent memory mappings
+(<code>glMapBufferRange</code> with <code>GL_MAP_PERSISTENT_BIT</code>),
+or buffer orphaning.</p></li>
+</ol>
+<h3 id="reading-matrices-in-the-vertex-shader">Reading Matrices in the
+Vertex Shader</h3>
+<p>Within GLSL, the texture buffer is accessed through a
+<code>samplerBuffer</code> uniform. Rather than using normalized texture
+coordinates, the shader queries data using integer indices via
+<code>texelFetch</code>.</p>
+<p>To reconstruct the original <span class="math inline">\(4 \times
+4\)</span> transformation matrix, the shader fetches four consecutive
+<code>vec4</code> entries using the base bone index multiplied by 4:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 330 core</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">in</span> <span class="dt">vec3</span> aPosition<span class="op">;</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">1</span><span class="op">)</span> <span class="dt">in</span> <span class="dt">vec3</span> aNormal<span class="op">;</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">2</span><span class="op">)</span> <span class="dt">in</span> <span class="dt">ivec4</span> aBoneIDs<span class="op">;</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">3</span><span class="op">)</span> <span class="dt">in</span> <span class="dt">vec4</span> aWeights<span class="op">;</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">samplerBuffer</span> uBoneMatrixBuffer<span class="op">;</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="dt">mat4</span> <span class="fu">getBoneMatrix</span><span class="op">(</span><span class="dt">int</span> boneID<span class="op">)</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> <span class="dt">offset</span> <span class="op">=</span> boneID <span class="op">*</span> <span class="dv">4</span><span class="op">;</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> row0 <span class="op">=</span> <span class="bu">texelFetch</span><span class="op">(</span>uBoneMatrixBuffer<span class="op">,</span> <span class="dt">offset</span> <span class="op">+</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> row1 <span class="op">=</span> <span class="bu">texelFetch</span><span class="op">(</span>uBoneMatrixBuffer<span class="op">,</span> <span class="dt">offset</span> <span class="op">+</span> <span class="dv">1</span><span class="op">);</span></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> row2 <span class="op">=</span> <span class="bu">texelFetch</span><span class="op">(</span>uBoneMatrixBuffer<span class="op">,</span> <span class="dt">offset</span> <span class="op">+</span> <span class="dv">2</span><span class="op">);</span></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> row3 <span class="op">=</span> <span class="bu">texelFetch</span><span class="op">(</span>uBoneMatrixBuffer<span class="op">,</span> <span class="dt">offset</span> <span class="op">+</span> <span class="dv">3</span><span class="op">);</span></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> <span class="dt">mat4</span><span class="op">(</span>row0<span class="op">,</span> row1<span class="op">,</span> row2<span class="op">,</span> row3<span class="op">);</span></span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span></span>
+<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a>    <span class="dt">mat4</span> skinMatrix <span class="op">=</span> </span>
+<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a>        <span class="fu">getBoneMatrix</span><span class="op">(</span>aBoneIDs<span class="op">.</span><span class="fu">x</span><span class="op">)</span> <span class="op">*</span> aWeights<span class="op">.</span><span class="fu">x</span> <span class="op">+</span></span>
+<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a>        <span class="fu">getBoneMatrix</span><span class="op">(</span>aBoneIDs<span class="op">.</span><span class="fu">y</span><span class="op">)</span> <span class="op">*</span> aWeights<span class="op">.</span><span class="fu">y</span> <span class="op">+</span></span>
+<span id="cb3-26"><a href="#cb3-26" aria-hidden="true" tabindex="-1"></a>        <span class="fu">getBoneMatrix</span><span class="op">(</span>aBoneIDs<span class="op">.</span><span class="fu">z</span><span class="op">)</span> <span class="op">*</span> aWeights<span class="op">.</span><span class="fu">z</span> <span class="op">+</span></span>
+<span id="cb3-27"><a href="#cb3-27" aria-hidden="true" tabindex="-1"></a>        <span class="fu">getBoneMatrix</span><span class="op">(</span>aBoneIDs<span class="op">.</span><span class="fu">w</span><span class="op">)</span> <span class="op">*</span> aWeights<span class="op">.</span><span class="fu">w</span><span class="op">;</span></span>
+<span id="cb3-28"><a href="#cb3-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-29"><a href="#cb3-29" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> skinnedPosition <span class="op">=</span> skinMatrix <span class="op">*</span> <span class="dt">vec4</span><span class="op">(</span>aPosition<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb3-30"><a href="#cb3-30" aria-hidden="true" tabindex="-1"></a>    <span class="bu">gl_Position</span> <span class="op">=</span> projectionViewModelMatrix <span class="op">*</span> skinnedPosition<span class="op">;</span></span>
+<span id="cb3-31"><a href="#cb3-31" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>If the matrices are organized as column-major, fetching row-wise or
+column-wise directly maps to <code>mat4</code> constructor fields
+without manual transposing.</p>
+<h3 id="performance-and-architectural-advantages">Performance and
+Architectural Advantages</h3>
+<p>Using texture storage buffers for skeletal animation provides several
+architectural advantages:</p>
+<ul>
+<li><strong>High Capacity:</strong> Eliminates low uniform count
+restrictions, enabling thousands of animated joints across hundreds of
+instanced models in a single draw call.</li>
+<li><strong>Deterministic Fetch Speed:</strong> Because texture
+filtering and multi-sampling are omitted, <code>texelFetch</code> on a
+buffer sampler exhibits predictable memory latency similar to direct
+buffer fetches.</li>
+<li><strong>Cache Coherency:</strong> Vertex attributes often share
+bones with neighboring vertices. Storing skeletal data linearly in
+consecutive RGBA32F texels takes advantage of L1/L2 GPU cache spatial
+locality.</li>
+<li><strong>Compatibility:</strong> Texture Buffer Objects have been
+core since OpenGL 3.1, making them more broadly compatible across older
+hardware and mobile platforms compared to Shader Storage Buffer Objects
+(SSBOs).</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

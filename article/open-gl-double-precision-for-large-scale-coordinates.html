@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Double Precision for Large Scale Coordinates - opengl</title>
+    <meta name="description" content="Modern OpenGL provides native 64-bit double-precision floating-point shader capabilities to resolve the severe precision degradation that occurs when rendering vast virtual environments, such as space simulators and planetary-scale open worlds. Standard 3">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-double-precision-for-large-scale-coordinates">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Double Precision for Large Scale Coordinates - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-double-precision-for-large-scale-coordinates" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Modern OpenGL provides native 64-bit double-precision floating-point shader capabilities to resolve the severe precision degradation that occurs when rendering vast virtual environments, such as space simulators and planetary-scale open worlds. Standard 3" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-double-precision-for-large-scale-coordinates">OpenGL
+Double Precision for Large Scale Coordinates</h1>
+<p>Modern OpenGL provides native 64-bit double-precision floating-point
+shader capabilities to resolve the severe precision degradation that
+occurs when rendering vast virtual environments, such as space
+simulators and planetary-scale open worlds. Standard 32-bit
+floating-point numbers lack the mantissa bits required to maintain
+sub-millimeter or even meter-level accuracy when coordinates span
+millions of units away from the origin. By utilizing hardware-level
+64-bit calculations in GLSL, developers can directly manipulate enormous
+world-space coordinate frames without visual artifacts like vertex
+jitter, geometry warping, and depth fighting, bridging the gap between
+vast scale and visual stability.</p>
+<h3 id="the-limits-of-single-precision-arithmetic">The Limits of
+Single-Precision Arithmetic</h3>
+<p>Standard graphics pipelines rely heavily on 32-bit single-precision
+floating-point arithmetic (<code>float</code> in GLSL). An IEEE 754
+single-precision float uses 1 sign bit, 8 exponent bits, and 23 mantissa
+bits (giving roughly 7 decimal digits of precision).</p>
+<p>When a virtual world extends to thousands or millions of units (such
+as meters or kilometers), the spacing between representable
+floating-point values grows substantially. At a distance of 100,000
+units from the origin, the distance between consecutive representable
+numbers is roughly 0.0078 units. At 10,000,000 units, the minimum
+representable step grows to nearly 1 unit.</p>
+<p>When dynamic transforms, camera movements, and model transformations
+occur at these ranges using 32-bit math, the geometry snaps erratically
+between discrete floating-point steps. This manifests on-screen as
+severe "vertex jitter," polygon swimming, and depth testing inaccuracies
+where distant geometries overlap or tear.</p>
+<h3 id="native-64-bit-support-in-glsl">Native 64-Bit Support in
+GLSL</h3>
+<p>Introduced to core OpenGL in version 4.0 via the
+<code>GL_ARB_gpu_shader_fp64</code> extension, native double-precision
+support integrates 64-bit types directly into GLSL. These include
+scalars and vectors such as <code>double</code>, <code>dvec2</code>,
+<code>dvec3</code>, <code>dvec4</code>, and matrix types like
+<code>dmat4</code>.</p>
+<p>An IEEE 754 64-bit float contains 52 mantissa bits, offering
+approximately 15 to 17 decimal digits of precision. This massive
+expansion of dynamic range allows coordinate spaces to reach
+solar-system scales while still retaining sub-millimeter precision at
+any point within the simulation.</p>
+<p>With FP64 capabilities, shaders can perform matrix multiplications
+directly on coordinates defined relative to a single universal
+origin:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 450 core</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">in</span> <span class="dt">dvec3</span> in_Position<span class="op">;</span> <span class="co">// 64-bit vertex position</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">dmat4</span> u_ViewProjection<span class="op">;</span>           <span class="co">// 64-bit transform matrix</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">dvec4</span> clipSpacePos <span class="op">=</span> u_ViewProjection <span class="op">*</span> <span class="dt">dvec4</span><span class="op">(</span>in_Position<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    <span class="bu">gl_Position</span> <span class="op">=</span> <span class="dt">vec4</span><span class="op">(</span>clipSpacePos<span class="op">);</span> <span class="co">// Cast to standard float for rasterization</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="eliminating-cpu-side-coordinate-rebasing">Eliminating CPU-Side
+Coordinate Rebasing</h3>
+<p>Before double-precision execution units were accessible in shaders,
+developers had to bypass precision loss using architectural workarounds
+like Floating Origin or Camera-Relative Rendering. These systems require
+the CPU to subtract the camera's world position from every object's
+world position using 64-bit CPU math, outputting an offset relative to
+the camera that fits safely into standard 32-bit floats.</p>
+<p>While effective, CPU-side rebasing introduces continuous processing
+overhead, requires dynamic per-frame vertex or uniform updates, and
+complicates GPU-driven instancing and compute-based physics or
+procedural generation.</p>
+<p>By handling 64-bit arithmetic directly on the GPU:</p>
+<ul>
+<li>Compute shaders can simulate physics and orbit mechanics natively
+across vast spatial distances.</li>
+<li>Procedural generation (e.g., raymarching terrain or generating
+planetary noise) can execute at extreme distances without precision
+degradation.</li>
+<li>Vertex shaders can receive unified absolute coordinates, reducing
+CPU involvement to sending global transform states.</li>
+</ul>
+<h3 id="balancing-precision-and-pipeline-performance">Balancing
+Precision and Pipeline Performance</h3>
+<p>Consumer GPU architectures typically possess substantially fewer
+64-bit arithmetic logic units (ALUs) compared to 32-bit units. Depending
+on hardware architecture, FP64 throughput can run anywhere from 1/2 to
+1/32 the speed of FP32. Additionally, storing 64-bit values doubles
+memory bandwidth consumption for vertex buffers and memory fetches.</p>
+<p>To maintain performance, modern OpenGL applications adopt a hybrid
+strategy:</p>
+<ol type="1">
+<li><strong>Targeted Precision:</strong> Use <code>dvec3</code> and
+<code>dmat4</code> strictly for the initial stages of
+transformation—specifically, transforming geometry from universal world
+space into eye/camera space.</li>
+<li><strong>Downcasting to FP32:</strong> Once coordinates are relative
+to the camera, the numbers are small enough that single-precision 32-bit
+floats retain full geometric detail. The shader casts the values to
+standard <code>vec3</code> or <code>vec4</code> types before pixel
+shading, lighting calculations, and rasterization.</li>
+<li><strong>Logarithmic Depth Buffering:</strong> To complement
+high-precision vertex positioning, logarithmic depth calculations are
+executed in the fragment stage to ensure the GPU's fixed-function depth
+buffer does not suffer from precision collapse across astronomical
+near-to-far clipping planes.</li>
+</ol></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

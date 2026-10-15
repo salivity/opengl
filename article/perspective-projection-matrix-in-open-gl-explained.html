@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Perspective Projection Matrix in OpenGL Explained - opengl</title>
+    <meta name="description" content="The perspective projection matrix in OpenGL is a fundamental mathematical transformation that converts 3D camera-space coordinates into 2D screen coordinates while mimicking human vision. By mapping a truncated pyramid-shaped viewing area—known as the vie">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/perspective-projection-matrix-in-open-gl-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Perspective Projection Matrix in OpenGL Explained - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/perspective-projection-matrix-in-open-gl-explained" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The perspective projection matrix in OpenGL is a fundamental mathematical transformation that converts 3D camera-space coordinates into 2D screen coordinates while mimicking human vision. By mapping a truncated pyramid-shaped viewing area—known as the vie" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="perspective-projection-matrix-in-opengl-explained">Perspective
+Projection Matrix in OpenGL Explained</h1>
+<p>The perspective projection matrix in OpenGL is a fundamental
+mathematical transformation that converts 3D camera-space coordinates
+into 2D screen coordinates while mimicking human vision. By mapping a
+truncated pyramid-shaped viewing area—known as the view frustum—into a
+standardized cube called Normalized Device Coordinates (NDC), this
+calculation ensures that objects farther from the camera appear smaller
+than those nearby. It handles perspective foreshortening, defines
+visible boundaries via clipping planes, and prepares spatial depth
+information for accurate rendering on a flat display.</p>
+<h3 id="simulating-depth-and-foreshortening">Simulating Depth and
+Foreshortening</h3>
+<p>In the physical world, objects appear smaller as their distance from
+the observer increases. Standard affine transformations (like
+translation and rotation) cannot reproduce this effect because they
+preserve parallel lines. The primary purpose of the perspective
+projection matrix calculation is to encode an object's distance into the
+fourth coordinate (<span class="math inline">\(w\)</span>) of a 4D
+homogeneous vector. Later in the graphics pipeline, OpenGL divides the
+<span class="math inline">\(x\)</span>, <span
+class="math inline">\(y\)</span>, and <span
+class="math inline">\(z\)</span> coordinates by this <span
+class="math inline">\(w\)</span> value—a process known as the
+perspective divide. This division scales geometry inversely with
+distance, creating realistic depth perception.</p>
+<h3
+id="mapping-the-viewing-frustum-to-normalized-device-coordinates-ndc">Mapping
+the Viewing Frustum to Normalized Device Coordinates (NDC)</h3>
+<p>A camera's field of view forms a geometric shape called a viewing
+frustum, defined by six planes: near, far, left, right, top, and bottom.
+The perspective projection matrix transforms this uneven frustum into an
+axis-aligned canonical view volume—a cube where coordinates range from
+-1.0 to 1.0 along the <span class="math inline">\(x\)</span>, <span
+class="math inline">\(y\)</span>, and <span
+class="math inline">\(z\)</span> axes. Transforming the complex frustum
+into a symmetrical box simplifies subsequent clipping and rasterization
+steps for the GPU.</p>
+<h3 id="facilitating-primitive-clipping">Facilitating Primitive
+Clipping</h3>
+<p>Not all geometry in a 3D scene should be drawn. Objects outside the
+camera's field of view or behind the camera must be discarded to save
+computational power. The perspective projection matrix scales and shifts
+geometry into clip space coordinates. In this space, the GPU hardware
+performs efficient boundary checks: any vertex whose coordinates fall
+outside the range of <span class="math inline">\([-w, w]\)</span> lies
+outside the viewing frustum and is clipped before rasterization
+occurs.</p>
+<h3 id="preserving-depth-for-the-z-buffer">Preserving Depth for the
+Z-Buffer</h3>
+<p>A 2D monitor requires a method to determine which surfaces obscure
+others. The perspective projection matrix maps the camera-space <span
+class="math inline">\(z\)</span>-depth into a normalized range
+(typically <span class="math inline">\([0, 1]\)</span> or <span
+class="math inline">\([-1, 1]\)</span>) stored in the depth buffer
+(Z-buffer). This mapping is non-linear, allocating higher precision to
+objects closer to the near clipping plane where visual detail matters
+most. The resulting depth values allow the GPU to perform depth testing,
+rendering only the nearest visible surfaces and discarding occluded
+fragments.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Buffer Orphaning with glBufferData - opengl</title>
+    <meta name="description" content="Buffer orphaning is a performance optimization technique in OpenGL that prevents CPU-GPU synchronization stalls during dynamic data updates. By calling glBufferData with a NULL pointer and the same size and usage hints, developers signal to the graphics d">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-buffer-orphaning-with-gl-buffer-data">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Buffer Orphaning with glBufferData - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-buffer-orphaning-with-gl-buffer-data" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Buffer orphaning is a performance optimization technique in OpenGL that prevents CPU-GPU synchronization stalls during dynamic data updates. By calling glBufferData with a NULL pointer and the same size and usage hints, developers signal to the graphics d" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-buffer-orphaning-with-glbufferdata">OpenGL Buffer
+Orphaning with glBufferData</h1>
+<p>Buffer orphaning is a performance optimization technique in OpenGL
+that prevents CPU-GPU synchronization stalls during dynamic data
+updates. By calling <code>glBufferData</code> with a <code>NULL</code>
+pointer and the same size and usage hints, developers signal to the
+graphics driver that the existing buffer data is no longer needed. This
+article explains how this call triggers driver-level reallocation,
+decouples pending GPU read operations from CPU writes, and leaves the
+previous memory allocation to be discarded safely in the background.</p>
+<p>When a CPU instructs OpenGL to modify an existing buffer using
+functions like <code>glBufferSubData</code> or <code>glMapBuffer</code>,
+a synchronization conflict often arises. Modern graphics architectures
+operate asynchronously: while the CPU may be submitting commands for
+frame <span class="math inline">\(N\)</span>, the GPU is typically still
+executing rendering commands for frame <span
+class="math inline">\(N-1\)</span>. If the CPU attempts to overwrite a
+buffer that the GPU is currently reading from to render a draw call, the
+driver must force the CPU to halt and wait until the GPU completes its
+reads. This condition, known as a pipeline stall, introduces significant
+latency and drops frame rates.</p>
+<p>Passing a <code>NULL</code> data pointer to <code>glBufferData</code>
+resolves this conflict by initiating buffer orphaning. When the driver
+receives <code>glBufferData(target, size, NULL, usage)</code>, it
+recognizes that the application explicitly discards the current contents
+of the buffer object. Instead of forcing the CPU to wait for the GPU to
+finish with the underlying memory block, the driver decouples the
+logical buffer object name (the OpenGL ID) from the physical memory
+address currently held by the hardware.</p>
+<p>Under the hood, the driver handles this process in three distinct
+stages:</p>
+<ol type="1">
+<li><strong>Decoupling the Memory Block:</strong> The driver detaches
+the active physical GPU memory chunk from the OpenGL buffer handle.
+Because the GPU is still actively reading from this memory chunk via
+previously queued draw commands, the driver does not immediately free or
+overwrite it. This detached block becomes "orphaned."</li>
+<li><strong>Reallocating Fresh Memory:</strong> The driver assigns a
+completely new, uninitialized physical memory block—often retrieved from
+an internal pre-allocated memory pool—to the original OpenGL buffer
+handle.</li>
+<li><strong>Deferred Garbage Collection:</strong> The GPU continues
+executing its queue, reading from the orphaned physical memory
+undisturbed. Once the hardware completes the draw commands referencing
+the orphaned block, the driver's internal memory manager safely frees or
+recycles that block back into the memory pool without any CPU
+interruption.</li>
+</ol>
+<p>Once the buffer is orphaned, subsequent update calls—such as
+<code>glBufferSubData</code> or <code>glMapBufferRange</code>—write
+directly into the newly allocated physical memory. Because the GPU has
+not yet received any commands referencing this new memory address, the
+CPU can write to it immediately with zero wait time.</p>
+<p>Through this mechanism, passing <code>NULL</code> to
+<code>glBufferData</code> avoids pipeline serialization entirely. The
+application maintains continuous high-throughput data streaming for
+dynamic geometry, particle systems, and uniform data while letting the
+driver asynchronously retire stale memory behind the scenes.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

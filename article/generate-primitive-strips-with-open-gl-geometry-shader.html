@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generate Primitive Strips with OpenGL Geometry Shader - opengl</title>
+    <meta name="description" content="The OpenGL geometry shader stage sits between the vertex shader and the rasterizer, possessing the unique ability to change primitive topology dynamically. When configured to take isolated points as input, a geometry shader can expand each point into a co">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/generate-primitive-strips-with-open-gl-geometry-shader">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Generate Primitive Strips with OpenGL Geometry Shader - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/generate-primitive-strips-with-open-gl-geometry-shader" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The OpenGL geometry shader stage sits between the vertex shader and the rasterizer, possessing the unique ability to change primitive topology dynamically. When configured to take isolated points as input, a geometry shader can expand each point into a co" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="generate-primitive-strips-with-opengl-geometry-shader">Generate
+Primitive Strips with OpenGL Geometry Shader</h1>
+<p>The OpenGL geometry shader stage sits between the vertex shader and
+the rasterizer, possessing the unique ability to change primitive
+topology dynamically. When configured to take isolated points as input,
+a geometry shader can expand each point into a complex primitive
+strip—such as a <code>line_strip</code> or a
+<code>triangle_strip</code>—by generating and emitting multiple vertices
+in a specific sequential order. This article explains the layout
+configurations, vertex emission mechanisms, and execution flow required
+to transform point data into primitive strips within GLSL.</p>
+<h3 id="input-and-output-layout-declarations">Input and Output Layout
+Declarations</h3>
+<p>To convert points into strips, the geometry shader must first declare
+the incoming primitive type and the target output primitive type along
+with the maximum number of vertices it will produce.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 330 core</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="co">// Declare isolated points as input</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span> <span class="op">(</span><span class="dt">points</span><span class="op">)</span> <span class="dt">in</span><span class="op">;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="co">// Declare the output strip type and upper vertex bound</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span> <span class="op">(</span><span class="dt">triangle_strip</span><span class="op">,</span> <span class="dt">max_vertices</span> <span class="op">=</span> <span class="dv">4</span><span class="op">)</span> <span class="dt">out</span><span class="op">;</span></span></code></pre></div>
+<p>The <code>layout (points) in;</code> directive configures each
+geometry shader invocation to process exactly one vertex from the
+preceding stage, accessible via the built-in array
+<code>gl_in[0]</code>. The output layout determines the assembly rule
+used by the primitive assembler downstream. Specifying
+<code>triangle_strip</code> or <code>line_strip</code> dictates how the
+emitted vertices are joined. The <code>max_vertices</code> qualifier
+reserves buffer space on the GPU; keeping this number as low as possible
+ensures optimal hardware occupancy.</p>
+<h3 id="the-primitive-strip-assembly-rules">The Primitive Strip Assembly
+Rules</h3>
+<p>Primitive strips allow successive primitives to share vertices,
+reducing memory bandwidth and calculation overhead:</p>
+<ul>
+<li><strong>Line Strip (<code>line_strip</code>):</strong> The first two
+emitted vertices form the first line segment. Every subsequent vertex
+forms an additional line segment using the preceding vertex (<span
+class="math inline">\(V_0-V_1\)</span>, <span
+class="math inline">\(V_1-V_2\)</span>, <span
+class="math inline">\(V_2-V_3\)</span>, etc.).</li>
+<li><strong>Triangle Strip (<code>triangle_strip</code>):</strong> The
+first three emitted vertices form the first triangle. Each subsequent
+vertex forms another triangle with the previous two vertices (<span
+class="math inline">\(V_0-V_1-V_2\)</span>, <span
+class="math inline">\(V_1-V_2-V_3\)</span>, <span
+class="math inline">\(V_2-V_3-V_4\)</span>, etc.). The GPU automatically
+alternates the winding order internally to ensure consistent face
+culling across all sub-triangles.</li>
+</ul>
+<h3 id="vertex-emission-workflow">Vertex Emission Workflow</h3>
+<p>The geometry shader utilizes two built-in GLSL functions to assemble
+strips from an incoming point:</p>
+<ol type="1">
+<li><strong><code>EmitVertex()</code></strong>: Writes current output
+variables (such as <code>gl_Position</code>, UV coordinates, and
+normals) into the output stream. Every time this function is called, the
+pipeline records a new vertex for the current primitive strip.</li>
+<li><strong><code>EndPrimitive()</code></strong>: Signals the hardware
+that the current strip is complete. Any subsequent call to
+<code>EmitVertex()</code> will begin a distinct, unconnected strip.</li>
+</ol>
+<p>When expanding an isolated point, the shader computes offsets
+relative to <code>gl_in[0].gl_Position</code>, writes the coordinates,
+and calls <code>EmitVertex()</code> iteratively in strip order.</p>
+<h3
+id="implementation-example-expanding-a-point-into-a-quad">Implementation
+Example: Expanding a Point into a Quad</h3>
+<p>A common application of this technique is camera-facing billboard
+generation or 2D particle rendering, where an incoming point is
+transformed into a four-vertex quad via a
+<code>triangle_strip</code>.</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 330 core</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span> <span class="op">(</span><span class="dt">points</span><span class="op">)</span> <span class="dt">in</span><span class="op">;</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span> <span class="op">(</span><span class="dt">triangle_strip</span><span class="op">,</span> <span class="dt">max_vertices</span> <span class="op">=</span> <span class="dv">4</span><span class="op">)</span> <span class="dt">out</span><span class="op">;</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="dt">in</span> <span class="dt">vec2</span> vSize<span class="op">[];</span> <span class="co">// Size passed from vertex shader</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec2</span> TexCoords<span class="op">;</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">mat4</span> uProjection<span class="op">;</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> center <span class="op">=</span> <span class="va">gl_in</span><span class="op">[</span><span class="dv">0</span><span class="op">].</span><span class="fu">gl_Position</span><span class="op">;</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> halfWidth <span class="op">=</span> vSize<span class="op">[</span><span class="dv">0</span><span class="op">].</span><span class="fu">x</span> <span class="op">*</span> <span class="fl">0.5</span><span class="op">;</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> halfHeight <span class="op">=</span> vSize<span class="op">[</span><span class="dv">0</span><span class="op">].</span><span class="fu">y</span> <span class="op">*</span> <span class="fl">0.5</span><span class="op">;</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Vertex 0: Bottom-Left</span></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>    <span class="bu">gl_Position</span> <span class="op">=</span> uProjection <span class="op">*</span> <span class="op">(</span>center <span class="op">+</span> <span class="dt">vec4</span><span class="op">(-</span>halfWidth<span class="op">,</span> <span class="op">-</span>halfHeight<span class="op">,</span> <span class="fl">0.0</span><span class="op">,</span> <span class="fl">0.0</span><span class="op">));</span></span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>    TexCoords <span class="op">=</span> <span class="dt">vec2</span><span class="op">(</span><span class="fl">0.0</span><span class="op">,</span> <span class="fl">0.0</span><span class="op">);</span></span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>    <span class="bu">EmitVertex</span><span class="op">();</span></span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Vertex 1: Bottom-Right</span></span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a>    <span class="bu">gl_Position</span> <span class="op">=</span> uProjection <span class="op">*</span> <span class="op">(</span>center <span class="op">+</span> <span class="dt">vec4</span><span class="op">(</span>halfWidth<span class="op">,</span> <span class="op">-</span>halfHeight<span class="op">,</span> <span class="fl">0.0</span><span class="op">,</span> <span class="fl">0.0</span><span class="op">));</span></span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a>    TexCoords <span class="op">=</span> <span class="dt">vec2</span><span class="op">(</span><span class="fl">1.0</span><span class="op">,</span> <span class="fl">0.0</span><span class="op">);</span></span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a>    <span class="bu">EmitVertex</span><span class="op">();</span></span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Vertex 2: Top-Left</span></span>
+<span id="cb2-27"><a href="#cb2-27" aria-hidden="true" tabindex="-1"></a>    <span class="bu">gl_Position</span> <span class="op">=</span> uProjection <span class="op">*</span> <span class="op">(</span>center <span class="op">+</span> <span class="dt">vec4</span><span class="op">(-</span>halfWidth<span class="op">,</span> halfHeight<span class="op">,</span> <span class="fl">0.0</span><span class="op">,</span> <span class="fl">0.0</span><span class="op">));</span></span>
+<span id="cb2-28"><a href="#cb2-28" aria-hidden="true" tabindex="-1"></a>    TexCoords <span class="op">=</span> <span class="dt">vec2</span><span class="op">(</span><span class="fl">0.0</span><span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb2-29"><a href="#cb2-29" aria-hidden="true" tabindex="-1"></a>    <span class="bu">EmitVertex</span><span class="op">();</span></span>
+<span id="cb2-30"><a href="#cb2-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-31"><a href="#cb2-31" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Vertex 3: Top-Right</span></span>
+<span id="cb2-32"><a href="#cb2-32" aria-hidden="true" tabindex="-1"></a>    <span class="bu">gl_Position</span> <span class="op">=</span> uProjection <span class="op">*</span> <span class="op">(</span>center <span class="op">+</span> <span class="dt">vec4</span><span class="op">(</span>halfWidth<span class="op">,</span> halfHeight<span class="op">,</span> <span class="fl">0.0</span><span class="op">,</span> <span class="fl">0.0</span><span class="op">));</span></span>
+<span id="cb2-33"><a href="#cb2-33" aria-hidden="true" tabindex="-1"></a>    TexCoords <span class="op">=</span> <span class="dt">vec2</span><span class="op">(</span><span class="fl">1.0</span><span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb2-34"><a href="#cb2-34" aria-hidden="true" tabindex="-1"></a>    <span class="bu">EmitVertex</span><span class="op">();</span></span>
+<span id="cb2-35"><a href="#cb2-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-36"><a href="#cb2-36" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Finalize the triangle strip</span></span>
+<span id="cb2-37"><a href="#cb2-37" aria-hidden="true" tabindex="-1"></a>    <span class="bu">EndPrimitive</span><span class="op">();</span></span>
+<span id="cb2-38"><a href="#cb2-38" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>In this implementation, the incoming point serves as the origin. The
+shader calculates four distinct corner positions. By emitting them in
+the order Bottom-Left, Bottom-Right, Top-Left, and Top-Right, the
+hardware constructs two adjacent triangles that share an edge (<span
+class="math inline">\(V_0-V_1-V_2\)</span> and <span
+class="math inline">\(V_1-V_2-V_3\)</span>). Calling
+<code>EndPrimitive()</code> terminates the strip, sending the complete
+quad down the graphics pipeline to the rasterizer.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

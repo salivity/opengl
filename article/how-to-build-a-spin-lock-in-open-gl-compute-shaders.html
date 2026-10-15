@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How to Build a Spin-Lock in OpenGL Compute Shaders - opengl</title>
+    <meta name="description" content="This article details how to implement a functional spin-lock synchronization primitive inside an OpenGL compute shader using OpenGL Shading Language (GLSL). It covers the required memory qualifiers, atomic operations for acquiring and releasing locks, the">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-to-build-a-spin-lock-in-open-gl-compute-shaders">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How to Build a Spin-Lock in OpenGL Compute Shaders - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-to-build-a-spin-lock-in-open-gl-compute-shaders" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article details how to implement a functional spin-lock synchronization primitive inside an OpenGL compute shader using OpenGL Shading Language (GLSL). It covers the required memory qualifiers, atomic operations for acquiring and releasing locks, the" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-to-build-a-spin-lock-in-opengl-compute-shaders">How to Build
+a Spin-Lock in OpenGL Compute Shaders</h1>
+<p>This article details how to implement a functional spin-lock
+synchronization primitive inside an OpenGL compute shader using OpenGL
+Shading Language (GLSL). It covers the required memory qualifiers,
+atomic operations for acquiring and releasing locks, the role of memory
+barriers, and the critical hardware architecture limitations—such as
+SIMT execution and scheduling deadlocks—that developers must navigate to
+avoid device timeouts.</p>
+<hr />
+<h3 id="understanding-the-gpu-memory-model">Understanding the GPU Memory
+Model</h3>
+<p>To create a cross-invocation lock on the GPU, data must be globally
+visible across different execution units. Standard local variables or
+default Shader Storage Buffer Objects (SSBOs) may cache values in
+registers or L1 caches without propagating modifications
+immediately.</p>
+<p>To bypass this caching and ensure that changes are immediately
+visible to all compute units, the lock variable must be defined within
+an SSBO using the <code>coherent</code> memory qualifier.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 450 core</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">std430</span><span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">coherent</span> <span class="kw">buffer</span> MutexBuffer <span class="op">{</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint</span> lockState<span class="op">;</span> <span class="co">// 0 = unlocked, 1 = locked</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
+<p>The <code>coherent</code> keyword tells the compiler and memory
+subsystem that writes to <code>lockState</code> must be made visible to
+other shader invocations accessing the same buffer.</p>
+<hr />
+<h3 id="implementing-the-lock-acquisition">Implementing the Lock
+Acquisition</h3>
+<p>Spinning requires an atomic Compare-And-Swap (CAS) operation. In
+GLSL, this is provided by
+<code>atomicCompSwap(mem, compare, data)</code>.</p>
+<p>The function compares the current value stored in <code>mem</code>
+with <code>compare</code>. If they match, it replaces the value with
+<code>data</code>. In either case, it returns the value that was stored
+in <code>mem</code> immediately before the operation.</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">acquireLock</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Loop until atomicCompSwap successfully replaces 0 (unlocked) with 1 (locked)</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="kw">while</span> <span class="op">(</span><span class="bu">atomicCompSwap</span><span class="op">(</span>lockState<span class="op">,</span> <span class="dv">0</span>u<span class="op">,</span> <span class="dv">1</span>u<span class="op">)</span> <span class="op">!=</span> <span class="dv">0</span>u<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>        <span class="co">// Spin wait</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Ensure all subsequent memory reads/writes happen after the lock is acquired</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    <span class="bu">memoryBarrierBuffer</span><span class="op">();</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>The <code>memoryBarrierBuffer()</code> call directly after the loop
+is mandatory. It ensures ordering: no memory accesses inside the
+protected critical section can be reordered by the compiler or the
+memory controller prior to the point where the lock was secured.</p>
+<hr />
+<h3 id="implementing-the-lock-release">Implementing the Lock
+Release</h3>
+<p>Releasing the lock involves writing <code>0u</code> back to
+<code>lockState</code>. To prevent race conditions and memory
+reordering, a barrier must precede the release, followed by an atomic
+write.</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">releaseLock</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Flush all pending writes to the buffer before releasing the lock</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    <span class="bu">memoryBarrierBuffer</span><span class="op">();</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Atomically reset the lock state to 0</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    <span class="bu">atomicExchange</span><span class="op">(</span>lockState<span class="op">,</span> <span class="dv">0</span>u<span class="op">);</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>Using <code>atomicExchange(lockState, 0u)</code> guarantees an atomic
+store that flushes immediately to the memory hierarchy, alerting other
+spinning invocations that the resource is free.</p>
+<hr />
+<h3 id="full-example-compute-shader">Full Example Compute Shader</h3>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 450 core</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span>local_size_x <span class="op">=</span> <span class="dv">64</span><span class="op">,</span> local_size_y <span class="op">=</span> <span class="dv">1</span><span class="op">,</span> local_size_z <span class="op">=</span> <span class="dv">1</span><span class="op">)</span> <span class="dt">in</span><span class="op">;</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">std430</span><span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">coherent</span> <span class="kw">buffer</span> SyncBuffer <span class="op">{</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint</span> lockState<span class="op">;</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint</span> sharedCounter<span class="op">;</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">acquireLock</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    <span class="kw">while</span> <span class="op">(</span><span class="bu">atomicCompSwap</span><span class="op">(</span>lockState<span class="op">,</span> <span class="dv">0</span>u<span class="op">,</span> <span class="dv">1</span>u<span class="op">)</span> <span class="op">!=</span> <span class="dv">0</span>u<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>    <span class="bu">memoryBarrierBuffer</span><span class="op">();</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">releaseLock</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>    <span class="bu">memoryBarrierBuffer</span><span class="op">();</span></span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>    <span class="bu">atomicExchange</span><span class="op">(</span>lockState<span class="op">,</span> <span class="dv">0</span>u<span class="op">);</span></span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a>    <span class="fu">acquireLock</span><span class="op">();</span></span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Critical Section</span></span>
+<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a>    sharedCounter <span class="op">+=</span> <span class="dv">1</span>u<span class="op">;</span></span>
+<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a>    <span class="fu">releaseLock</span><span class="op">();</span></span>
+<span id="cb4-28"><a href="#cb4-28" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<hr />
+<h3 id="hardware-traps-and-deadlock-hazards">Hardware Traps and Deadlock
+Hazards</h3>
+<p>While this pattern is syntactically correct, deploying spin-locks on
+GPUs comes with severe architectural risks that do not exist on
+CPUs:</p>
+<ol type="1">
+<li><p><strong>Warp/Wavefront Divergence (Lockstep Deadlock):</strong>
+Threads within the same 32-thread (NVIDIA) or 64-thread (AMD) subgroup
+execute instructions in lockstep (SIMT). If Thread 0 acquires the lock
+and enters the critical section, while Thread 1 in the same subgroup
+fails and enters the <code>while</code> spin loop, Thread 0 may never be
+scheduled to reach <code>releaseLock()</code>. The entire warp deadlocks
+immediately. <em>Rule:</em> Never use a spin-lock between threads in the
+same subgroup. Elect a single thread per subgroup using subgroup
+operations, or synchronize only across separate workgroups.</p></li>
+<li><p><strong>Workgroup Scheduling and Starvation:</strong> GPUs
+execute a limited number of workgroups concurrently based on available
+Compute Units (CUs) or Streaming Multiprocessors (SMs). If an active
+workgroup spins waiting for a lock held by a workgroup that has not yet
+been scheduled by the hardware dispatcher, the active workgroup will
+spin infinitely. This triggers the OS-level Timeout Detection and
+Recovery (TDR), causing the driver or GPU to crash.</p></li>
+<li><p><strong>Performance Overhead:</strong> Spin-locks saturate memory
+buses with atomic requests, degrading performance across all running
+shaders. Whenever possible, replace spin-locks with atomic counters,
+parallel reductions, or multi-pass dispatch strategies.</p></li>
+</ol></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

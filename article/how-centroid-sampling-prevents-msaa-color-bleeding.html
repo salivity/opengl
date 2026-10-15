@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How Centroid Sampling Prevents MSAA Color Bleeding - opengl</title>
+    <meta name="description" content="Multi-Sample Anti-Aliasing (MSAA) improves edge rendering quality by testing coverage at multiple sub-pixel locations while typically executing the fragment shader only once per pixel. However, standard MSAA evaluates fragment attributes at the pixel cent">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-centroid-sampling-prevents-msaa-color-bleeding">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How Centroid Sampling Prevents MSAA Color Bleeding - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-centroid-sampling-prevents-msaa-color-bleeding" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Multi-Sample Anti-Aliasing (MSAA) improves edge rendering quality by testing coverage at multiple sub-pixel locations while typically executing the fragment shader only once per pixel. However, standard MSAA evaluates fragment attributes at the pixel cent" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-centroid-sampling-prevents-msaa-color-bleeding">How Centroid
+Sampling Prevents MSAA Color Bleeding</h1>
+<p>Multi-Sample Anti-Aliasing (MSAA) improves edge rendering quality by
+testing coverage at multiple sub-pixel locations while typically
+executing the fragment shader only once per pixel. However, standard
+MSAA evaluates fragment attributes at the pixel center, which can lead
+to color bleeding and texture-wrapping artifacts if that center lies
+outside the primitive. Centroid sampling resolves this issue in OpenGL
+by forcing the GPU to evaluate varying attributes at a location
+guaranteed to be covered by the primitive, eliminating the out-of-bounds
+extrapolation that causes visual artifacts.</p>
+<h3 id="the-cause-of-msaa-color-bleeding">The Cause of MSAA Color
+Bleeding</h3>
+<p>In standard MSAA, rasterization decouples geometric coverage from
+fragment shader execution. A pixel can contain multiple sample points
+(such as 2x, 4x, or 8x). If at least one of these sample points is
+covered by a triangle, the fragment shader executes to compute a color
+for the pixel.</p>
+<p>By default, OpenGL evaluates interpolated fragment inputs (such as
+texture coordinates, normals, and colors) at the geometric center of the
+pixel. When a triangle clips a pixel without covering its center, the
+fragment shader still runs, but it evaluates attributes at that
+uncovered center.</p>
+<p>Evaluating attributes outside the boundary of the triangle requires
+mathematical extrapolation rather than interpolation. For texture
+coordinates, this extrapolation pushes <span class="math inline">\((u,
+v)\)</span> coordinates beyond their intended <span
+class="math inline">\([0, 1]\)</span> bounds or past the borders of a
+sub-texture inside an atlas. When the fragment shader samples the
+texture using these out-of-bounds coordinates, it fetches adjacent
+pixels, clamps inappropriately, or wraps unexpectedly. When the
+resulting color is blended back into the covered sample locations, an
+unintended halo, dark fringe, or bleeding edge appears along the
+geometry's silhouette.</p>
+<h3 id="how-centroid-sampling-eliminates-extrapolation">How Centroid
+Sampling Eliminates Extrapolation</h3>
+<p>Centroid sampling modifies the interpolation point of varying inputs
+in the graphics pipeline. Instead of blindly evaluating inputs at the
+pixel center, the hardware calculates a sample point bounded by the
+actual coverage mask.</p>
+<p>When centroid sampling is active:</p>
+<ol type="1">
+<li>The hardware inspects the coverage mask to identify which MSAA
+sample points are covered by the current primitive.</li>
+<li>If all samples are covered (or if the pixel center is covered),
+evaluation behaves normally at the pixel center.</li>
+<li>If the pixel center is not covered, the GPU shifts the attribute
+evaluation point to the "centroid"—a position that falls within the
+convex hull of the covered sample points.</li>
+</ol>
+<p>Because the centroid point is guaranteed to lie within the interior
+of the primitive, the interpolated attributes are derived strictly
+through interpolation rather than extrapolation. Texture coordinates
+remain valid and within their intended boundaries, preventing texture
+lookups from bleeding adjacent or out-of-range colors onto geometry
+silhouettes.</p>
+<h3 id="implementation-in-opengl">Implementation in OpenGL</h3>
+<p>In OpenGL, centroid sampling is applied on a per-attribute basis
+using GLSL interpolation qualifiers. Both the vertex shader output and
+the fragment shader input must be declared with the
+<code>centroid</code> keyword.</p>
+<p>In the vertex shader:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">centroid</span> <span class="dt">out</span> <span class="dt">vec2</span> vTexCoord<span class="op">;</span></span></code></pre></div>
+<p>In the fragment shader:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="dt">centroid</span> <span class="dt">in</span> <span class="dt">vec2</span> vTexCoord<span class="op">;</span></span></code></pre></div>
+<p>By adding the <code>centroid</code> qualifier to texture coordinates
+and other sensitive interpolators, the rasterizer avoids extrapolating
+attributes beyond triangle boundaries, preserving clean edges and
+completely suppressing color bleeding under MSAA.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

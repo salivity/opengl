@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Improving OpenGL Efficiency with glMapBufferRange - opengl</title>
+    <meta name="description" content="The introduction of glMapBufferRange in OpenGL 3.0 resolved major performance bottlenecks inherent to legacy buffer mapping techniques like glMapBuffer and glBufferSubData. This article explores how glMapBufferRange enhances CPU-to-GPU memory transfer eff">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/improving-open-gl-efficiency-with-gl-map-buffer-range">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Improving OpenGL Efficiency with glMapBufferRange - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/improving-open-gl-efficiency-with-gl-map-buffer-range" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The introduction of glMapBufferRange in OpenGL 3.0 resolved major performance bottlenecks inherent to legacy buffer mapping techniques like glMapBuffer and glBufferSubData. This article explores how glMapBufferRange enhances CPU-to-GPU memory transfer eff" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="improving-opengl-efficiency-with-glmapbufferrange">Improving
+OpenGL Efficiency with glMapBufferRange</h1>
+<p>The introduction of <code>glMapBufferRange</code> in OpenGL 3.0
+resolved major performance bottlenecks inherent to legacy buffer mapping
+techniques like <code>glMapBuffer</code> and
+<code>glBufferSubData</code>. This article explores how
+<code>glMapBufferRange</code> enhances CPU-to-GPU memory transfer
+efficiency by enabling sub-allocation mapping, explicit flush controls,
+and non-blocking synchronization flags that prevent pipeline stalls.</p>
+<h3 id="granular-sub-range-mapping">Granular Sub-Range Mapping</h3>
+<p>Legacy <code>glMapBuffer</code> forces the driver to map the entirety
+of a buffer object into client memory space, regardless of how few bytes
+need modification. This creates unnecessary overhead when working with
+large vertex or uniform buffers.</p>
+<p>In contrast, <code>glMapBufferRange</code> requires explicit
+<code>offset</code> and <code>length</code> parameters. By targeting
+only the specific byte range intended for modification, the driver
+reduces memory tracking overhead and cache invalidation penalties.</p>
+<h3
+id="elimination-of-pipeline-stalls-via-invalidation-flags">Elimination
+of Pipeline Stalls via Invalidation Flags</h3>
+<p>In legacy OpenGL, mapping a buffer that is currently queued for a GPU
+rendering command forces the CPU to wait until the GPU finishes
+execution, causing an expensive pipeline stall. Developers historically
+mitigated this using "buffer orphaning" with
+<code>glBufferData(..., NULL)</code>.</p>
+<p><code>glMapBufferRange</code> formalizes and optimizes this behavior
+via access flags:</p>
+<ul>
+<li><strong><code>GL_MAP_INVALIDATE_RANGE_BIT</code></strong>: Informs
+the driver that the previous contents within the specified range are
+discarded. The driver can allocate fresh backing memory for the range or
+repurpose internal memory without waiting for existing draw calls to
+finish reading old data.</li>
+<li><strong><code>GL_MAP_INVALIDATE_BUFFER_BIT</code></strong>: Signals
+that the entire buffer can be discarded, executing a true orphan without
+requiring an extra API call to <code>glBufferData</code>.</li>
+</ul>
+<h3 id="unsynchronized-multi-buffering">Unsynchronized
+Multi-Buffering</h3>
+<p>The <code>GL_MAP_UNSYNCHRONIZED_BIT</code> flag grants full control
+of synchronization to the developer.</p>
+<p>When passed, the OpenGL driver skips all internal checks for GPU
+read/write hazards on that buffer. When combined with custom
+ring-buffering strategies or OpenGL sync objects
+(<code>glFenceSync</code>), developers can write data into unused
+regions of a mapped buffer simultaneously while the GPU processes
+rendering operations from earlier regions, achieving true parallel
+CPU-GPU execution.</p>
+<h3 id="explicit-flushing-mechanics">Explicit Flushing Mechanics</h3>
+<p>Under standard mapping, the entire mapped memory region must be
+synchronized and committed to the GPU upon calling
+<code>glUnmapBuffer</code>.</p>
+<p><code>glMapBufferRange</code> introduces the
+<code>GL_MAP_FLUSH_EXPLICIT_BIT</code> flag, paired with
+<code>glFlushMappedBufferRange</code>. This allows applications to map a
+large range once, perform sparse or selective writes, and explicitly
+notify the driver only of the modified subsections. The driver then
+initiates DMA transfers exclusively for the flushed slices,
+substantially reducing bus bandwidth consumption.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

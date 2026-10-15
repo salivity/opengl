@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Screen Space Directional Occlusion: SSDO vs SSAO - opengl</title>
+    <meta name="description" content="Screen Space Directional Occlusion (SSDO) is an advanced real-time rendering technique designed to approximate indirect illumination and realistic contact shadows entirely in post-processing. While standard Screen Space Ambient Occlusion (SSAO) estimates">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/screen-space-directional-occlusion-ssdo-vs-ssao">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Screen Space Directional Occlusion: SSDO vs SSAO - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/screen-space-directional-occlusion-ssdo-vs-ssao" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Screen Space Directional Occlusion (SSDO) is an advanced real-time rendering technique designed to approximate indirect illumination and realistic contact shadows entirely in post-processing. While standard Screen Space Ambient Occlusion (SSAO) estimates" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="screen-space-directional-occlusion-ssdo-vs-ssao">Screen Space
+Directional Occlusion: SSDO vs SSAO</h1>
+<p>Screen Space Directional Occlusion (SSDO) is an advanced real-time
+rendering technique designed to approximate indirect illumination and
+realistic contact shadows entirely in post-processing. While standard
+Screen Space Ambient Occlusion (SSAO) estimates uniform ambient shadow
+darkening in crevices, SSDO incorporates the directionality of incoming
+light to produce accurate directional shadows and subtle indirect color
+bleeding. This article explores the fundamentals of SSDO, compares its
+mechanics to traditional SSAO, and explains how it dramatically enhances
+visual fidelity in OpenGL rendering pipelines.</p>
+<h3 id="understanding-ssao-and-its-limitations">Understanding SSAO and
+Its Limitations</h3>
+<p>Screen Space Ambient Occlusion works by analyzing the depth buffer
+(and often surface normals) to determine how occluded a given point is
+by nearby geometry. If a fragment is surrounded by geometry that exceeds
+a certain depth threshold within a sampling sphere or hemisphere, SSAO
+scales down the ambient lighting at that point.</p>
+<p>However, standard SSAO has critical physical inaccuracies:</p>
+<ul>
+<li><strong>Non-Directional Attenuation:</strong> SSAO assumes ambient
+light arrives uniformly from all directions. It applies a uniform scalar
+darkening factor regardless of whether a light source is directly
+illuminating the crevice.</li>
+<li><strong>Over-Darkening (Halos):</strong> Surfaces directly hit by
+bright directional lights can still display dark SSAO halos, breaking
+the realism of the scene.</li>
+<li><strong>No Color Bleeding:</strong> SSAO only computes a monochrome
+visibility factor (<span class="math inline">\(0.0\)</span> to <span
+class="math inline">\(1.0\)</span>) and cannot simulate the bouncing of
+colored light between adjacent surfaces.</li>
+</ul>
+<h3 id="how-ssdo-works">How SSDO Works</h3>
+<p>Screen Space Directional Occlusion resolves these limitations by
+treating ambient illumination as directional rather than
+omnidirectional. Instead of calculating a single occlusion scalar, SSDO
+samples nearby depth and normal data to determine whether geometry
+blocks light originating from specific directions, typically evaluated
+against direct environment maps or directional light sources.</p>
+<p>During computation, SSDO classifies sampled neighboring points into
+two categories:</p>
+<ol type="1">
+<li><strong>Occluders:</strong> Points that block direct light from
+reaching the current surface fragment.</li>
+<li><strong>Inter-reflectors (Transmitters):</strong> Points that can
+bounce their own reflected light (albedo) onto the current surface
+fragment.</li>
+</ol>
+<p>By differentiating these interactions, SSDO simultaneously calculates
+directional shadowing (blocking direct light) and one-bounce indirect
+diffuse illumination (color bleeding from neighboring geometry).</p>
+<h3 id="key-improvements-over-standard-ssao">Key Improvements Over
+Standard SSAO</h3>
+<ul>
+<li><strong>Direction-Aware Contact Shadows:</strong> In SSDO, an
+occluder only casts an ambient shadow if it lies directly in the path of
+the incoming light. If a crevice is exposed to the primary light
+direction, no artificial darkening occurs.</li>
+<li><strong>One-Bounce Color Bleeding:</strong> When a neighbor occludes
+incoming light, SSDO reads the color of that occluding surface from the
+screen-space albedo buffer. It then adds this color to the current
+fragment as secondary bounced radiance, mimicking true global
+illumination.</li>
+<li><strong>Better Integration with Direct Lighting:</strong> Because
+SSDO outputs direct light occlusion vectors alongside diffuse color
+transfer, it blends naturally with directional lights and image-based
+lighting (IBL) without creating flat, unnatural ambient patches.</li>
+</ul>
+<h3 id="implementing-ssdo-in-opengl">Implementing SSDO in OpenGL</h3>
+<p>Implementing SSDO in an OpenGL deferred or forward-plus rendering
+pipeline typically follows these steps:</p>
+<ol type="1">
+<li><strong>G-Buffer Generation:</strong> Render the scene geometry to
+multiple render targets (FBOs) to store view-space positions (or linear
+depth), view-space normals, and diffuse albedo.</li>
+<li><strong>Sampling Kernel Execution:</strong> In a full-screen quad
+fragment shader or compute shader, sample points in an oriented
+hemisphere aligned with the surface normal.</li>
+<li><strong>Occlusion and Radiance Evaluation:</strong>
+<ul>
+<li>Project each sample point into screen space and compare its depth
+with the G-Buffer depth.</li>
+<li>If a sample is occluded, determine whether it blocks light coming
+from the light sources or environment.</li>
+<li>If occluded, read the sample's stored albedo to compute the indirect
+bounced radiance toward the current fragment.</li>
+</ul></li>
+<li><strong>Spatial Filtering:</strong> Like SSAO, SSDO uses randomized
+sample orientations to maintain low sample counts (usually 16–32
+samples). This introduces high-frequency noise that must be smoothed
+using a geometry-aware bilateral blur pass, which respects depth and
+normal edges to prevent blurring across geometric boundaries.</li>
+<li><strong>Lighting Composition:</strong> The filtered directional
+occlusion and bounced radiance are factored into the final lighting
+accumulation pass, attenuating ambient terms accurately and adding the
+indirect color bleed to the final frame.</li>
+</ol></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

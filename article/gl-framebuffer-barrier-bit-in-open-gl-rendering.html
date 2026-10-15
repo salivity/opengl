@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GL_FRAMEBUFFER_BARRIER_BIT in OpenGL Rendering - opengl</title>
+    <meta name="description" content="This article explains the purpose and necessity of GLFRAMEBUFFERBARRIERBIT in multi-pass compute-to-raster OpenGL rendering pipelines. In modern OpenGL, transitioning data from compute shader writes to rasterization stages requires explicit memory synchro">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/gl-framebuffer-barrier-bit-in-open-gl-rendering">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="GL_FRAMEBUFFER_BARRIER_BIT in OpenGL Rendering - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/gl-framebuffer-barrier-bit-in-open-gl-rendering" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains the purpose and necessity of GLFRAMEBUFFERBARRIERBIT in multi-pass compute-to-raster OpenGL rendering pipelines. In modern OpenGL, transitioning data from compute shader writes to rasterization stages requires explicit memory synchro" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="gl_framebuffer_barrier_bit-in-opengl-rendering">GL_FRAMEBUFFER_BARRIER_BIT
+in OpenGL Rendering</h1>
+<p>This article explains the purpose and necessity of
+<code>GL_FRAMEBUFFER_BARRIER_BIT</code> in multi-pass compute-to-raster
+OpenGL rendering pipelines. In modern OpenGL, transitioning data from
+compute shader writes to rasterization stages requires explicit memory
+synchronization to avoid race conditions. Using
+<code>GL_FRAMEBUFFER_BARRIER_BIT</code> with
+<code>glMemoryBarrier</code> guarantees that compute-generated memory
+updates are fully completed and coherent before the GPU performs
+operations on framebuffer object attachments.</p>
+<h3 id="memory-coherency-in-modern-opengl">Memory Coherency in Modern
+OpenGL</h3>
+<p>OpenGL operations that write through shader load/store
+operations—such as Compute Shaders modifying textures via
+<code>imageStore</code> or writing to Shader Storage Buffer Objects
+(SSBOs)—operate in an incoherent memory model. Unlike traditional
+rasterization pipelines where the driver manages implicit
+synchronization, writes produced by compute shaders are not
+automatically ordered or flushed to memory caches used by other pipeline
+stages.</p>
+<p>Without manual intervention, issuing a rasterization draw call
+immediately after a compute dispatch can lead to write-after-read (WAR),
+read-after-write (RAW), or write-after-write (WAW) hazards.</p>
+<h3 id="the-role-of-gl_framebuffer_barrier_bit">The Role of
+GL_FRAMEBUFFER_BARRIER_BIT</h3>
+<p>The <code>GL_FRAMEBUFFER_BARRIER_BIT</code> is a bitfield parameter
+passed to <code>glMemoryBarrier()</code>. When specified, it enforces
+memory ordering specifically for Framebuffer Object (FBO)
+attachments:</p>
+<ol type="1">
+<li><strong>Visibility of Prior Writes:</strong> Any data written by
+shader stages (such as compute shaders) prior to the barrier call is
+guaranteed to be fully written and visible to subsequent reads performed
+through framebuffer attachments (e.g., blending, depth testing, or
+stencil testing).</li>
+<li><strong>Execution Ordering:</strong> Any subsequent writes made to
+framebuffer attachments (such as color, depth, or stencil outputs from a
+fragment shader) will wait until all memory writes issued prior to the
+barrier have finished.</li>
+</ol>
+<h3 id="compute-to-raster-implementation-workflow">Compute-to-Raster
+Implementation Workflow</h3>
+<p>In a compute-to-raster pipeline, a common architecture involves
+generating or pre-processing scene data using a compute pass, then
+utilizing that target as an FBO attachment in a subsequent raster
+pass.</p>
+<p>A standard execution sequence functions as follows:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">// 1. Execute compute pass</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>glUseProgram<span class="op">(</span>computeShaderProgram<span class="op">);</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>glBindImageTexture<span class="op">(</span><span class="dv">0</span><span class="op">,</span> targetTexture<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> GL_FALSE<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> GL_WRITE_ONLY<span class="op">,</span> GL_RGBA8<span class="op">);</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>glDispatchCompute<span class="op">(</span>numGroupsX<span class="op">,</span> numGroupsY<span class="op">,</span> <span class="dv">1</span><span class="op">);</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="co">// 2. Synchronize memory for FBO usage</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>glMemoryBarrier<span class="op">(</span>GL_FRAMEBUFFER_BARRIER_BIT<span class="op">);</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="co">// 3. Execute raster pass using the texture as an FBO attachment</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>glBindFramebuffer<span class="op">(</span>GL_FRAMEBUFFER<span class="op">,</span> fbo<span class="op">);</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>glFramebufferTexture2D<span class="op">(</span>GL_FRAMEBUFFER<span class="op">,</span> GL_COLOR_ATTACHMENT0<span class="op">,</span> GL_TEXTURE_2D<span class="op">,</span> targetTexture<span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>glUseProgram<span class="op">(</span>rasterShaderProgram<span class="op">);</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>glDrawArrays<span class="op">(</span>GL_TRIANGLES<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> vertexCount<span class="op">);</span></span></code></pre></div>
+<p>If the compute shader writes to a texture that will later be sampled
+using a texture sampler (e.g., via <code>texture()</code> in a fragment
+shader) rather than bound as an FBO render target,
+<code>GL_TEXTURE_FETCH_BARRIER_BIT</code> should be used instead.
+However, whenever the texture or buffer acts as an active color, depth,
+or stencil attachment of a framebuffer,
+<code>GL_FRAMEBUFFER_BARRIER_BIT</code> is mandatory.</p>
+<h3 id="performance-impact">Performance Impact</h3>
+<p>Calling <code>glMemoryBarrier(GL_FRAMEBUFFER_BARRIER_BIT)</code>
+restricts the GPU from executing dependent raster stages until compute
+writes are safely committed to the relevant caches. To maintain high
+performance:</p>
+<ul>
+<li>Only specify the barrier bits necessary for the immediately
+following passes.</li>
+<li>Avoid full-pipeline stalls by batching independent compute workloads
+together before inserting the barrier.</li>
+<li>Combine bitflags (e.g.,
+<code>GL_FRAMEBUFFER_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT</code>)
+with a single barrier call if multiple consumer stages access the data
+simultaneously.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

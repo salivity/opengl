@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How OpenGL Fence Sync Monitors GPU Progress - opengl</title>
+    <meta name="description" content="OpenGL fence sync objects provide a non-blocking mechanism for the CPU to track the execution progress of commands submitted to the GPU. Because OpenGL operates asynchronously, commands like draw calls return immediately to the CPU while remaining queued">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-open-gl-fence-sync-monitors-gpu-progress">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How OpenGL Fence Sync Monitors GPU Progress - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-open-gl-fence-sync-monitors-gpu-progress" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="OpenGL fence sync objects provide a non-blocking mechanism for the CPU to track the execution progress of commands submitted to the GPU. Because OpenGL operates asynchronously, commands like draw calls return immediately to the CPU while remaining queued" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-opengl-fence-sync-monitors-gpu-progress">How OpenGL Fence
+Sync Monitors GPU Progress</h1>
+<p>OpenGL fence sync objects provide a non-blocking mechanism for the
+CPU to track the execution progress of commands submitted to the GPU.
+Because OpenGL operates asynchronously, commands like draw calls return
+immediately to the CPU while remaining queued in the graphics pipeline
+for later execution. Fence sync objects act as markers placed directly
+inside this GPU command stream. By querying or waiting on these markers,
+the CPU can accurately determine when the GPU has completed specific
+workloads without resorting to heavy, pipeline-stalling commands like
+<code>glFinish()</code>.</p>
+<h3 id="the-problem-of-asynchronous-execution">The Problem of
+Asynchronous Execution</h3>
+<p>When an application calls rendering functions, the CPU simply writes
+instructions to an internal command buffer managed by the graphics
+driver. The GPU processes these instructions independently at its own
+pace.</p>
+<p>Without synchronization primitives, the CPU cannot inherently
+determine if the GPU has finished using a specific resource. Modifying a
+vertex buffer or texture on the CPU while the GPU is still reading from
+it causes race conditions, visual artifacts, or pipeline stalls.</p>
+<h3 id="inserting-the-marker-glfencesync">Inserting the Marker:
+<code>glFenceSync</code></h3>
+<p>To track GPU progress, the CPU inserts a fence sync object into the
+OpenGL command stream using the <code>glFenceSync</code> function:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>GLsync fence <span class="op">=</span> glFenceSync<span class="op">(</span>GL_SYNC_GPU_COMMANDS_COMPLETE<span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span></code></pre></div>
+<p>When this command is issued:</p>
+<ol type="1">
+<li>The driver inserts a sync token into the command queue immediately
+after the preceding commands.</li>
+<li>The function immediately returns a <code>GLsync</code> handle to the
+CPU.</li>
+<li>Initially, the fence sync object is in an
+<strong>unsignaled</strong> state.</li>
+<li>As the GPU processes commands sequentially, it eventually reaches
+the fence token. Once all commands submitted prior to the fence have
+finished execution, the GPU transitions the fence object to the
+<strong>signaled</strong> state.</li>
+</ol>
+<h3 id="polling-gpu-progress-glgetsynciv">Polling GPU Progress:
+<code>glGetSynciv</code></h3>
+<p>The CPU can perform non-blocking queries to check if the GPU has
+reached the fence. This allows the CPU to continue doing other work
+(such as AI, physics, or game logic) while periodically verifying GPU
+status:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>GLint status<span class="op">;</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>glGetSynciv<span class="op">(</span>fence<span class="op">,</span> GL_SYNC_STATUS<span class="op">,</span> <span class="kw">sizeof</span><span class="op">(</span>status<span class="op">),</span> NULL<span class="op">,</span> <span class="op">&amp;</span>status<span class="op">);</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="op">(</span>status <span class="op">==</span> GL_SIGNALED<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    <span class="co">// The GPU has completed all commands prior to the fence</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>Because <code>glGetSynciv</code> does not pause the calling thread,
+it offers a zero-latency method to monitor progress when polled at
+logical intervals.</p>
+<h3 id="blocking-the-cpu-glclientwaitsync">Blocking the CPU:
+<code>glClientWaitSync</code></h3>
+<p>If the CPU requires the GPU's tasks to be finished before proceeding,
+it can explicitly wait using <code>glClientWaitSync</code>:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>GLenum result <span class="op">=</span> glClientWaitSync<span class="op">(</span>fence<span class="op">,</span> GL_SYNC_FLUSH_COMMANDS_BIT<span class="op">,</span> timeoutInNanoseconds<span class="op">);</span></span></code></pre></div>
+<p>This call halts the CPU thread until:</p>
+<ul>
+<li>The fence becomes <strong>signaled</strong> (meaning the GPU
+finished the preceding work).</li>
+<li>The specified timeout duration expires.</li>
+<li>An error occurs.</li>
+</ul>
+<p>The <code>GL_SYNC_FLUSH_COMMANDS_BIT</code> flag ensures that the
+command buffer is flushed to the hardware so the GPU actually begins
+processing the commands leading up to the fence.</p>
+<h3 id="cleaning-up-gldeletesync">Cleaning Up:
+<code>glDeleteSync</code></h3>
+<p>Sync objects consume driver resources and are not automatically
+reclaimed once signaled. Once the CPU confirms that a fence has been
+passed or after a wait operation concludes successfully, the application
+must free the object:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>glDeleteSync<span class="op">(</span>fence<span class="op">);</span></span></code></pre></div>
+<h3 id="summary-of-benefits">Summary of Benefits</h3>
+<p>Compared to legacy synchronization methods, fence sync objects
+provide:</p>
+<ul>
+<li><strong>Fine-Grained Tracking:</strong> Sync points can be placed
+around individual draw calls or compute passes rather than synchronizing
+the entire context.</li>
+<li><strong>Granular Control:</strong> Applications choose between
+waiting conditionally with timeouts (<code>glClientWaitSync</code>) or
+polling without blocking (<code>glGetSynciv</code>).</li>
+<li><strong>Pipeline Efficiency:</strong> Unlike
+<code>glFinish()</code>, which empties and stalls the entire graphics
+pipeline, fences let subsequent commands queue behind the sync point
+without interruption.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

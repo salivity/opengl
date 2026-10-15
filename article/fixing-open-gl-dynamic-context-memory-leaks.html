@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fixing OpenGL Dynamic Context Memory Leaks - opengl</title>
+    <meta name="description" content="Dynamically creating and destroying OpenGL contexts often introduces subtle, severe memory leaks if GPU resources, native windowing handles, and driver states are not meticulously managed. This article covers the most frequent memory leaks associated with">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/fixing-open-gl-dynamic-context-memory-leaks">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Fixing OpenGL Dynamic Context Memory Leaks - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/fixing-open-gl-dynamic-context-memory-leaks" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Dynamically creating and destroying OpenGL contexts often introduces subtle, severe memory leaks if GPU resources, native windowing handles, and driver states are not meticulously managed. This article covers the most frequent memory leaks associated with" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="fixing-opengl-dynamic-context-memory-leaks">Fixing OpenGL
+Dynamic Context Memory Leaks</h1>
+<p>Dynamically creating and destroying OpenGL contexts often introduces
+subtle, severe memory leaks if GPU resources, native windowing handles,
+and driver states are not meticulously managed. This article covers the
+most frequent memory leaks associated with dynamic OpenGL context
+lifecycles, examining unreleased GPU objects, native platform handle
+traps, dangling thread attachments, and shared context complications,
+alongside practical steps to ensure clean memory deallocation.</p>
+<h2 id="deleting-resources-while-contexts-are-inactive">Deleting
+Resources While Contexts Are Inactive</h2>
+<p>One of the most widespread errors is calling deletion commands—such
+as <code>glDeleteTextures</code>, <code>glDeleteBuffers</code>, or
+<code>glDeleteProgram</code>—without an active, current context. OpenGL
+functions execute against the context bound to the calling thread. If a
+context is unbound or set to <code>NULL</code> before these deletion
+calls occur, the API calls fail silently or raise a
+<code>GL_INVALID_OPERATION</code> error. The underlying GPU memory
+remains allocated, resulting in an unrecoverable leak on the graphics
+driver level. All context-specific resources must be explicitly deleted
+before unbinding and destroying the context.</p>
+<h2 id="unreleased-thread-bindings">Unreleased Thread Bindings</h2>
+<p>An OpenGL context cannot be fully reclaimed by the graphics driver if
+a host thread still holds a reference to it. When destroying contexts
+dynamically, developers frequently call platform-destruction routines
+(such as <code>wglDeleteContext</code> on Windows,
+<code>glXDestroyContext</code> on Linux, or
+<code>eglDestroyContext</code> on mobile/embedded systems) without
+explicitly releasing the binding.</p>
+<p>To prevent host-side driver leaks, always detach the context from the
+current thread before deletion:</p>
+<ul>
+<li><strong>WGL:</strong> <code>wglMakeCurrent(NULL, NULL);</code></li>
+<li><strong>GLX:</strong>
+<code>glXMakeCurrent(display, None, NULL);</code></li>
+<li><strong>EGL:</strong>
+<code>eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);</code></li>
+</ul>
+<p>Failing to detach the context keeps thread-local storage references
+alive inside the graphics driver, preventing the cleanup of the
+context’s state machine and command queues.</p>
+<h2 id="leaking-native-device-contexts-and-window-handles">Leaking
+Native Device Contexts and Window Handles</h2>
+<p>OpenGL relies on the native windowing system to bridge API commands
+to physical displays. Dynamic context instantiation requires acquiring
+native device handles, which often leak independently of the OpenGL
+context itself:</p>
+<ul>
+<li><strong>Windows (GDI/WGL):</strong> Fetching a Device Context via
+<code>GetDC(hwnd)</code> requires an eventual matching call to
+<code>ReleaseDC(hwnd, hdc)</code>. If <code>CreateCompatibleDC</code> is
+used, it requires <code>DeleteDC</code>. Calling
+<code>wglDeleteContext</code> frees the rendering context, but failing
+to release the HDC causes an operating system GDI handle leak.</li>
+<li><strong>Linux (GLX/EGL):</strong> Forgetting to destroy
+<code>GLXPixmap</code>, <code>GLXWindow</code>, or
+<code>EGLSurface</code> wrappers before or after destroying the context
+leaves X11 resources and system compositor allocations stranded in
+memory.</li>
+</ul>
+<h2 id="neglected-sync-and-query-objects">Neglected Sync and Query
+Objects</h2>
+<p>While developers routinely track textures, vertex buffer objects
+(VBOs), and framebuffers (FBOs), smaller lightweight primitives are
+often omitted during cleanup loops:</p>
+<ul>
+<li><strong>Sync Objects:</strong> Fences generated via
+<code>glFenceSync</code> allocate small blocks of memory in the driver
+to track GPU pipeline completion. They must be explicitly destroyed with
+<code>glDeleteSync</code>; they are not always implicitly freed when
+related framebuffers or pipelines are torn down.</li>
+<li><strong>Query Objects:</strong> Performance and occlusion counters
+generated via <code>glGenQueries</code> require explicit cleanup using
+<code>glDeleteQueries</code>.</li>
+<li><strong>Sampler Objects:</strong> Standalone samplers created via
+<code>glGenSamplers</code> remain allocated even if the bound texture
+units are cleared.</li>
+</ul>
+<p>Cumulatively, creating hundreds of contexts that repeatedly leave
+these primitives behind will rapidly fragment driver memory.</p>
+<h2 id="shared-context-resource-retention">Shared Context Resource
+Retention</h2>
+<p>Dynamic setups that rely on context sharing (such as background
+asset-loading contexts created via <code>wglShareLists</code> or EGL
+context sharing attributes) introduce shared object namespaces. In these
+architectures:</p>
+<ol type="1">
+<li>Textures, buffers, and shaders are shared across multiple context
+instances.</li>
+<li>Destroying the context that created a resource does not release the
+resource if another shared context is still active.</li>
+<li>If the secondary context continually re-allocates assets without
+explicitly freeing old ones, the driver must retain them
+indefinitely.</li>
+</ol>
+<p>To safely decommission shared contexts, implement a centralized
+resource-tracking manager to track asset ownership and invoke
+<code>glDelete*</code> calls before the final shared context
+terminates.</p>
+<h2 id="driver-shader-compilation-cache-bloat">Driver Shader Compilation
+Cache Bloat</h2>
+<p>Modern GPU drivers compile shaders to hardware-native microcode and
+maintain an internal pipeline cache associated with the active context.
+When contexts are repeatedly instantiated, compiled against identical or
+dynamically generated GLSL shaders, and torn down, some proprietary
+drivers fail to immediately evict internal cache structures. Detaching
+and deleting shader and program objects via <code>glDetachShader</code>,
+<code>glDeleteShader</code>, and <code>glDeleteProgram</code> before
+deleting the context signals the driver compiler that cached
+intermediate representations can be purged safely.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

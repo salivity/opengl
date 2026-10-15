@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Texture Barrier for Sampling Active Targets - opengl</title>
+    <meta name="description" content="This article explains the function of the OpenGL texture barrier extension, detailing how it resolves read-after-write hazards when sampling from an active render target. It covers the traditional feedback loop limitations in OpenGL, how the texture barri">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-texture-barrier-for-sampling-active-targets">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Texture Barrier for Sampling Active Targets - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-texture-barrier-for-sampling-active-targets" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains the function of the OpenGL texture barrier extension, detailing how it resolves read-after-write hazards when sampling from an active render target. It covers the traditional feedback loop limitations in OpenGL, how the texture barri" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-texture-barrier-for-sampling-active-targets">OpenGL
+Texture Barrier for Sampling Active Targets</h1>
+<p>This article explains the function of the OpenGL texture barrier
+extension, detailing how it resolves read-after-write hazards when
+sampling from an active render target. It covers the traditional
+feedback loop limitations in OpenGL, how the texture barrier mechanism
+synchronizes shader reads and writes, the architectural constraints
+required to prevent undefined behavior, and the performance benefits of
+eliminating ping-pong rendering techniques.</p>
+<h3 id="the-feedback-loop-problem-in-opengl">The Feedback Loop Problem
+in OpenGL</h3>
+<p>In standard OpenGL, binding a texture simultaneously as an active
+color attachment in a Framebuffer Object (FBO) and as a sampled texture
+in the fragment shader creates a rendering feedback loop. Graphics
+hardware processes fragments in parallel, and texture cache writes are
+not immediately coherent with texture cache reads. Without
+synchronization, reading from a texel while concurrently writing to
+it—or reading from a texel modified earlier in the same pipeline
+pass—causes data races and produces undefined visual artifacts.</p>
+<p>Historically, graphics engines circumvented this by using "ping-pong"
+rendering. This technique requires allocating two separate textures: one
+functions as the read source, while the other serves as the write
+destination. Once the pass completes, the roles swap. While functional,
+ping-ponging doubles texture memory consumption, increases bandwidth
+overhead, and necessitates frequent FBO attachment state changes.</p>
+<h3 id="the-function-of-the-texture-barrier-extension">The Function of
+the Texture Barrier Extension</h3>
+<p>The texture barrier extension (<code>GL_ARB_texture_barrier</code> or
+<code>GL_NV_texture_barrier</code>, promoted to core in OpenGL 4.5 as
+<code>glTextureBarrier()</code>) eliminates the need for ping-pong
+buffers by providing a hardware-level synchronization point.</p>
+<p>Its primary function is to guarantee that all writes to a bound
+render target are committed to memory and that subsequent texture cache
+reads reflect those updates. Specifically, calling
+<code>glTextureBarrier()</code> executes two critical operations:</p>
+<ol type="1">
+<li><strong>Flushes Render Target Caches:</strong> It forces the GPU to
+complete pending pixel writes to the active framebuffer attachment.</li>
+<li><strong>Invalidates Texture Caches:</strong> It purges stale data
+from texture sampling units, forcing subsequent texture fetches to
+retrieve the newly written texel data from memory rather than outdated
+cache lines.</li>
+</ol>
+<p>By inserting this barrier between draw calls, applications can safely
+read from a texture that remains continuously bound as the active render
+target.</p>
+<h3 id="operational-constraints-and-safe-usage">Operational Constraints
+and Safe Usage</h3>
+<p>While the texture barrier permits sampling from an active target, it
+does not enable arbitrary, unconstrained read-write operations within a
+single draw command. Safe usage depends on adhering to strict execution
+rules:</p>
+<ul>
+<li><strong>Separation Between Draw Calls:</strong> A texture barrier
+operates <em>between</em> draw commands. You cannot write to a texel and
+read the updated value within the exact same draw call.
+<code>glTextureBarrier()</code> must be explicitly called between the
+draw call that writes the data and the draw call that samples it.</li>
+<li><strong>Granularity and Overlap (Texel-to-Pixel Mapping):</strong>
+Within a single draw pass, reads and writes can only occur safely
+without race conditions if each fragment maps strictly to a single,
+identical texel coordinate (a 1:1 mapping, such as processing a
+full-screen quad), or if fragments only sample texels that were
+finalized in a previous draw pass followed by a barrier.</li>
+<li><strong>Blending Restrictions:</strong> Standard fixed-function
+blending must typically be disabled when performing in-place updates, as
+the fragment pipeline's blend unit and texture fetch units must not
+compete for access to the same memory location during the same
+cycle.</li>
+</ul>
+<h3 id="practical-applications">Practical Applications</h3>
+<p>The texture barrier extension is ideal for algorithms that require
+iterative updates to a continuous surface. Common use cases include:</p>
+<ul>
+<li><strong>Programmable Blending:</strong> Implementing custom blend
+modes directly in fragment shaders without relying on vendor-specific
+blend extensions.</li>
+<li><strong>Iterative Simulation:</strong> Running cellular automata,
+physical heat transfer, or fluid diffusion algorithms directly within a
+single texture.</li>
+<li><strong>Multi-Pass Post-Processing:</strong> Chaining image
+processing steps—such as multi-stage tone mapping or iterative color
+grading—within a single memory footprint.</li>
+</ul>
+<p>By utilizing <code>glTextureBarrier()</code>, developers
+significantly lower VRAM usage, decrease cache thrashing, and reduce the
+CPU overhead associated with swapping FBO bindings.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

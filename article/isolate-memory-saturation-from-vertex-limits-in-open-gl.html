@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Isolate Memory Saturation from Vertex Limits in OpenGL - opengl</title>
+    <meta name="description" content="This article explains how to design micro-benchmarks that clearly distinguish between memory bus saturation and vertex processing limits in an OpenGL graphics pipeline. When an application becomes bottlenecked at the front end, developers often struggle t">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/isolate-memory-saturation-from-vertex-limits-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Isolate Memory Saturation from Vertex Limits in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/isolate-memory-saturation-from-vertex-limits-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how to design micro-benchmarks that clearly distinguish between memory bus saturation and vertex processing limits in an OpenGL graphics pipeline. When an application becomes bottlenecked at the front end, developers often struggle t" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="isolate-memory-saturation-from-vertex-limits-in-opengl">Isolate
+Memory Saturation from Vertex Limits in OpenGL</h1>
+<p>This article explains how to design micro-benchmarks that clearly
+distinguish between memory bus saturation and vertex processing limits
+in an OpenGL graphics pipeline. When an application becomes bottlenecked
+at the front end, developers often struggle to determine whether
+performance is degraded by the memory bandwidth required to fetch vertex
+attribute data or by the arithmetic workload inside the vertex shader.
+By systematically manipulating vertex buffer layout, cache hit rates,
+and shader execution intensity in isolation, micro-benchmarking exposes
+the true source of the hardware stall.</p>
+<h3 id="establish-a-baseline-rendering-loop">Establish a Baseline
+Rendering Loop</h3>
+<p>To measure isolated vertex stages, neutralize all rasterization and
+fragment operations. Configure the OpenGL state to discard primitives
+after clipping or use a 1x1 pixel viewport with depth and color writes
+disabled
+(<code>glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE)</code> and
+<code>glDepthMask(GL_FALSE)</code>). Alternatively, bind a fragment
+shader that executes <code>discard;</code>. This ensures that GPU
+execution time, measured via
+<code>glBeginQuery(GL_TIME_ELAPSED, ...)</code> and
+<code>glEndQuery(GL_TIME_ELAPSED)</code>, solely reflects input
+assembly, vertex fetching, vertex shading, and primitive assembly.</p>
+<h3 id="test-1-manipulate-memory-footprint-attribute-padding">Test 1:
+Manipulate Memory Footprint (Attribute Padding)</h3>
+<p>To test for memory bus saturation, keep the geometry count, index
+order, and vertex shader computations constant while altering the amount
+of data transferred per vertex across the bus.</p>
+<ol type="1">
+<li><strong>Compact Layout (Baseline):</strong> Feed the vertex shader
+with a tightly packed Vertex Buffer Object (VBO), such as position only
+(<code>vec3</code> = 12 bytes per vertex).</li>
+<li><strong>Padded Layout:</strong> Modify the VBO to interleave
+non-functional dummy attributes (e.g., extra <code>vec4</code> padding
+variables) to inflate the vertex stride to 64 or 128 bytes, updating the
+<code>glVertexAttribPointer</code> calls accordingly. Do not reference
+these new attributes in the shader calculation.</li>
+</ol>
+<p><strong>Analysis:</strong> If the elapsed draw call time increases
+proportionally as vertex stride increases, the bottleneck is the memory
+bus or memory controller cache throughput. If execution time remains
+virtually unchanged, the input assembly hardware is fetching the data
+faster than the pipeline consumes it, pointing toward a processing or
+primitive assembly limit.</p>
+<h3 id="test-2-manipulate-vertex-alu-load-arithmetic-saturation">Test 2:
+Manipulate Vertex ALU Load (Arithmetic Saturation)</h3>
+<p>To test for vertex processing limitations, hold the memory layout,
+buffer size, and primitive count strictly fixed while varying arithmetic
+intensity.</p>
+<ol type="1">
+<li><strong>Minimal Computation (Passthrough):</strong> Use a standard
+transformation pipeline (e.g., multiplying vertex positions by a single
+Model-View-Projection matrix).</li>
+<li><strong>Heavy Computation:</strong> Dynamically insert blocks of
+non-memory-dependent math instructions into the vertex shader—such as
+looped trigonometric operations or multi-matrix multiplications—that
+ultimately output the same coordinates.</li>
+</ol>
+<p><strong>Analysis:</strong> If the frame time degrades immediately
+upon adding ALU operations, the hardware is vertex instruction-bound. If
+substantial math instructions can be added without increasing overall
+draw time, the vertex processing units were previously idling while
+waiting on memory fetches (memory-bound).</p>
+<h3 id="test-3-induce-post-transform-cache-degradation">Test 3: Induce
+Post-Transform Cache Degradation</h3>
+<p>Vertex processing pipelines rely on a post-transform cache to avoid
+redundant shading of shared vertices in an indexed mesh
+(<code>glDrawElements</code>).</p>
+<ol type="1">
+<li><strong>Optimized Ordering:</strong> Render an indexed mesh
+optimized with an algorithm such as Forsyth or Tipsify, achieving high
+vertex cache reuse.</li>
+<li><strong>De-optimized Ordering:</strong> Scramble the index buffer to
+maximize cache misses without changing total vertex count, index count,
+or mesh topology.</li>
+</ol>
+<p><strong>Analysis:</strong> A de-optimized index buffer forces the GPU
+to re-fetch and re-shade vertices multiple times.</p>
+<ul>
+<li>If execution time increases and corresponds to a concurrent rise in
+memory bus counters, the memory subsystem cannot keep up with redundant
+fetches.</li>
+<li>If time increases linearly strictly with the extra arithmetic cost
+of re-running the vertex shader for uncached vertices, processing limits
+dominate.</li>
+</ul>
+<h3 id="differential-matrix">Differential Matrix</h3>
+<p>By evaluating the combined response across these micro-benchmarks,
+the root cause becomes clear:</p>
+<ul>
+<li><strong>Memory Bus Saturated:</strong> Execution time scales
+directly with attribute stride expansion, remains invariant to small ALU
+increases, and spikes when cache misses force repeated bus
+transactions.</li>
+<li><strong>Vertex Processing Bound:</strong> Execution time scales
+directly with ALU instructions, remains invariant to attribute stride
+increases, and correlates strictly with total invocations rather than
+transfer volume.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Using glInvalidateBufferData to Prevent GPU Stalls - opengl</title>
+    <meta name="description" content="Buffer invalidation using glInvalidateBufferData prevents GPU pipeline stalls by explicitly telling the graphics driver that the current contents of a buffer are discardable. When the CPU attempts to write to a buffer that the GPU is currently reading fro">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/using-gl-invalidate-buffer-data-to-prevent-gpu-stalls">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Using glInvalidateBufferData to Prevent GPU Stalls - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/using-gl-invalidate-buffer-data-to-prevent-gpu-stalls" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Buffer invalidation using glInvalidateBufferData prevents GPU pipeline stalls by explicitly telling the graphics driver that the current contents of a buffer are discardable. When the CPU attempts to write to a buffer that the GPU is currently reading fro" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="using-glinvalidatebufferdata-to-prevent-gpu-stalls">Using
+glInvalidateBufferData to Prevent GPU Stalls</h1>
+<p>Buffer invalidation using <code>glInvalidateBufferData</code>
+prevents GPU pipeline stalls by explicitly telling the graphics driver
+that the current contents of a buffer are discardable. When the CPU
+attempts to write to a buffer that the GPU is currently reading from an
+in-flight draw call, the driver typically forces the CPU to wait until
+the GPU finishes, causing an expensive pipeline stall. By invalidating
+the buffer before updating it, the driver can decouple the existing
+memory from the buffer object and allocate a new memory backing under
+the hood, allowing the CPU to write new data immediately while the GPU
+safely finishes processing the old data.</p>
+<h3 id="the-pipeline-stall-problem">The Pipeline Stall Problem</h3>
+<p>In modern OpenGL, the CPU and GPU operate asynchronously. When you
+submit draw calls, the GPU processes them at its own pace. If your
+application updates a dynamic buffer (such as vertex positions, particle
+states, or uniform data) every frame using commands like
+<code>glBufferSubData</code> or <code>glMapBuffer</code>, a data hazard
+occurs:</p>
+<ol type="1">
+<li>The GPU is actively reading from buffer <code>A</code> to render the
+previous frame.</li>
+<li>The CPU commands a write to buffer <code>A</code> for the current
+frame.</li>
+<li>To prevent race conditions, the OpenGL driver halts CPU execution
+until the GPU has fully consumed buffer <code>A</code>.</li>
+</ol>
+<p>This waiting period is an implicit pipeline stall, and it severely
+reduces frame throughput by idling the CPU and introducing
+micro-stutters.</p>
+<h3 id="how-glinvalidatebufferdata-resolves-synchronization">How
+<code>glInvalidateBufferData</code> Resolves Synchronization</h3>
+<p>Introduced in OpenGL 4.3 (and via the
+<code>GL_ARB_invalidate_subdata</code> extension),
+<code>glInvalidateBufferData</code> informs the driver's memory manager
+that the buffer’s existing data is obsolete and can be discarded:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> glInvalidateBufferData<span class="op">(</span>GLuint buffer<span class="op">);</span></span></code></pre></div>
+<p>When called, the driver identifies that pending GPU commands still
+reference the underlying physical memory of the buffer. Instead of
+halting the CPU until those operations complete, the driver performs an
+internal operation similar to modern buffer orphaning:</p>
+<ul>
+<li>The driver unbinds the physical GPU memory region holding the
+previous frame's data, allowing it to persist solely until the in-flight
+GPU draw calls finish.</li>
+<li>The buffer object identifier is immediately reassigned to a fresh,
+uninitialized memory block.</li>
+<li>Subsequent write calls—such as <code>glBufferSubData</code> or
+mapping with <code>GL_MAP_WRITE_BIT</code>—write directly into the new
+allocation without blocking.</li>
+</ul>
+<p>Once the GPU finishes rendering from the old allocation, that memory
+is automatically reclaimed by the driver's internal pool.</p>
+<h3 id="efficient-implementation-pattern">Efficient Implementation
+Pattern</h3>
+<p>To avoid synchronization locks when streaming dynamic data,
+invalidate the buffer immediately before writing new data to it:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co">// 1. Invalidate previous contents so the driver does not wait on pending draw calls</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>glInvalidateBufferData<span class="op">(</span>vbo<span class="op">);</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="co">// 2. Upload the new frame&#39;s data without stalling</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>glBufferSubData<span class="op">(</span>GL_ARRAY_BUFFER<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> dataSize<span class="op">,</span> newVertexData<span class="op">);</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="co">// 3. Issue drawing commands using the updated data</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>glDrawArrays<span class="op">(</span>GL_TRIANGLES<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> vertexCount<span class="op">);</span></span></code></pre></div>
+<p>For persistent or mapped buffers, invalidation can also be performed
+via <code>glInvalidateBufferSubData</code> to target specific byte
+ranges, giving the driver finer-grained freedom to optimize cache lines
+and eliminate synchronization points across fragmented data streams.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flushing Mapped Ranges with GL_MAP_FLUSH_EXPLICIT_BIT - opengl</title>
+    <meta name="description" content="When updating OpenGL buffer objects using glMapBufferRange, setting the GLMAPFLUSHEXPLICITBIT flag changes how modifications are committed to GPU memory. Instead of the driver automatically copying the entire mapped region upon unmapping, this flag explic">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/flushing-mapped-ranges-with-gl-map-flush-explicit-bit">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Flushing Mapped Ranges with GL_MAP_FLUSH_EXPLICIT_BIT - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/flushing-mapped-ranges-with-gl-map-flush-explicit-bit" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="When updating OpenGL buffer objects using glMapBufferRange, setting the GLMAPFLUSHEXPLICITBIT flag changes how modifications are committed to GPU memory. Instead of the driver automatically copying the entire mapped region upon unmapping, this flag explic" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="flushing-mapped-ranges-with-gl_map_flush_explicit_bit">Flushing
+Mapped Ranges with GL_MAP_FLUSH_EXPLICIT_BIT</h1>
+<p>When updating OpenGL buffer objects using
+<code>glMapBufferRange</code>, setting the
+<code>GL_MAP_FLUSH_EXPLICIT_BIT</code> flag changes how modifications
+are committed to GPU memory. Instead of the driver automatically copying
+the entire mapped region upon unmapping, this flag explicitly transfers
+synchronization responsibility to the application. Failing to manually
+flush modified regions via <code>glFlushMappedBufferRange</code> leaves
+the driver unaware of memory writes, resulting in stale data, visual
+corruption, or undefined rendering behavior.</p>
+<h3 id="default-mapping-vs-explicit-flushing">Default Mapping vs.
+Explicit Flushing</h3>
+<p>By default, when a buffer is mapped with write access
+(<code>GL_MAP_WRITE_BIT</code>) and subsequently unmapped with
+<code>glUnmapBuffer</code>, the OpenGL implementation assumes the entire
+mapped region has been altered. The driver automatically flushes the
+entire range to make the new contents visible to the GPU.</p>
+<p>While convenient, this default behavior introduces severe performance
+overhead if an application maps a large buffer (e.g., several megabytes)
+but only modifies a tiny fraction (such as updating a single matrix or a
+few vertices). Flushing the entire region forces unnecessary memory bus
+traffic and cache management overhead.</p>
+<h3 id="the-contract-of-gl_map_flush_explicit_bit">The Contract of
+<code>GL_MAP_FLUSH_EXPLICIT_BIT</code></h3>
+<p>Including <code>GL_MAP_FLUSH_EXPLICIT_BIT</code> in the access flags
+establishes a strict contract between the application and the graphics
+driver:</p>
+<ol type="1">
+<li><strong>Automatic Flushes Are Disabled:</strong> Calling
+<code>glUnmapBuffer</code> will no longer signal the driver to
+synchronize the mapped memory back to the GPU.</li>
+<li><strong>Explicit Range Notification Is Required:</strong> The
+application must notify the driver of the exact byte sub-ranges that
+were modified by calling <code>glFlushMappedBufferRange</code>.</li>
+<li><strong>Driver Optimization:</strong> The GPU driver only
+invalidates, synchronizes, or transfers the exact sub-allocations
+identified by those explicit flush calls.</li>
+</ol>
+<h3 id="why-flushing-is-critical">Why Flushing Is Critical</h3>
+<p>If memory is modified while <code>GL_MAP_FLUSH_EXPLICIT_BIT</code> is
+active and the application unmaps the buffer without calling
+<code>glFlushMappedBufferRange</code>, the driver will never push the
+dirty cache lines or DMA transfer commands to the hardware.</p>
+<p>The consequences include:</p>
+<ul>
+<li><strong>Stale Reads:</strong> The GPU continues reading the previous
+contents of the buffer because the host writes remain trapped in CPU
+caches or unsynchronized staging memory.</li>
+<li><strong>Partial or Intermittent Updates:</strong> Depending on the
+underlying architecture (such as unified memory architectures versus
+discrete GPUs), some writes may leak through via CPU cache line
+evictions while others do not, causing sporadic and hard-to-debug visual
+glitches.</li>
+<li><strong>Undefined Buffer Contents:</strong> OpenGL specifications
+classify reading unflushed areas that were explicitly mapped for writing
+as undefined behavior.</li>
+</ul>
+<h3 id="proper-implementation-pattern">Proper Implementation
+Pattern</h3>
+<p>To safely write data with explicit flushing, use the following
+sequence:</p>
+<ol type="1">
+<li><p>Map the buffer specifying write access and explicit flushing:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span><span class="op">*</span> ptr <span class="op">=</span> glMapBufferRange<span class="op">(</span>GL_ARRAY_BUFFER<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> totalBufferSize<span class="op">,</span> </span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>                             GL_MAP_WRITE_BIT <span class="op">|</span> GL_MAP_FLUSH_EXPLICIT_BIT<span class="op">);</span></span></code></pre></div></li>
+<li><p>Write only to the desired slice of memory:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>memcpy<span class="op">((</span><span class="dt">char</span><span class="op">*)</span>ptr <span class="op">+</span> updateOffset<span class="op">,</span> newDataSource<span class="op">,</span> updateSize<span class="op">);</span></span></code></pre></div></li>
+<li><p>Inform OpenGL of the exact region modified relative to the start
+of the mapped buffer:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>glFlushMappedBufferRange<span class="op">(</span>GL_ARRAY_BUFFER<span class="op">,</span> updateOffset<span class="op">,</span> updateSize<span class="op">);</span></span></code></pre></div></li>
+<li><p>Unmap the buffer once all updates and flushes are complete:</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode c"><code class="sourceCode c"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>glUnmapBuffer<span class="op">(</span>GL_ARRAY_BUFFER<span class="op">);</span></span></code></pre></div></li>
+</ol>
+<p>Flushing mapped ranges guarantees that explicit, fine-grained updates
+achieve optimal bus bandwidth efficiency without sacrificing data
+integrity on the GPU.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

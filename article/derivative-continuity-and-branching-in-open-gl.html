@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Derivative Continuity and Branching in OpenGL - opengl</title>
+    <meta name="description" content="In modern GPU pipelines, partial derivative calculation continuity refers to the spatial consistency required across neighboring fragments to compute rate-of-change functions like dFdx and dFdy. Modern GPUs calculate these derivatives by executing fragmen">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/derivative-continuity-and-branching-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Derivative Continuity and Branching in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/derivative-continuity-and-branching-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In modern GPU pipelines, partial derivative calculation continuity refers to the spatial consistency required across neighboring fragments to compute rate-of-change functions like dFdx and dFdy. Modern GPUs calculate these derivatives by executing fragmen" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="derivative-continuity-and-branching-in-opengl">Derivative
+Continuity and Branching in OpenGL</h1>
+<p>In modern GPU pipelines, partial derivative calculation continuity
+refers to the spatial consistency required across neighboring fragments
+to compute rate-of-change functions like <code>dFdx</code> and
+<code>dFdy</code>. Modern GPUs calculate these derivatives by executing
+fragment shaders in 2x2 pixel groups (quads) and differencing values
+between adjacent pixels. When control flow branches diverge across a
+quad—meaning some pixels take a branch while their neighbors do not—this
+continuity is broken. This divergence leads to undefined derivative
+calculations, frequently causing visual artifacts such as severe texture
+shimmering or incorrect level-of-detail (LOD) selection.</p>
+<h2 id="the-mechanism-of-derivative-calculations-in-glsl">The Mechanism
+of Derivative Calculations in GLSL</h2>
+<p>OpenGL Shading Language (GLSL) provides built-in functions such as
+<code>dFdx</code>, <code>dFdy</code>, and <code>fwidth</code> to compute
+the rate of change of a variable with respect to window coordinates.
+These derivatives are foundational not only for custom procedural
+effects and screen-space normal computations, but also for implicit
+texture operations like mipmap level selection during a standard
+<code>texture()</code> call.</p>
+<p>Hardware GPUs do not compute analytical derivatives. Instead,
+fragment shading executes in lockstep over SIMD/SIMT groups arranged in
+2x2 pixel quads. The GPU evaluates screen-space partial derivatives via
+finite differences:</p>
+<ul>
+<li><code>dFdx(val)</code> is computed by subtracting the value of
+<code>val</code> in the left pixel from the value of <code>val</code> in
+the right pixel.</li>
+<li><code>dFdy(val)</code> is computed by subtracting the value of
+<code>val</code> in the bottom pixel from the value of <code>val</code>
+in the top pixel.</li>
+</ul>
+<p>Derivative calculation continuity requires that every fragment inside
+the 2x2 quad executes the exact same expression in lockstep, ensuring
+all four sample points are valid and active.</p>
+<h2 id="how-control-flow-branching-breaks-continuity">How Control Flow
+Branching Breaks Continuity</h2>
+<p>Control flow branching breaks derivative continuity when the
+conditional statement is non-uniform—meaning it evaluates differently
+for fragments within the same 2x2 quad.</p>
+<p>When execution diverges:</p>
+<ol type="1">
+<li><strong>Inactive Fragments:</strong> The GPU masks out the fragments
+that evaluated the condition to false while executing the true block,
+and vice versa.</li>
+<li><strong>Missing Operands:</strong> If an explicit derivative
+(<code>dFdx</code>) or an implicit derivative (like a mipmapped
+<code>texture()</code> sample) occurs inside a divergent branch, the
+operation requires values from adjacent pixels in the quad. However, the
+adjacent pixels may not have executed that branch and thus do not
+possess a valid, updated value for the variable being
+differentiated.</li>
+<li><strong>Undefined Behavior:</strong> Because the neighbor's state
+inside the branch is uninitialized, stale, or discarded, the finite
+difference calculation fails. The GLSL specification defines calculating
+derivatives inside non-uniform control flow as undefined behavior.</li>
+</ol>
+<h2 id="consequences-and-artifacts">Consequences and Artifacts</h2>
+<p>The primary manifestation of broken derivative continuity occurs in
+texture mapping. Standard sampling functions (<code>texture()</code>)
+rely on derivatives to calculate the footprint of a pixel in texture
+space to pick the correct mipmap level.</p>
+<p>If derivatives become undefined or spike due to differencing against
+uninitialized neighbor data:</p>
+<ul>
+<li>The GPU may calculate an artificially massive derivative, forcing
+the texture sampler to immediately drop to the lowest-resolution mipmap
+level (causing localized blurriness).</li>
+<li>Conversely, it may calculate zero or negative derivatives, causing
+the GPU to sample the highest-resolution mipmap at a distance, resulting
+in severe aliasing, moiré patterns, and shimmering.</li>
+</ul>
+<h2 id="solutions-and-best-practices">Solutions and Best Practices</h2>
+<p>To preserve derivative continuity and avoid rendering defects,
+developers use specific patterns:</p>
+<ul>
+<li><strong>Hoisting Derivative Computations:</strong> Calculate the
+derivative or sample the texture prior to the divergent branch, storing
+the result in a variable that can be consumed conditionally later.</li>
+<li><strong>Explicit LOD and Gradients:</strong> When texture sampling
+inside divergent branches is unavoidable, replace standard sampling with
+functions that bypass implicit quad differencing:
+<ul>
+<li><code>textureLod()</code>: Manually specifies the exact mipmap level
+to sample, eliminating the need for screen-space derivatives.</li>
+<li><code>textureGrad()</code>: Allows explicit passing of precomputed
+gradient vectors (<code>dPdx</code> and <code>dPdy</code>) derived
+outside the divergent block.</li>
+</ul></li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

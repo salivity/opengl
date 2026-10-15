@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How Khronos Tests Cross-Vendor OpenGL Compatibility - opengl</title>
+    <meta name="description" content="The Khronos Group maintains cross-vendor OpenGL compatibility through a rigorous certification process centered on the open-source OpenGL Conformance Test Suite (CTS). To ensure graphics applications render consistently across diverse hardware from vendor">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-khronos-tests-cross-vendor-open-gl-compatibility">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How Khronos Tests Cross-Vendor OpenGL Compatibility - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-khronos-tests-cross-vendor-open-gl-compatibility" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The Khronos Group maintains cross-vendor OpenGL compatibility through a rigorous certification process centered on the open-source OpenGL Conformance Test Suite (CTS). To ensure graphics applications render consistently across diverse hardware from vendor" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-khronos-tests-cross-vendor-opengl-compatibility">How Khronos
+Tests Cross-Vendor OpenGL Compatibility</h1>
+<p>The Khronos Group maintains cross-vendor OpenGL compatibility through
+a rigorous certification process centered on the open-source OpenGL
+Conformance Test Suite (CTS). To ensure graphics applications render
+consistently across diverse hardware from vendors like NVIDIA, AMD,
+Intel, and Qualcomm, Khronos requires implementers to execute exhaustive
+test suites, achieve a 100% pass rate, and submit their results to a
+peer-review panel composed of competing industry members. Only
+implementations that pass this verification process are legally
+permitted to use the OpenGL trademark and be recognized as fully
+compliant.</p>
+<h3 id="the-conformance-test-suite-cts">The Conformance Test Suite
+(CTS)</h3>
+<p>At the core of the evaluation is the OpenGL Conformance Test Suite
+(CTS). Maintained in an open repository, the CTS contains hundreds of
+thousands of automated tests designed to stress-test every aspect of the
+OpenGL specification. These tests evaluate:</p>
+<ul>
+<li><strong>API Specification Coverage:</strong> Validating that all
+standard function calls, parameters, state queries, and error codes
+behave strictly according to the written specification.</li>
+<li><strong>Pipeline and State Machine Integrity:</strong> Ensuring that
+switching between rendering states, blend modes, depth testing, and
+rasterization rules behaves identically across different
+architectures.</li>
+<li><strong>Shading Language (GLSL) Execution:</strong> Verifying that
+GLSL compilers correctly parse, compile, and execute shader code,
+including edge-case syntax, precision qualifiers, and mathematical
+operations.</li>
+<li><strong>Rendering Accuracy:</strong> Rendering test scenes to
+off-screen buffers and performing pixel-level comparisons against
+reference images to detect numerical drift, clipping errors, or
+artifacting.</li>
+</ul>
+<h3 id="the-khronos-adopters-process">The Khronos Adopters Process</h3>
+<p>Testing is formally managed under the Khronos Adopters Program. A
+hardware or operating system vendor cannot claim OpenGL compatibility
+simply by implementing the API; they must enter a legal agreement with
+Khronos.</p>
+<p>Under this agreement, the vendor is responsible for running the CTS
+locally on their target hardware and driver configuration. Because
+graphics drivers run directly on diverse silicon, the vendor must
+document the exact operating system, driver version, compiler settings,
+and hardware platform used during the test execution.</p>
+<h3 id="log-generation-and-100-pass-requirement">Log Generation and 100%
+Pass Requirement</h3>
+<p>The CTS generates comprehensive cryptographic logs detailing the
+outcome of every test case. To qualify for conformance, the
+implementation must pass 100% of the mandatory tests for the targeted
+OpenGL version and profile (Core or Compatibility).</p>
+<p>If a test fails, the implementation cannot be certified unless the
+vendor either fixes the driver bug or formally identifies a bug within
+the test itself.</p>
+<h3 id="peer-review-and-scrutiny">Peer Review and Scrutiny</h3>
+<p>Once a vendor achieves a complete pass, they submit their execution
+logs to the Khronos Conformance Review Committee. This triggers a formal
+30-day review period that relies on competitive oversight:</p>
+<ul>
+<li><strong>Competitor Auditing:</strong> Competing member companies
+inspect the submitted logs to verify that the tests were run
+legitimately under standard operational conditions.</li>
+<li><strong>Verification of Optimizations:</strong> Reviewers verify
+that the driver does not employ benchmark-specific "cheats" or
+non-standard optimizations that bypass specification rules to pass
+tests.</li>
+<li><strong>Reproducibility:</strong> Any member of the committee has
+the right to challenge a submission if they cannot reproduce the results
+or if discrepancies exist between the logs and the specification.</li>
+</ul>
+<h3 id="the-waiver-process">The Waiver Process</h3>
+<p>During testing, a vendor may encounter a failure caused by an
+ambiguity or bug in the CTS itself rather than a flaw in their driver.
+In such cases, the vendor can submit a waiver request to the working
+group.</p>
+<p>The Khronos OpenGL Working Group reviews the dispute. If the
+committee agrees that the test is erroneous or overly restrictive, the
+waiver is granted, and the test is patched or removed in subsequent CTS
+releases. Critically, any granted waiver is applied universally to all
+adopters, preventing any single vendor from receiving preferential
+treatment.</p>
+<h3 id="final-certification">Final Certification</h3>
+<p>If no unresolved challenges remain at the end of the 30-day review
+period, the submission is officially ratified. The driver version and
+hardware configuration are added to the public Khronos Adopter
+Submissions registry, granting the vendor the legal right to market
+their product as an officially certified OpenGL implementation.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

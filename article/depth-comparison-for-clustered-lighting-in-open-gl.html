@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Depth Comparison for Clustered Lighting in OpenGL - opengl</title>
+    <meta name="description" content="This article examines the critical function of depth values and depth comparison in clustered shading architectures implemented in modern OpenGL. It covers how non-linear hardware depth is mapped to linear space, how depth comparisons assign fragments to">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/depth-comparison-for-clustered-lighting-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Depth Comparison for Clustered Lighting in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/depth-comparison-for-clustered-lighting-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article examines the critical function of depth values and depth comparison in clustered shading architectures implemented in modern OpenGL. It covers how non-linear hardware depth is mapped to linear space, how depth comparisons assign fragments to" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="depth-comparison-for-clustered-lighting-in-opengl">Depth
+Comparison for Clustered Lighting in OpenGL</h1>
+<p>This article examines the critical function of depth values and depth
+comparison in clustered shading architectures implemented in modern
+OpenGL. It covers how non-linear hardware depth is mapped to linear
+space, how depth comparisons assign fragments to spatial cluster bins
+along the view frustum, and how depth boundaries prevent unnecessary
+light calculations by isolating visible geometric ranges.</p>
+<h3 id="the-role-of-depth-in-clustered-lighting">The Role of Depth in
+Clustered Lighting</h3>
+<p>Clustered lighting subdivides the camera frustum into a 3D grid of
+cells—referred to as clusters or froxels—along the screen-space X, Y,
+and view-space Z axes. Unlike standard tiled forward shading, which bins
+lights strictly in 2D screen tiles, clustered lighting uses depth to
+isolate lights within specific volumetric segments along the camera's
+line of sight.</p>
+<p>To shade a fragment, the rendering pipeline must determine which
+cluster contains the fragment. This requires reconstructing the
+fragment's position in view or world space, a process fundamentally
+reliant on the depth buffer.</p>
+<h3 id="reconstructing-view-space-depth">Reconstructing View-Space
+Depth</h3>
+<p>OpenGL stores non-linear depth values in the range <span
+class="math inline">\([0, 1]\)</span> within the hardware depth buffer
+or a depth attachment. In the fragment shader or compute pass:</p>
+<ol type="1">
+<li><strong>Depth Retrieval:</strong> The normalized device coordinate
+(NDC) depth is sampled from a depth texture or read directly via
+<code>gl_FragCoord.z</code>.</li>
+<li><strong>Linearization:</strong> Non-linear hardware depth is
+converted to linear view-space depth using the camera's near (<span
+class="math inline">\(z_{near}\)</span>) and far (<span
+class="math inline">\(z_{far}\)</span>) projection planes:</li>
+</ol>
+<p><span class="math display">\[Z_{view} = \frac{z_{near} \cdot
+z_{far}}{z_{far} - z_{raw} \cdot (z_{far} - z_{near})}\]</span></p>
+<ol start="3" type="1">
+<li><strong>Position Calculation:</strong> Combining this linear depth
+with the screen coordinate and the inverse projection matrix
+reconstructs the 3D position needed for distance calculations against
+point, spot, and area lights.</li>
+</ol>
+<h3 id="depth-comparison-and-cluster-indexing">Depth Comparison and
+Cluster Indexing</h3>
+<p>Once linear depth is acquired, depth comparison determines the
+cluster slice index along the Z-axis.Frustum depth is typically
+partitioned logarithmically rather than linearly to account for
+perspective projection and maintain uniform cluster sizes in view
+space:</p>
+<p><span class="math display">\[Slice_Z = \left\lfloor
+\frac{\log(-Z_{view} / z_{near})}{\log(z_{far} / z_{near})} \cdot
+Slices_{total} \right\rfloor\]</span></p>
+<p>Depth comparison serves distinct functions at two stages of the
+pipeline:</p>
+<ul>
+<li><strong>Fragment-to-Cluster Mapping:</strong> During the final
+shading pass, the fragment's linear depth is compared against the
+precomputed near and far bounds of cluster slices to fetch the correct
+light list offset from a Shader Storage Buffer Object (SSBO).</li>
+<li><strong>Cluster Frustum Building (Light Culling):</strong> When
+generating bounding boxes or spheres for the clusters in a compute
+shader, depth slice boundaries are compared against light bounding
+volumes to build per-cluster light index lists.</li>
+</ul>
+<h3 id="depth-bounds-and-precision-management">Depth Bounds and
+Precision Management</h3>
+<p>Depth comparisons directly impact the efficiency and visual
+correctness of clustered rendering in OpenGL:</p>
+<ul>
+<li><strong>Bounding Range Optimization:</strong> Without depth
+comparisons, clusters would span the entire view frustum from near to
+far planes, increasing light assignment overhead. By testing depth
+values, only the clusters containing actual geometry are flagged for
+active lighting evaluation.</li>
+<li><strong>Precision Artifacts:</strong> Standard 24-bit integer depth
+buffers exhibit severe non-linear precision loss near the far plane.
+Imprecise depth comparisons can cause a fragment to be assigned to an
+adjacent cluster, resulting in popping artifacts or missed light
+contributions. Using a 32-bit floating-point depth buffer
+(<code>GL_DEPTH_COMPONENT32F</code>) and reversed floating-point depth
+techniques minimizes comparison error across cluster boundaries.</li>
+<li><strong>Early Depth Testing:</strong> Performing depth comparisons
+prior to fragment execution via
+<code>layout(early_fragment_tests) in;</code> ensures that hidden or
+occluded geometry is discarded before position reconstruction and
+cluster lookup occur, eliminating redundant memory fetches from the
+light buffers.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

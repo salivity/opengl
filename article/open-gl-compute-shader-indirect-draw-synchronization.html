@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Compute Shader Indirect Draw Synchronization - opengl</title>
+    <meta name="description" content="Generating draw parameters directly on the GPU using compute shaders requires explicit memory synchronization before executing indirect draw calls. Because OpenGL uses a weakly ordered, incoherent memory model for shader writes, you must use glMemoryBarri">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-compute-shader-indirect-draw-synchronization">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Compute Shader Indirect Draw Synchronization - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-compute-shader-indirect-draw-synchronization" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Generating draw parameters directly on the GPU using compute shaders requires explicit memory synchronization before executing indirect draw calls. Because OpenGL uses a weakly ordered, incoherent memory model for shader writes, you must use glMemoryBarri" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-compute-shader-indirect-draw-synchronization">OpenGL
+Compute Shader Indirect Draw Synchronization</h1>
+<p>Generating draw parameters directly on the GPU using compute shaders
+requires explicit memory synchronization before executing indirect draw
+calls. Because OpenGL uses a weakly ordered, incoherent memory model for
+shader writes, you must use <code>glMemoryBarrier</code> with the
+<code>GL_COMMAND_BARRIER_BIT</code> flag to guarantee that writes from a
+compute shader are completely finished and visible to the GPU's indirect
+command processor before <code>glDrawArraysIndirect</code> or
+<code>glDrawElementsIndirect</code> is called. Failing to properly
+synchronize these operations leads to race conditions, rendering
+artifacts, or GPU crashes.</p>
+<h2 id="the-memory-incoherency-problem">The Memory Incoherency
+Problem</h2>
+<p>Compute shaders write draw parameters to a buffer bound as a Shader
+Storage Buffer Object (SSBO). These writes are stored in GPU L1/L2
+caches and are not automatically coherent with fixed-function pipeline
+stages.</p>
+<p>The indirect drawing hardware operates outside the standard shader
+cache pipeline when reading execution parameters like instance counts,
+vertex offsets, and index counts from a
+<code>GL_DRAW_INDIRECT_BUFFER</code>. Without an explicit barrier, the
+GPU can issue the indirect draw command using stale, uninitialized, or
+partially written buffer data.</p>
+<h2 id="the-core-requirement-glmemorybarrier">The Core Requirement:
+glMemoryBarrier</h2>
+<p>The primary mechanism to synchronize compute writes with indirect
+draws is the API call:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>glMemoryBarrier<span class="op">(</span>GL_COMMAND_BARRIER_BIT<span class="op">);</span></span></code></pre></div>
+<p>Calling <code>glMemoryBarrier</code> with
+<code>GL_COMMAND_BARRIER_BIT</code> instructs the driver to flush the
+necessary shader write caches and halt dependent command reads until all
+preceding shader stores to buffer objects have completed.</p>
+<h3 id="barrier-placement">Barrier Placement</h3>
+<p>The barrier must be placed on the host timeline between the compute
+shader dispatch and the indirect draw invocation:</p>
+<ol type="1">
+<li>Bind the buffer to <code>GL_SHADER_STORAGE_BUFFER</code>.</li>
+<li>Dispatch the compute shader (<code>glDispatchCompute</code>).</li>
+<li>Call <code>glMemoryBarrier(GL_COMMAND_BARRIER_BIT)</code>.</li>
+<li>Bind the buffer to <code>GL_DRAW_INDIRECT_BUFFER</code>.</li>
+<li>Execute the draw call (<code>glDrawArraysIndirect</code> or
+<code>glDrawElementsIndirect</code>).</li>
+</ol>
+<p>Binding the buffer target can occur before or after the barrier, but
+the barrier execution itself must happen after
+<code>glDispatchCompute</code> and before the draw command.</p>
+<h2 id="synchronizing-accompanying-data">Synchronizing Accompanying
+Data</h2>
+<p>In GPU-driven rendering pipelines, a compute shader typically outputs
+more than just the indirect draw arguments. If the compute pass also
+performs frustum culling, generates instance matrices, or outputs
+index/vertex data, additional barrier bits must be combined using a
+bitwise OR operation.</p>
+<ul>
+<li><strong><code>GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT</code></strong>:
+Required if the compute shader writes per-instance or per-vertex data
+consumed by vertex attribute arrays.</li>
+<li><strong><code>GL_ELEMENT_ARRAY_BARRIER_BIT</code></strong>: Required
+if the compute shader writes or modifies index buffers used by
+<code>glDrawElementsIndirect</code>.</li>
+<li><strong><code>GL_SHADER_STORAGE_BARRIER_BIT</code></strong>:
+Required if the subsequent vertex or fragment shader reads the output
+buffer as an SSBO rather than a vertex attribute.</li>
+</ul>
+<p>Example of a compound barrier:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>glMemoryBarrier<span class="op">(</span>GL_COMMAND_BARRIER_BIT <span class="op">|</span> GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT<span class="op">);</span></span></code></pre></div>
+<h2 id="internal-shader-synchronization">Internal Shader
+Synchronization</h2>
+<p>Synchronization within the compute shader itself is handled
+separately:</p>
+<ul>
+<li>If individual threads within a local workgroup coordinate their
+writes to the indirect buffer, you must use the GLSL built-in
+<code>barrier()</code> and <code>memoryBarrierBuffer()</code>.</li>
+<li>If each indirect draw command is written by a single thread
+independently with no cross-thread dependencies, intra-shader barriers
+are unnecessary, and only the host-level <code>glMemoryBarrier</code> is
+required.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

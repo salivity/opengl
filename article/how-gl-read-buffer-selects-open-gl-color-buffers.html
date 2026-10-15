@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How glReadBuffer Selects OpenGL Color Buffers - opengl</title>
+    <meta name="description" content="This article explains how the glReadBuffer function designates specific color buffers as data sources for OpenGL read routines. By understanding the context of the bound framebuffer—whether it is the default window-system framebuffer or a custom framebuff">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-gl-read-buffer-selects-open-gl-color-buffers">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How glReadBuffer Selects OpenGL Color Buffers - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-gl-read-buffer-selects-open-gl-color-buffers" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how the glReadBuffer function designates specific color buffers as data sources for OpenGL read routines. By understanding the context of the bound framebuffer—whether it is the default window-system framebuffer or a custom framebuff" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-glreadbuffer-selects-opengl-color-buffers">How glReadBuffer
+Selects OpenGL Color Buffers</h1>
+<p>This article explains how the <code>glReadBuffer</code> function
+designates specific color buffers as data sources for OpenGL read
+routines. By understanding the context of the bound framebuffer—whether
+it is the default window-system framebuffer or a custom framebuffer
+object (FBO)—developers can accurately direct commands like
+<code>glReadPixels</code>, <code>glCopyTexImage2D</code>, and
+<code>glBlitFramebuffer</code> to read pixel data from the correct color
+attachment.</p>
+<h3 id="the-role-of-glreadbuffer">The Role of
+<code>glReadBuffer</code></h3>
+<p>In OpenGL, read operations do not specify the source color buffer
+directly within each read command. Instead, OpenGL operates as a state
+machine where <code>glReadBuffer</code> sets a dedicated state
+variable—<code>GL_READ_BUFFER</code>—for the currently bound read
+framebuffer (<code>GL_READ_FRAMEBUFFER</code>).</p>
+<p>When functions such as <code>glReadPixels</code>,
+<code>glCopyTexImage2D</code>, <code>glCopyTexSubImage2D</code>, or
+<code>glBlitFramebuffer</code> are invoked, the OpenGL driver queries
+this internal state to identify which color buffer memory area contains
+the source pixel data to read or copy.</p>
+<h3 id="context-determination-default-framebuffer-vs-fbo">Context
+Determination: Default Framebuffer vs. FBO</h3>
+<p>How <code>glReadBuffer</code> interprets its target depends strictly
+on what is bound to <code>GL_READ_FRAMEBUFFER</code> (or
+<code>GL_FRAMEBUFFER</code>):</p>
+<h4 id="1-the-default-framebuffer-framebuffer-0">1. The Default
+Framebuffer (Framebuffer 0)</h4>
+<p>When the default framebuffer is bound, the available buffers
+represent window-system drawables. The <code>mode</code> parameter in
+<code>glReadBuffer(GLenum mode)</code> accepts tokens that map to
+physical or virtual window buffers:</p>
+<ul>
+<li><strong><code>GL_FRONT</code> or
+<code>GL_FRONT_LEFT</code></strong>: Reads from the front-left color
+buffer (standard in single-buffered or stereo contexts).</li>
+<li><strong><code>GL_BACK</code> or <code>GL_BACK_LEFT</code></strong>:
+Reads from the back-left color buffer (the standard target for
+double-buffered rendering before swapping buffers).</li>
+<li><strong><code>GL_FRONT_RIGHT</code> /
+<code>GL_BACK_RIGHT</code></strong>: Reads from right-eye buffers in
+stereoscopic rendering configurations.</li>
+<li><strong><code>GL_NONE</code></strong>: Disables pixel reads, causing
+read commands to generate undefined results or complete without
+processing color data.</li>
+</ul>
+<h4 id="2-named-framebuffer-objects-fbos">2. Named Framebuffer Objects
+(FBOs)</h4>
+<p>When a user-created Framebuffer Object is bound, standard
+window-system tokens are invalid. Instead, <code>glReadBuffer</code>
+requires tokens that map to the FBO's color attachment points:</p>
+<ul>
+<li><strong><code>GL_COLOR_ATTACHMENTi</code></strong>: Selects a
+specific color attachment, where <code>i</code> ranges from
+<code>0</code> to <code>GL_MAX_COLOR_ATTACHMENTS - 1</code>. The driver
+routes the read operation to the texture or renderbuffer bound to that
+exact attachment index.</li>
+<li><strong><code>GL_NONE</code></strong>: Specifies that no color
+buffer is selected for reading, which is useful when reading only depth
+or stencil data during a blit.</li>
+</ul>
+<h3 id="execution-and-error-handling">Execution and Error Handling</h3>
+<p>When <code>glReadBuffer</code> is executed, the driver performs
+verification checks to determine valid behavior:</p>
+<ul>
+<li><strong>Token Compatibility</strong>: Specifying window-system
+tokens (e.g., <code>GL_BACK</code>) while an FBO is bound, or FBO tokens
+(e.g., <code>GL_COLOR_ATTACHMENT0</code>) while the default framebuffer
+is bound, generates a <code>GL_INVALID_OPERATION</code> error.</li>
+<li><strong>Attachment Completeness</strong>: If the selected buffer
+contains no allocated image or attachment, subsequent read commands will
+not read valid pixel data, and the framebuffer status may be flagged as
+<code>GL_FRAMEBUFFER_INCOMPLETE_READ_BUFFER</code>.</li>
+<li><strong>Value Persistence</strong>: The <code>GL_READ_BUFFER</code>
+state is stored per framebuffer object. When switching between different
+FBOs, each object retains the read buffer selection assigned to it
+during previous <code>glReadBuffer</code> calls.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

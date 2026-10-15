@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>glFlushMappedBufferRange in OpenGL Explained - opengl</title>
+    <meta name="description" content="This article explains the purpose, operational mechanics, and performance advantages of the glFlushMappedBufferRange command in OpenGL. It details how this function enables explicit synchronization between host memory and the GPU, allowing developers to c">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/gl-flush-mapped-buffer-range-in-open-gl-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="glFlushMappedBufferRange in OpenGL Explained - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/gl-flush-mapped-buffer-range-in-open-gl-explained" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains the purpose, operational mechanics, and performance advantages of the glFlushMappedBufferRange command in OpenGL. It details how this function enables explicit synchronization between host memory and the GPU, allowing developers to c" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="glflushmappedbufferrange-in-opengl-explained">glFlushMappedBufferRange
+in OpenGL Explained</h1>
+<p>This article explains the purpose, operational mechanics, and
+performance advantages of the <code>glFlushMappedBufferRange</code>
+command in OpenGL. It details how this function enables explicit
+synchronization between host memory and the GPU, allowing developers to
+communicate precise sub-ranges of modified buffer data. By utilizing
+explicit flushing, applications can optimize bandwidth usage and
+significantly reduce driver overhead when updating mapped buffers.</p>
+<p>In OpenGL, developers frequently use <code>glMapBufferRange</code> to
+map a buffer object's data store directly into the client’s address
+space for fast read and write operations. By default, modifying mapped
+memory requires the OpenGL driver to synchronize the entire mapped
+memory range when <code>glUnmapBuffer</code> is called, even if only a
+tiny fraction of the data was modified. The
+<code>glFlushMappedBufferRange</code> command modifies this behavior by
+giving the application precise control over which segments of the mapped
+region are submitted to the GPU.</p>
+<p>To enable this command, the buffer must first be mapped with both the
+<code>GL_MAP_WRITE_BIT</code> and the
+<code>GL_MAP_FLUSH_EXPLICIT_BIT</code> access flags. Supplying
+<code>GL_MAP_FLUSH_EXPLICIT_BIT</code> informs the driver that unmapping
+the buffer should not trigger an automatic flush of the entire mapped
+range. Instead, the driver assumes no writes have occurred until the
+application explicitly marks regions as modified via
+<code>glFlushMappedBufferRange</code>.</p>
+<p>The signature for the command is defined as follows:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> glFlushMappedBufferRange<span class="op">(</span>GLenum target<span class="op">,</span> GLintptr offset<span class="op">,</span> GLsizeiptr length<span class="op">);</span></span></code></pre></div>
+<p>The parameters operate under specific constraints:</p>
+<ul>
+<li><strong><code>target</code></strong>: The target buffer object, such
+as <code>GL_ARRAY_BUFFER</code> or <code>GL_UNIFORM_BUFFER</code>.</li>
+<li><strong><code>offset</code></strong>: The starting position of the
+modified sub-range, measured in basic machine units (bytes). Critically,
+this offset is relative to the start of the <em>mapped range</em>, not
+to the beginning of the buffer object itself.</li>
+<li><strong><code>length</code></strong>: The size, in bytes, of the
+modified sub-range to be synchronized.</li>
+</ul>
+<p>When <code>glFlushMappedBufferRange</code> is invoked, the driver
+invalidates or updates the internal GPU caches corresponding strictly to
+the specified slice of memory. This ensures that subsequent GPU
+operations utilizing that buffer will see the newly written data.
+Multiple non-contiguous modifications can be made within a single
+mapping session by calling <code>glFlushMappedBufferRange</code>
+repeatedly with different offsets and lengths before unmapping the
+buffer.</p>
+<p>The primary benefit of this command is performance optimization. In
+scenarios such as dynamic vertex streaming, particle systems, or
+ring-buffered uploads, applications often allocate large persistent or
+semi-persistent buffers but only update small, sparse sections per
+frame. Eliminating redundant cache flushes and bus transfers minimizes
+memory bandwidth consumption, prevents pipeline stalls, and ensures
+efficient CPU-to-GPU data transmission.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

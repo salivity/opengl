@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mouse Picking in Early OpenGL Using GL_SELECT - opengl</title>
+    <meta name="description" content="In early fixed-function OpenGL, mouse picking was accomplished using a dedicated selection mode (GLSELECT) paired with the gluPickMatrix utility and an internal name stack. Instead of rendering pixels to the frame buffer, the pipeline processed geometry a">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/mouse-picking-in-early-open-gl-using-gl-select">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Mouse Picking in Early OpenGL Using GL_SELECT - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/mouse-picking-in-early-open-gl-using-gl-select" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In early fixed-function OpenGL, mouse picking was accomplished using a dedicated selection mode (GLSELECT) paired with the gluPickMatrix utility and an internal name stack. Instead of rendering pixels to the frame buffer, the pipeline processed geometry a" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="mouse-picking-in-early-opengl-using-gl_select">Mouse Picking in
+Early OpenGL Using GL_SELECT</h1>
+<p>In early fixed-function OpenGL, mouse picking was accomplished using
+a dedicated selection mode (<code>GL_SELECT</code>) paired with the
+<code>gluPickMatrix</code> utility and an internal name stack. Instead
+of rendering pixels to the frame buffer, the pipeline processed geometry
+against a restricted viewing volume centered around the cursor,
+recording intersecting primitives into an application-defined selection
+buffer as "hit records." This article explains the architectural
+components of OpenGL's selection mode mechanism, the workflow required
+to capture user clicks, the structure of the resulting hit data, and why
+the technique was eventually replaced in modern graphics
+programming.</p>
+<h3 id="the-selection-render-mode">The Selection Render Mode</h3>
+<p>OpenGL operated as a state machine with three render modes controlled
+by <code>glRenderMode()</code>: <code>GL_RENDER</code> (normal drawing),
+<code>GL_FEEDBACK</code> (returning transformed vertices), and
+<code>GL_SELECT</code> (hit testing).</p>
+<p>Switching the state to <code>GL_SELECT</code> stopped the
+rasterization stage from writing pixel colors to the color buffer.
+Instead, primitives that fell within the viewing frustum generated hit
+events. Before switching modes, the developer allocated an array of
+unsigned integers in client memory and bound it using
+<code>glSelectBuffer(size, buffer)</code> to hold the results.</p>
+<h3 id="restricting-the-viewport-with-glupickmatrix">Restricting the
+Viewport with gluPickMatrix</h3>
+<p>Because a standard projection matrix tests geometry against the
+entire screen, picking required modifying the projection to test only
+the region immediately beneath the cursor. The OpenGL Utility Library
+(GLU) provided <code>gluPickMatrix()</code> to automate this:</p>
+<ol type="1">
+<li>The projection matrix was set to identity
+(<code>glMatrixMode(GL_PROJECTION); glLoadIdentity();</code>).</li>
+<li><code>gluPickMatrix(x, y, width, height, viewport)</code> was
+called, where <code>x</code> and <code>y</code> were the mouse
+coordinates (inverted to match OpenGL's bottom-left origin), and
+<code>width</code> and <code>height</code> defined a small bounding box
+(typically 2x2 to 5x5 pixels).</li>
+<li>The normal camera projection (such as <code>gluPerspective</code> or
+<code>glOrtho</code>) was multiplied immediately after
+<code>gluPickMatrix</code>.</li>
+</ol>
+<p>This sequence scaled and translated the viewing volume so that only
+objects within the picking box survived clipping.</p>
+<h3 id="the-name-stack">The Name Stack</h3>
+<p>To identify specific objects during rendering, OpenGL provided an
+internal name stack managed by four commands:</p>
+<ul>
+<li><code>glInitNames()</code>: Clears the stack.</li>
+<li><code>glPushName(GLuint name)</code>: Pushes an identifier onto the
+stack.</li>
+<li><code>glPopName()</code>: Removes the top identifier.</li>
+<li><code>glLoadName(GLuint name)</code>: Replaces the identifier
+currently at the top of the stack.</li>
+</ul>
+<p>During the picking pass, the scene was drawn just as it would be
+normally. When an object produced a primitive inside the restricted
+viewing frustum, the contents of the name stack at that moment were
+logged to the select buffer. This hierarchical design allowed developers
+to identify both parent objects and their individual sub-components (for
+example, selecting a specific wheel on a specific car).</p>
+<h3 id="reading-hit-records">Reading Hit Records</h3>
+<p>Exiting selection mode was done by calling
+<code>glRenderMode(GL_RENDER)</code>. This function returned an integer
+indicating the total number of hits recorded.</p>
+<p>The developer then parsed the memory buffer specified earlier by
+<code>glSelectBuffer</code>. Each hit record in the buffer consisted
+of:</p>
+<ol type="1">
+<li><strong>Number of names:</strong> An integer stating how many names
+were on the name stack when the hit occurred.</li>
+<li><strong>Minimum depth (<span
+class="math inline">\(Z_{min}\)</span>):</strong> The minimum normalized
+device coordinate depth value of the intersecting primitive, scaled to
+an unsigned 32-bit integer.</li>
+<li><strong>Maximum depth (<span
+class="math inline">\(Z_{max}\)</span>):</strong> The maximum depth
+value of the intersecting primitive.</li>
+<li><strong>Name contents:</strong> The actual integer identifiers from
+the name stack, listed from bottom to top.</li>
+</ol>
+<p>If multiple objects overlapped under the cursor, the developer sorted
+the hits using the <span class="math inline">\(Z_{min}\)</span> value to
+select the object closest to the camera.</p>
+<h3 id="deprecation-and-modern-replacements">Deprecation and Modern
+Replacements</h3>
+<p>Selection mode was deprecated in OpenGL 3.0 and removed in the Core
+Profile. It relied heavily on the fixed-function pipeline, lacked
+hardware acceleration on many consumer GPUs, and forced CPU-GPU
+synchronization bottlenecks. Modern picking is typically handled in one
+of two ways:</p>
+<ul>
+<li><strong>Ray Casting:</strong> Converting the 2D screen coordinate
+into a 3D world-space ray via un-projection and testing for
+intersections with bounding volumes or polygons on the CPU or in a
+compute shader.</li>
+<li><strong>Color Picking (ID Buffering):</strong> Rendering the scene
+offscreen to a Framebuffer Object (FBO), where each object is drawn with
+a unique color corresponding to its ID, and reading the single pixel
+under the cursor using <code>glReadPixels</code>.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

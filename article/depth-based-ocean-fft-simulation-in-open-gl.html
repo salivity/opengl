@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Depth-Based Ocean FFT Simulation in OpenGL - opengl</title>
+    <meta name="description" content="Simulating realistic ocean surfaces that react accurately to varying seabed topography requires extending classical statistical ocean models into depth-dependent regimes. This article explores the mathematical frameworks and algorithms that implement dept">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/depth-based-ocean-fft-simulation-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Depth-Based Ocean FFT Simulation in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/depth-based-ocean-fft-simulation-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Simulating realistic ocean surfaces that react accurately to varying seabed topography requires extending classical statistical ocean models into depth-dependent regimes. This article explores the mathematical frameworks and algorithms that implement dept" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="depth-based-ocean-fft-simulation-in-opengl">Depth-Based Ocean
+FFT Simulation in OpenGL</h1>
+<p>Simulating realistic ocean surfaces that react accurately to varying
+seabed topography requires extending classical statistical ocean models
+into depth-dependent regimes. This article explores the mathematical
+frameworks and algorithms that implement depth-based Fast Fourier
+Transform (FFT) ocean wave simulations using OpenGL compute shaders. It
+covers finite-depth dispersion modifications, shallow-water wave spectra
+such as TMA, computational strategies for handling spatially varying
+bathymetry, and practical GPU pipeline implementations.</p>
+<h2 id="the-finite-depth-dispersion-relation">The Finite-Depth
+Dispersion Relation</h2>
+<p>Standard ocean simulations based on Jerry Tessendorf’s formulation
+assume infinite water depth (deep water), where the dispersion relation
+simplifies to:</p>
+<p><span class="math display">\[\omega^2(k) = gk\]</span></p>
+<p>Where <span class="math inline">\(g\)</span> is the acceleration due
+to gravity, <span class="math inline">\(k = \|\mathbf{k}\|\)</span> is
+the wavenumber, and <span class="math inline">\(\omega\)</span> is the
+angular frequency.</p>
+<p>To simulate waves interacting with the seabed, the deep-water model
+must be replaced with the finite-depth dispersion relation from linear
+Airy wave theory:</p>
+<p><span class="math display">\[\omega^2(k, h) = gk
+\tanh(kh)\]</span></p>
+<p>Where <span class="math inline">\(h\)</span> represents the local
+water depth. As water depth <span class="math inline">\(h \to
+\infty\)</span>, <span class="math inline">\(\tanh(kh) \to 1\)</span>,
+naturally degenerating into the deep-water model. As water becomes
+shallow (<span class="math inline">\(kh &lt; \pi/10\)</span>), <span
+class="math inline">\(\tanh(kh) \approx kh\)</span>, simplifying wave
+speed directly to <span class="math inline">\(c = \sqrt{gh}\)</span>,
+leading to wave deceleration, wavelength compression (shoaling), and
+refraction.</p>
+<h2 id="depth-limited-wave-spectra-the-tma-spectrum">Depth-Limited Wave
+Spectra: The TMA Spectrum</h2>
+<p>While the Phillips or Pierson-Moskowitz spectra model deep-water
+seas, the Texel-MARSEN-ARSLOE (TMA) spectrum explicitly accounts for
+depth-limited energy dissipation.</p>
+<p>The TMA spectrum modifies the JONSWAP spectrum <span
+class="math inline">\(S_J(\omega)\)</span> by multiplying it with a
+depth-attenuation factor <span
+class="math inline">\(\Phi_{KMA}(\omega_h)\)</span>:</p>
+<p><span class="math display">\[S_{TMA}(\omega, h) = S_J(\omega) \cdot
+\Phi_{KMA}(\omega_h)\]</span></p>
+<p>Where <span class="math inline">\(\omega_h = \omega \sqrt{h /
+g}\)</span>, and <span class="math inline">\(\Phi_{KMA}\)</span> is
+approximated by:</p>
+<p><span class="math display">\[\Phi_{KMA}(\omega_h) \approx
+\begin{cases} 0.5 \omega_h^2 &amp; \text{for } \omega_h \le 1 \\ 1 - 0.5
+(2 - \omega_h)^2 &amp; \text{for } 1 &lt; \omega_h &lt; 2 \\ 1 &amp;
+\text{for } \omega_h \ge 2 \end{cases}\]</span></p>
+<p>Using the TMA spectrum dynamically restricts wave amplitudes in
+shallow regions, preventing non-physical tall waves from persisting near
+the shoreline.</p>
+<h2 id="handling-spatially-varying-depth-with-fft">Handling Spatially
+Varying Depth with FFT</h2>
+<p>The core limitation of the classical 2D Inverse FFT (IFFT) is that it
+computes a global transform over a uniform grid, requiring depth <span
+class="math inline">\(h\)</span> to be spatially constant. Modern OpenGL
+implementations resolve this using one of three architectural
+approaches:</p>
+<h3 id="1-depth-slab-blending-multi-grid-fft">1. Depth-Slab Blending
+(Multi-Grid FFT)</h3>
+<p>The simulation executes multiple simultaneous IFFTs across discrete
+depth tiers (e.g., <span class="math inline">\(h \in \{2\text{m},
+10\text{m}, 50\text{m}, \infty\}\)</span>) within the same OpenGL
+compute pass.</p>
+<ul>
+<li>A bathymetry texture maps local depth <span
+class="math inline">\(h(x, y)\)</span> per vertex or fragment.</li>
+<li>The GPU samples the two nearest depth displacement textures and
+linearly interpolates displacement and normal vectors based on the local
+depth.</li>
+</ul>
+<h3 id="2-phase-distorted-spatial-modulation">2. Phase-Distorted Spatial
+Modulation</h3>
+<p>Instead of executing multiple transforms, a single deep-water or
+intermediate-depth IFFT produces global displacement vectors. A
+subsequent compute pass applies local phase and amplitude corrections
+directly derived from bathymetry:</p>
+<ul>
+<li>Waves are compressed along the gradient of the seabed: <span
+class="math inline">\(\nabla h(x, y)\)</span>.</li>
+<li>Horizontal displacement vectors are magnified using the
+shallow-water choppy wave term <span
+class="math inline">\(\coth(kh)\)</span>, steepening wave crests prior
+to breaking.</li>
+</ul>
+<h3 id="3-hybrid-fft-shallow-water-equation-swe-coupling">3. Hybrid
+FFT-Shallow Water Equation (SWE) Coupling</h3>
+<p>For high-fidelity shorelines, FFT simulations run exclusively for
+deep regions and are coupled dynamically to a 2D Eulerian Shallow Water
+Equation solver running on an OpenGL compute grid near the shore. The
+FFT outputs provide the boundary Dirichlet conditions driving the SWE
+domain.</p>
+<h2 id="opengl-implementation-pipeline">OpenGL Implementation
+Pipeline</h2>
+<p>An efficient depth-based FFT simulation uses OpenGL 4.3+ Compute
+Shaders and Shader Storage Buffer Objects (SSBOs) using the following
+algorithmic passes:</p>
+<ol type="1">
+<li><strong>Spectrum Generation (Compute Shader):</strong> Generate
+initial complex frequency amplitudes <span
+class="math inline">\(h_0(\mathbf{k})\)</span> using Gaussian random
+numbers and the TMA spectrum, accounting for a baseline depth.</li>
+<li><strong>Time Evolution (Compute Shader):</strong> Update the
+spectrum at time <span class="math inline">\(t\)</span>: <span
+class="math display">\[h(\mathbf{k}, t) = h_0(\mathbf{k})e^{i\omega(k,
+h)t} + h_0^*(-\mathbf{k})e^{-i\omega(k, h)t}\]</span> Simultaneously
+evaluate the horizontal choppy components: <span
+class="math display">\[\mathbf{D}(\mathbf{k}, t) = -i
+\frac{\mathbf{k}}{k} \coth(kh) h(\mathbf{k}, t)\]</span></li>
+<li><strong>Row/Column IFFT (Compute Shader):</strong> Execute the
+Radix-2 or Stockham formulation of the Cooley-Tukey algorithm. Compute
+shaders utilize shared memory (<code>shared vec2 tile[...]</code>) and
+<code>barrier()</code> calls to perform horizontal and vertical 1D IFFTs
+entirely in on-chip cache without global memory roundtrips.</li>
+<li><strong>Displacement Assembly and Normal Mapping (Compute
+Shader):</strong> Combine the vertical and horizontal outputs into a
+single floating-point displacement texture (<code>GL_RGBA32F</code>). A
+Sobel filter or cross-product pass computes screen-space normals,
+folding in Jacobian evaluation to compute foam masks where <span
+class="math inline">\(\det(J) &lt; 0\)</span>.</li>
+<li><strong>Surface Rendering (Vertex/Fragment Shaders):</strong>
+Tessellate a projected grid, sample the combined displacement and
+bathymetry textures, and shade using Fresnel transmission, subsurface
+scattering, and foam modulation.</li>
+</ol></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

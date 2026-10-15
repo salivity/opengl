@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Client-Side vs Server-Side Waits in OpenGL - opengl</title>
+    <meta name="description" content="Synchronizing multiple OpenGL contexts or coordinating asynchronous GPU workloads requires a firm grasp of how synchronization primitives operate. This article examines the differences between client-side waits and server-side waits in OpenGL, detailing t">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/client-side-vs-server-side-waits-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Client-Side vs Server-Side Waits in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/client-side-vs-server-side-waits-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Synchronizing multiple OpenGL contexts or coordinating asynchronous GPU workloads requires a firm grasp of how synchronization primitives operate. This article examines the differences between client-side waits and server-side waits in OpenGL, detailing t" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="client-side-vs-server-side-waits-in-opengl">Client-Side vs
+Server-Side Waits in OpenGL</h1>
+<p>Synchronizing multiple OpenGL contexts or coordinating asynchronous
+GPU workloads requires a firm grasp of how synchronization primitives
+operate. This article examines the differences between client-side waits
+and server-side waits in OpenGL, detailing the distinct mechanics of
+<code>glClientWaitSync</code> and <code>glWaitSync</code>, their
+respective impacts on CPU and GPU pipelines, and the optimal use cases
+for each method when sharing resources between contexts.</p>
+<h2 id="the-opengl-client-server-model">The OpenGL Client-Server
+Model</h2>
+<p>In OpenGL terminology, the "client" refers to the host CPU
+application and its driver layer, while the "server" represents the GPU
+implementation executing rendering commands. Synchronization objects
+(fences created using <code>glFenceSync</code>) are inserted into the
+command stream to monitor the progress of specific GPU commands. When
+managing dependencies—such as one context reading a texture rendered by
+another context—developers must decide whether to stall the CPU or
+instruct the GPU to manage the dependency internally.</p>
+<h2 id="client-side-waits-glclientwaitsync">Client-Side Waits
+(<code>glClientWaitSync</code>)</h2>
+<p>A client-side wait explicitly blocks the calling CPU thread until the
+designated sync object is signaled by the GPU, or until a specified
+timeout expires.</p>
+<ul>
+<li><strong>Execution Behavior:</strong> The CPU thread ceases execution
+at the call site. It yields or spins until the GPU finishes processing
+all commands queued prior to the fence.</li>
+<li><strong>Timeout Control:</strong> Developers provide a precise
+timeout in nanoseconds. The function can return specific status codes,
+such as <code>GL_ALREADY_SIGNALED</code>,
+<code>GL_CONDITION_SATISFIED</code>, <code>GL_TIMEOUT_EXPIRED</code>, or
+<code>GL_WAIT_FAILED</code>.</li>
+<li><strong>Flushing:</strong> The caller can pass
+<code>GL_SYNC_FLUSH_COMMANDS_BIT</code> to force commands to be
+submitted to the GPU immediately, preventing infinite deadlocks where
+the GPU never processes the fence.</li>
+<li><strong>Primary Use Case:</strong> Client-side waits are necessary
+when the host CPU requires the results of a GPU operation, such as
+reading data back through a persistent buffer, updating memory-mapped
+buffers without race conditions, or pacing frame rates to avoid deep
+render queues.</li>
+</ul>
+<h2 id="server-side-waits-glwaitsync">Server-Side Waits
+(<code>glWaitSync</code>)</h2>
+<p>A server-side wait blocks the GPU pipeline instead of the host CPU.
+When invoked, it instructs the GPU to delay execution of any
+subsequently issued commands in the current context until the fence
+object is signaled.</p>
+<ul>
+<li><strong>Execution Behavior:</strong> The CPU returns from the call
+almost instantaneously, continuing execution of application logic and
+queuing further OpenGL calls. Only the GPU's command processor waits to
+execute commands that follow the fence.</li>
+<li><strong>Timeout Behavior:</strong> The function does not accept a
+custom timeout parameter; it uses an implementation-defined timeout
+(<code>GL_TIMEOUT_IGNORED</code>) and does not return status codes
+indicating fence completion.</li>
+<li><strong>Context Independence:</strong> A fence created in Context A
+can be passed to <code>glWaitSync</code> in Context B (assuming the
+contexts share an object space), allowing Context B's GPU pipeline to
+pause until Context A reaches the designated fence.</li>
+<li><strong>Primary Use Case:</strong> Server-side waits are ideal for
+cross-context synchronization, such as background asset streaming or
+multi-threaded texture generation. Context B can consume data produced
+by Context A without forcing the CPU to idle or perform expensive
+inter-thread synchronization.</li>
+</ul>
+<h2 id="key-differences">Key Differences</h2>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Feature</th>
+<th style="text-align: left;">Client-Side Wait
+(<code>glClientWaitSync</code>)</th>
+<th style="text-align: left;">Server-Side Wait
+(<code>glWaitSync</code>)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>Blocked Component</strong></td>
+<td style="text-align: left;">Host CPU thread</td>
+<td style="text-align: left;">GPU command execution</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>CPU Overhead</strong></td>
+<td style="text-align: left;">High (stalls thread execution)</td>
+<td style="text-align: left;">Minimal (returns immediately)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Timeout Handling</strong></td>
+<td style="text-align: left;">Configurable, returns status</td>
+<td style="text-align: left;">Ignored, managed by driver/hardware</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Primary Dependency</strong></td>
+<td style="text-align: left;">CPU-to-GPU data dependency</td>
+<td style="text-align: left;">GPU-to-GPU cross-context dependency</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Pipeline Impact</strong></td>
+<td style="text-align: left;">May cause pipeline bubbles on CPU</td>
+<td style="text-align: left;">Keeps CPU active; schedules stalls only on
+GPU</td>
+</tr>
+</tbody>
+</table>
+<h2 id="choosing-the-proper-synchronization-method">Choosing the Proper
+Synchronization Method</h2>
+<p>Rely on <code>glWaitSync</code> whenever the dependent work remains
+entirely on the GPU. This prevents context switching and stalls on the
+CPU, allowing the host application to continue issuing commands,
+processing physics, or running game logic while the GPU coordinates its
+own queues.</p>
+<p>Reserve <code>glClientWaitSync</code> exclusively for situations
+where the CPU cannot proceed without knowing that the GPU has finished a
+specific task. To avoid performance degradation, client-side waits
+should query sync objects with a zero-timeout first or be delayed as
+long as possible within the frame cycle to give the GPU sufficient time
+to complete the work naturally.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

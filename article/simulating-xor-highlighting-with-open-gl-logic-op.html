@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulating XOR Highlighting with OpenGL Logic Op - opengl</title>
+    <meta name="description" content="This article explains how OpenGL’s logical operations, specifically the GLXOR operation mode, enable temporary and reversible visual highlighting over existing framebuffer contents. By utilizing bitwise XOR blending directly on pixel values, developers ca">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/simulating-xor-highlighting-with-open-gl-logic-op">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Simulating XOR Highlighting with OpenGL Logic Op - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/simulating-xor-highlighting-with-open-gl-logic-op" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how OpenGL’s logical operations, specifically the GLXOR operation mode, enable temporary and reversible visual highlighting over existing framebuffer contents. By utilizing bitwise XOR blending directly on pixel values, developers ca" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="simulating-xor-highlighting-with-opengl-logic-op">Simulating XOR
+Highlighting with OpenGL Logic Op</h1>
+<p>This article explains how OpenGL’s logical operations, specifically
+the <code>GL_XOR</code> operation mode, enable temporary and reversible
+visual highlighting over existing framebuffer contents. By utilizing
+bitwise XOR blending directly on pixel values, developers can create
+selection boxes, rubber-band lines, and inverted cursor highlights
+without needing to read back pixel data or maintain separate overlay
+buffers. The following sections break down the underlying mechanics,
+implementation workflow, and practical considerations of using logic
+operations in OpenGL.</p>
+<h3 id="the-mechanics-of-the-bitwise-xor-operation">The Mechanics of the
+Bitwise XOR Operation</h3>
+<p>In standard OpenGL rendering, the fragment color overwrites or blends
+mathematically with the destination color in the framebuffer. When color
+logic operations are enabled, OpenGL replaces the traditional blending
+equation with a bitwise logical operation executed between the incoming
+fragment color (source) and the existing framebuffer color
+(destination):</p>
+<p><span class="math display">\[\text{Destination} = \text{Source}
+\oplus \text{Destination}\]</span></p>
+<p>The bitwise XOR (exclusive OR) possesses a unique mathematical
+property: applying the same source mask twice returns the destination to
+its original state:</p>
+<p><span class="math display">\[(A \oplus B) \oplus B = A\]</span></p>
+<p>Because of this property, rendering a primitive using
+<code>GL_XOR</code> inverts or shifts the colors underneath it.
+Rendering the exact same primitive a second time immediately restores
+the underlying framebuffer to its initial state without requiring a
+scene redraw.</p>
+<h3 id="implementing-xor-highlighting-in-opengl">Implementing XOR
+Highlighting in OpenGL</h3>
+<p>To use XOR highlighting, the OpenGL pipeline must configure the color
+logic operation mode during the draw pass of the highlight geometry:</p>
+<ol type="1">
+<li><p><strong>Disable Traditional Blending:</strong> Standard alpha
+blending must be disabled to allow logic operations to process fragments
+cleanly:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>glDisable<span class="op">(</span>GL_BLEND<span class="op">);</span></span></code></pre></div></li>
+<li><p><strong>Enable Color Logic Operations:</strong> Turn on the logic
+operation capability for the active framebuffer:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>glEnable<span class="op">(</span>GL_COLOR_LOGIC_OP<span class="op">);</span></span></code></pre></div></li>
+<li><p><strong>Set the Operation to XOR:</strong> Specify
+<code>GL_XOR</code> as the active logical operation:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>glLogicOp<span class="op">(</span>GL_XOR<span class="op">);</span></span></code></pre></div></li>
+<li><p><strong>Render the Highlight Geometry:</strong> Draw the
+selection rectangle, outline, or highlight region. Setting the source
+color to full intensity (e.g., pure white <code>1.0, 1.0, 1.0</code>)
+inverts all underlying bits, ensuring high-contrast visibility across
+varying light and dark backgrounds.</p></li>
+<li><p><strong>Clean Up:</strong> After drawing the highlighting
+element, disable the logic operation state to return to normal
+rendering:</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode c"><code class="sourceCode c"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>glDisable<span class="op">(</span>GL_COLOR_LOGIC_OP<span class="op">);</span></span></code></pre></div></li>
+</ol>
+<h3 id="technical-limitations-and-modern-considerations">Technical
+Limitations and Modern Considerations</h3>
+<p>While logic operations provide an efficient way to handle temporary
+UI elements, modern graphics pipelines introduce constraints:</p>
+<ul>
+<li><strong>Buffer Format Compatibility:</strong>
+<code>GL_COLOR_LOGIC_OP</code> functions exclusively on integer and
+normalized integer color buffers. It is not supported on floating-point
+framebuffers (e.g., <code>GL_RGBA16F</code> or
+<code>GL_RGBA32F</code>).</li>
+<li><strong>Hardware Support:</strong> While standard across desktop
+OpenGL implementations, color logic operations are largely omitted from
+modern mobile profiles such as OpenGL ES, requiring fragment
+shader-based alternatives or multiple render passes in cross-platform
+applications.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

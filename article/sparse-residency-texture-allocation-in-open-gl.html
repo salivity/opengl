@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sparse Residency Texture Allocation in OpenGL - opengl</title>
+    <meta name="description" content="Sparse residency texture allocation is a memory management technique in computer graphics that allows applications to allocate massive, high-resolution textures without committing the entirety of their physical memory upfront. In OpenGL, this feature deco">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/sparse-residency-texture-allocation-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Sparse Residency Texture Allocation in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/sparse-residency-texture-allocation-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Sparse residency texture allocation is a memory management technique in computer graphics that allows applications to allocate massive, high-resolution textures without committing the entirety of their physical memory upfront. In OpenGL, this feature deco" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="sparse-residency-texture-allocation-in-opengl">Sparse Residency
+Texture Allocation in OpenGL</h1>
+<p>Sparse residency texture allocation is a memory management technique
+in computer graphics that allows applications to allocate massive,
+high-resolution textures without committing the entirety of their
+physical memory upfront. In OpenGL, this feature decouples the texture’s
+virtual dimension from its physical Video RAM (VRAM) footprint. By
+dynamically committing and uncommitting physical memory pages based on
+camera distance, view frustum visibility, and required levels of detail,
+developers can render extreme-resolution terrains—often spanning
+hundreds of square kilometers at sub-centimeter fidelity—while operating
+within strict hardware memory budgets.</p>
+<h3 id="understanding-sparse-residency-textures">Understanding Sparse
+Residency Textures</h3>
+<p>In traditional OpenGL texturing, creating a texture with
+<code>glTexStorage2D</code> or <code>glTexImage2D</code> forces the GPU
+driver to immediately allocate contiguous physical VRAM for the entire
+mipmap chain. A 64k x 64k RGBA texture would require 16 gigabytes of
+VRAM for the base level alone, easily exceeding the physical limits of
+most consumer GPUs.</p>
+<p>Sparse residency textures, primarily exposed via the
+<code>GL_ARB_sparse_texture</code> extension, solve this problem by
+leveraging modern GPU page tables. Under this model:</p>
+<ol type="1">
+<li><strong>Virtual Allocation:</strong> The texture's full dimensions
+are declared, reserving a virtual address space.</li>
+<li><strong>Tiling:</strong> The GPU driver divides every mipmap level
+into uniform, hardware-specific blocks called tiles or pages (typically
+64KB in size, such as 128x128 pixels for 32-bit formats).</li>
+<li><strong>Selective Commitment:</strong> The application explicitly
+controls which tiles are backed by physical VRAM using the
+<code>glTexPageCommitmentARB</code> function. Unmapped tiles consume
+zero physical memory.</li>
+<li><strong>Graceful Sampling:</strong> If an unmapped tile is sampled
+in a shader, the hardware returns a predefined value (typically zero) or
+falls back to a lower-resolution resident mipmap level without
+triggering a hardware fault.</li>
+</ol>
+<h3 id="dynamically-handling-extreme-resolution-terrains">Dynamically
+Handling Extreme Resolution Terrains</h3>
+<p>Rendering extreme-resolution terrains requires balancing continuous
+geometric detail with texture clarity while avoiding frame-rate stutter
+caused by massive memory transfers. Sparse residency textures achieve
+this through a dynamic paging loop tailored for quadtrees or clipmap
+structures.</p>
+<h4 id="1-level-of-detail-lod-and-view-determination">1. Level of Detail
+(LOD) and View Determination</h4>
+<p>The terrain mesh is partitioned spatially, typically using a
+quadtree. As the camera navigates the scene, distance-based LOD
+calculations determine which terrain sectors require high-frequency
+surface detail (near the camera) and which can rely on lower-resolution
+representations (in the distance).</p>
+<p>Instead of generating unique, separate texture patches for every
+terrain segment, the entire terrain's diffuse, normal, and displacement
+data can be treated as a single, contiguous virtual texture coordinate
+space.</p>
+<h4 id="2-gpu-visibility-and-residency-feedback">2. GPU Visibility and
+Residency Feedback</h4>
+<p>To determine which pages must be resident, the graphics pipeline uses
+a feedback mechanism:</p>
+<ul>
+<li><strong>Shader Feedback:</strong> A low-resolution render pass or a
+compute shader evaluates the texture coordinates and mip levels accessed
+per screen pixel.</li>
+<li><strong>Buffer Readback:</strong> The required tile coordinates are
+written to a shader storage buffer object (SSBO) or indirect
+buffer.</li>
+<li><strong>Driver Page Queries:</strong> Alternatively, OpenGL provides
+intrinsic functions (such as <code>sparseTextureARB</code>) within GLSL
+that return a boolean flag indicating whether the targeted texel resided
+in physical memory during the sample operation.</li>
+</ul>
+<h4 id="3-asynchronous-paging-and-commitment">3. Asynchronous Paging and
+Commitment</h4>
+<p>Once missing pages are identified, the application loads the required
+tile data from system memory or disk storage.</p>
+<ul>
+<li><strong>Page Commitment:</strong> The application calls
+<code>glTexPageCommitmentARB(texture, level, xoffset, yoffset, zoffset, width, height, depth, GL_TRUE)</code>
+to bind physical memory pages to the virtual coordinate space.</li>
+<li><strong>Data Transfer:</strong> Pixel unpack buffers (PBOs) upload
+the compressed texture data directly into the newly committed pages
+asynchronously.</li>
+<li><strong>Eviction:</strong> When sectors exit the view frustum or
+recede into the distance, <code>glTexPageCommitmentARB</code> is called
+with <code>GL_FALSE</code> to free those physical pages for reuse,
+keeping overall VRAM consumption stable.</li>
+</ul>
+<h4 id="4-managing-the-mip-tail">4. Managing the Mip Tail</h4>
+<p>Hardware architectures struggle to subdivide extremely low-resolution
+mip levels into distinct 64KB pages. Sparse texture implementations
+handle this via the "mip tail." The mip tail consolidates all mip levels
+smaller than a single tile size into one contiguous allocation. By
+keeping only the coarse mip tail permanently resident in VRAM, the
+engine guarantees that distant terrain always displays a coherent
+baseline texture, completely eliminating visible missing-data artifacts
+while high-resolution pages stream into memory.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Normal Mapping in OpenGL Surface Lighting - opengl</title>
+    <meta name="description" content="Normal mapping is a specialized rendering technique that simulates intricate surface relief and micro-geometry on 3D meshes without increasing the actual polygon count. Within an OpenGL pipeline, normal mapping functions by altering per-fragment normal ve">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/normal-mapping-in-open-gl-surface-lighting">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Normal Mapping in OpenGL Surface Lighting - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/normal-mapping-in-open-gl-surface-lighting" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Normal mapping is a specialized rendering technique that simulates intricate surface relief and micro-geometry on 3D meshes without increasing the actual polygon count. Within an OpenGL pipeline, normal mapping functions by altering per-fragment normal ve" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="normal-mapping-in-opengl-surface-lighting">Normal Mapping in
+OpenGL Surface Lighting</h1>
+<p>Normal mapping is a specialized rendering technique that simulates
+intricate surface relief and micro-geometry on 3D meshes without
+increasing the actual polygon count. Within an OpenGL pipeline, normal
+mapping functions by altering per-fragment normal vectors using data
+stored in a 2D texture, directly influencing how real-time lighting
+equations compute diffuse and specular reflections. This article
+examines the mechanics of normal mapping, the role of tangent space
+transformations, its execution inside GLSL shaders, and how it
+dramatically enhances visual fidelity while conserving computational
+resources.</p>
+<h3 id="the-mechanism-of-normal-vectors-in-lighting">The Mechanism of
+Normal Vectors in Lighting</h3>
+<p>In standard 3D rendering, lighting models such as Phong or
+Blinn-Phong rely on the angle between the incoming light ray and the
+surface normal—a directional vector perpendicular to the surface. When
+rendering simple geometry, vertex normals are interpolated across the
+faces of polygons, creating a smooth but visually flat surface.</p>
+<p>Normal mapping replaces these smooth, interpolated normals with
+high-frequency normals sampled from a texture map (the normal map).
+Because the lighting formulas compute intensity based on the dot product
+of the surface normal and the light direction vector (<span
+class="math inline">\(N \cdot L\)</span>), perturbing the normal vector
+on a per-fragment basis tricks the eye into perceiving depth, bumps,
+cracks, and bevels on an otherwise flat plane.</p>
+<h3 id="encoding-normals-in-textures">Encoding Normals in Textures</h3>
+<p>A normal map encodes 3D vector coordinates <span
+class="math inline">\((x, y, z)\)</span> into the standard RGB color
+channels:</p>
+<ul>
+<li>The Red channel represents the tangent direction (<span
+class="math inline">\(x\)</span>).</li>
+<li>The Green channel represents the bitangent direction (<span
+class="math inline">\(y\)</span>).</li>
+<li>The Blue channel represents the normal direction (<span
+class="math inline">\(z\)</span>).</li>
+</ul>
+<p>Because vector components range from <span
+class="math inline">\(-1.0\)</span> to <span
+class="math inline">\(1.0\)</span>, while color values in standard image
+formats range from <span class="math inline">\(0.0\)</span> to <span
+class="math inline">\(1.0\)</span>, the vectors are mapped into color
+space using the formula:</p>
+<p><span class="math display">\[\text{Color} = 0.5 \times \text{Normal}
++ 0.5\]</span></p>
+<p>Inside an OpenGL fragment shader, this process is reversed to
+reconstruct the original vector:</p>
+<p><span class="math display">\[\text{Normal} = 2.0 \times \text{Color}
+- 1.0\]</span></p>
+<p>Most normal maps appear predominantly light blue because their
+vectors point predominantly outward along the surface normal (positive
+<span class="math inline">\(z\)</span>-axis), corresponding to an RGB
+value close to <span class="math inline">\((0.5, 0.5, 1.0)\)</span>.</p>
+<h3 id="tangent-space-and-the-tbn-matrix">Tangent Space and the TBN
+Matrix</h3>
+<p>A mesh can be rotated, scaled, or deformed, meaning normal maps must
+be defined relative to the local surface rather than absolute world
+coordinates. This local coordinate system is called <strong>Tangent
+Space</strong>.</p>
+<p>To apply tangent-space normal vectors to lighting calculations in
+OpenGL, the rendering pipeline must reconcile tangent space with world
+or view space. This is achieved using a transformation matrix
+constructed from three orthogonal vectors:</p>
+<ol type="1">
+<li><strong>Normal (<span class="math inline">\(N\)</span>):</strong>
+The original surface normal.</li>
+<li><strong>Tangent (<span class="math inline">\(T\)</span>):</strong> A
+vector aligned with the horizontal texture coordinate (<span
+class="math inline">\(U\)</span>).</li>
+<li><strong>Bitangent (<span class="math inline">\(B\)</span>):</strong>
+A vector aligned with the vertical texture coordinate (<span
+class="math inline">\(V\)</span>).</li>
+</ol>
+<p>These vectors form the <strong>TBN matrix</strong>. Within the OpenGL
+pipeline, developers typically resolve the coordinate space in one of
+two ways:</p>
+<ul>
+<li><strong>World/View Space Approach:</strong> Pass the TBN matrix to
+the fragment shader and multiply the sampled normal vector by the
+matrix, transforming the normal into world or view space to match the
+light sources.</li>
+<li><strong>Tangent Space Approach:</strong> Invert the TBN matrix (or
+transpose it, as it is orthogonal) in the vertex shader to transform the
+light and view vectors into tangent space before passing them to the
+fragment shader. This reduces computational overhead because vector
+transformations occur per-vertex rather than per-fragment.</li>
+</ul>
+<h3 id="pipeline-execution-in-glsl-shaders">Pipeline Execution in GLSL
+Shaders</h3>
+<p>Within the modern OpenGL programmable pipeline, the implementation of
+normal mapping is split between the vertex shader and the fragment
+shader.</p>
+<h4 id="the-vertex-shader">The Vertex Shader</h4>
+<p>The vertex shader receives vertex attributes (positions, normals,
+texture coordinates, and tangents). It computes the bitangent vector via
+the cross product of the normal and tangent vectors, constructs the TBN
+matrix, and transforms the light and camera directions into tangent
+space:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 330 core</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span> <span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">in</span> <span class="dt">vec3</span> aPos<span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span> <span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">1</span><span class="op">)</span> <span class="dt">in</span> <span class="dt">vec3</span> aNormal<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span> <span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">2</span><span class="op">)</span> <span class="dt">in</span> <span class="dt">vec2</span> aTexCoords<span class="op">;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span> <span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">3</span><span class="op">)</span> <span class="dt">in</span> <span class="dt">vec3</span> aTangent<span class="op">;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec2</span> TexCoords<span class="op">;</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec3</span> TangentLightPos<span class="op">;</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec3</span> TangentViewPos<span class="op">;</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec3</span> TangentFragPos<span class="op">;</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">vec3</span> lightPos<span class="op">;</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">vec3</span> viewPos<span class="op">;</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">mat4</span> model<span class="op">;</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">mat4</span> view<span class="op">;</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">mat4</span> projection<span class="op">;</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>    TexCoords <span class="op">=</span> aTexCoords<span class="op">;</span></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>    <span class="dt">mat3</span> normalMatrix <span class="op">=</span> <span class="bu">transpose</span><span class="op">(</span><span class="bu">inverse</span><span class="op">(</span><span class="dt">mat3</span><span class="op">(</span>model<span class="op">)));</span></span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> T <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span>normalMatrix <span class="op">*</span> aTangent<span class="op">);</span></span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> N <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span>normalMatrix <span class="op">*</span> aNormal<span class="op">);</span></span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>    T <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span>T <span class="op">-</span> <span class="bu">dot</span><span class="op">(</span>T<span class="op">,</span> N<span class="op">)</span> <span class="op">*</span> N<span class="op">);</span> <span class="co">// Gram-Schmidt re-orthogonalization</span></span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> B <span class="op">=</span> <span class="bu">cross</span><span class="op">(</span>N<span class="op">,</span> T<span class="op">);</span></span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a>    <span class="dt">mat3</span> TBN <span class="op">=</span> <span class="bu">transpose</span><span class="op">(</span><span class="dt">mat3</span><span class="op">(</span>T<span class="op">,</span> B<span class="op">,</span> N<span class="op">));</span></span>
+<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> FragPos <span class="op">=</span> <span class="dt">vec3</span><span class="op">(</span>model <span class="op">*</span> <span class="dt">vec4</span><span class="op">(</span>aPos<span class="op">,</span> <span class="fl">1.0</span><span class="op">));</span></span>
+<span id="cb1-31"><a href="#cb1-31" aria-hidden="true" tabindex="-1"></a>    TangentLightPos <span class="op">=</span> TBN <span class="op">*</span> lightPos<span class="op">;</span></span>
+<span id="cb1-32"><a href="#cb1-32" aria-hidden="true" tabindex="-1"></a>    TangentViewPos  <span class="op">=</span> TBN <span class="op">*</span> viewPos<span class="op">;</span></span>
+<span id="cb1-33"><a href="#cb1-33" aria-hidden="true" tabindex="-1"></a>    TangentFragPos  <span class="op">=</span> TBN <span class="op">*</span> FragPos<span class="op">;</span></span>
+<span id="cb1-34"><a href="#cb1-34" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb1-35"><a href="#cb1-35" aria-hidden="true" tabindex="-1"></a>    <span class="bu">gl_Position</span> <span class="op">=</span> projection <span class="op">*</span> view <span class="op">*</span> model <span class="op">*</span> <span class="dt">vec4</span><span class="op">(</span>aPos<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb1-36"><a href="#cb1-36" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h4 id="the-fragment-shader">The Fragment Shader</h4>
+<p>The fragment shader samples the normal map at the current texture
+coordinates, decodes the vector from the <span class="math inline">\([0,
+1]\)</span> range to <span class="math inline">\([-1, 1]\)</span>, and
+normalizes it. This decoded vector replaces the standard geometric
+normal in subsequent diffuse and specular lighting equations:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 330 core</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec4</span> FragColor<span class="op">;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="dt">in</span> <span class="dt">vec2</span> TexCoords<span class="op">;</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="dt">in</span> <span class="dt">vec3</span> TangentLightPos<span class="op">;</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="dt">in</span> <span class="dt">vec3</span> TangentViewPos<span class="op">;</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="dt">in</span> <span class="dt">vec3</span> TangentFragPos<span class="op">;</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">sampler2D</span> diffuseMap<span class="op">;</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">sampler2D</span> normalMap<span class="op">;</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Retrieve and unpack normal from normal map</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> normal <span class="op">=</span> <span class="bu">texture</span><span class="op">(</span>normalMap<span class="op">,</span> TexCoords<span class="op">).</span><span class="fu">rgb</span><span class="op">;</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>    normal <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span>normal <span class="op">*</span> <span class="fl">2.0</span> <span class="op">-</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Base color</span></span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> color <span class="op">=</span> <span class="bu">texture</span><span class="op">(</span>diffuseMap<span class="op">,</span> TexCoords<span class="op">).</span><span class="fu">rgb</span><span class="op">;</span></span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Ambient component</span></span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> ambient <span class="op">=</span> <span class="fl">0.1</span> <span class="op">*</span> color<span class="op">;</span></span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Diffuse component using mapped normal</span></span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> lightDir <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span>TangentLightPos <span class="op">-</span> TangentFragPos<span class="op">);</span></span>
+<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> diff <span class="op">=</span> <span class="bu">max</span><span class="op">(</span><span class="bu">dot</span><span class="op">(</span>lightDir<span class="op">,</span> normal<span class="op">),</span> <span class="fl">0.0</span><span class="op">);</span></span>
+<span id="cb2-27"><a href="#cb2-27" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> diffuse <span class="op">=</span> diff <span class="op">*</span> color<span class="op">;</span></span>
+<span id="cb2-28"><a href="#cb2-28" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb2-29"><a href="#cb2-29" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Specular component</span></span>
+<span id="cb2-30"><a href="#cb2-30" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> viewDir <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span>TangentViewPos <span class="op">-</span> TangentFragPos<span class="op">);</span></span>
+<span id="cb2-31"><a href="#cb2-31" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> reflectDir <span class="op">=</span> <span class="bu">reflect</span><span class="op">(-</span>lightDir<span class="op">,</span> normal<span class="op">);</span></span>
+<span id="cb2-32"><a href="#cb2-32" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> halfwayDir <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span>lightDir <span class="op">+</span> viewDir<span class="op">);</span>  </span>
+<span id="cb2-33"><a href="#cb2-33" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> spec <span class="op">=</span> <span class="bu">pow</span><span class="op">(</span><span class="bu">max</span><span class="op">(</span><span class="bu">dot</span><span class="op">(</span>normal<span class="op">,</span> halfwayDir<span class="op">),</span> <span class="fl">0.0</span><span class="op">),</span> <span class="fl">32.0</span><span class="op">);</span></span>
+<span id="cb2-34"><a href="#cb2-34" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> specular <span class="op">=</span> <span class="dt">vec3</span><span class="op">(</span><span class="fl">0.2</span><span class="op">)</span> <span class="op">*</span> spec<span class="op">;</span></span>
+<span id="cb2-35"><a href="#cb2-35" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb2-36"><a href="#cb2-36" aria-hidden="true" tabindex="-1"></a>    FragColor <span class="op">=</span> <span class="dt">vec4</span><span class="op">(</span>ambient <span class="op">+</span> diffuse <span class="op">+</span> specular<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb2-37"><a href="#cb2-37" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="impact-on-real-time-rendering">Impact on Real-Time
+Rendering</h3>
+<p>Normal mapping fundamentally alters lighting in OpenGL by shifting
+the source of surface directionality from coarse geometric topology to
+pixel-dense texture information. While it does not change the actual
+silhouette of a mesh—as displacement mapping or tessellation would—it
+provides an optimal balance of visual richness and computational
+efficiency. By altering the surface lighting details on a per-fragment
+level, normal mapping allows low-poly models to convincingly mimic
+high-poly assets within performance-critical rendering pipelines.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

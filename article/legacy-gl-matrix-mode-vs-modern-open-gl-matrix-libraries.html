@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Legacy glMatrixMode vs Modern OpenGL Matrix Libraries - opengl</title>
+    <meta name="description" content="This article examines the transition from OpenGL&#39;s legacy fixed-function matrix stack—specifically glMatrixMode(GLPROJECTION)—to modern client-side matrix calculation libraries like GLM. While legacy OpenGL handled projection transformations internally th">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/legacy-gl-matrix-mode-vs-modern-open-gl-matrix-libraries">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Legacy glMatrixMode vs Modern OpenGL Matrix Libraries - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/legacy-gl-matrix-mode-vs-modern-open-gl-matrix-libraries" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article examines the transition from OpenGL&#39;s legacy fixed-function matrix stack—specifically glMatrixMode(GLPROJECTION)—to modern client-side matrix calculation libraries like GLM. While legacy OpenGL handled projection transformations internally th" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="legacy-glmatrixmode-vs-modern-opengl-matrix-libraries">Legacy
+glMatrixMode vs Modern OpenGL Matrix Libraries</h1>
+<p>This article examines the transition from OpenGL's legacy
+fixed-function matrix stack—specifically
+<code>glMatrixMode(GL_PROJECTION)</code>—to modern client-side matrix
+calculation libraries like GLM. While legacy OpenGL handled projection
+transformations internally through an implicit state machine, modern
+OpenGL delegates matrix math entirely to CPU-side libraries and custom
+vertex shaders, offering greater flexibility, thread safety, and
+performance.</p>
+<h3 id="the-legacy-approach-glmatrixmodegl_projection">The Legacy
+Approach: <code>glMatrixMode(GL_PROJECTION)</code></h3>
+<p>In legacy OpenGL (versions 1.x and 2.x), matrix manipulation was
+integrated directly into the graphics API. The
+<code>glMatrixMode(GL_PROJECTION)</code> command instructed OpenGL's
+internal state machine that subsequent matrix operations—such as
+<code>glLoadIdentity()</code>, <code>glFrustum()</code>, or the GLU
+utility <code>gluPerspective()</code>—should modify the projection
+matrix stack.</p>
+<p>Characteristics of this approach include:</p>
+<ul>
+<li><strong>Global State Dependency:</strong> Projection data was held
+inside a global state. Switching between projection, modelview, and
+texture transformations required constantly changing modes via
+<code>glMatrixMode</code>.</li>
+<li><strong>Internal Matrix Stack:</strong> OpenGL maintained an
+internal stack for push/pop operations (<code>glPushMatrix()</code>,
+<code>glPopMatrix()</code>), limiting matrix depth and hiding matrix
+data from direct inspection.</li>
+<li><strong>Fixed Functionality:</strong> The hardware directly consumed
+these internally tracked matrices to transform fixed-function vertices,
+leaving developers with zero control over intermediate
+calculations.</li>
+<li><strong>Deprecation:</strong> Starting with the OpenGL 3.0 core
+profile, the matrix stack, <code>glMatrixMode</code>, and related
+fixed-function utilities were deprecated and subsequently removed.</li>
+</ul>
+<h3 id="modern-approach-client-side-math-libraries">Modern Approach:
+Client-Side Math Libraries</h3>
+<p>Modern OpenGL (3.3+ Core Profile) completely removed the internal
+matrix state machine. Instead, developers calculate transformation
+matrices on the CPU using specialized linear algebra libraries—most
+notably GLM (OpenGL Mathematics)—and upload the raw data to the GPU.</p>
+<p>In modern workflows:</p>
+<ol type="1">
+<li><p><strong>Explicit Matrix Creation:</strong> Matrices are computed
+as simple 4x4 floating-point data structures (<code>glm::mat4</code>).
+Functions like <code>glm::perspective()</code> or
+<code>glm::ortho()</code> generate projection matrices entirely in
+application memory.</p></li>
+<li><p><strong>Shader Uploads:</strong> The resulting matrix is sent
+directly to the active shader program using uniform calls (e.g.,
+<code>glUniformMatrix4fv</code>) or shared across multiple shaders via
+Uniform Buffer Objects (UBOs).</p></li>
+<li><p><strong>Vertex Transformation:</strong> The vertex shader
+explicitly multiplies the incoming vertex coordinates by the projection
+matrix:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="bu">gl_Position</span> <span class="op">=</span> projectionMatrix <span class="op">*</span> viewMatrix <span class="op">*</span> modelMatrix <span class="op">*</span> <span class="dt">vec4</span><span class="op">(</span>position<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span></code></pre></div></li>
+</ol>
+<h3 id="key-differences-and-advantages">Key Differences and
+Advantages</h3>
+<ul>
+<li><strong>Encapsulation and Concurrency:</strong> Legacy calls
+modified a single global state, making multi-threaded rendering and
+state tracking error-prone. Modern libraries are stateless and pure,
+enabling thread-safe transformations.</li>
+<li><strong>Control and Extensibility:</strong> Computing matrices
+manually allows for custom projection algorithms, reversed-Z depth
+buffers, jittering for anti-aliasing (TAA), and non-standard camera
+projections that the fixed-function pipeline could not support.</li>
+<li><strong>API Portability:</strong> Libraries like GLM or Eigen are
+independent of graphics drivers. A matrix generated by GLM can be used
+seamlessly in modern OpenGL, Vulkan, Direct3D, or Metal without relying
+on vendor-specific driver implementations.</li>
+<li><strong>Driver Overhead:</strong> By stripping matrix math out of
+the graphics driver, modern systems reduce driver overhead, leading to
+more predictable performance across different hardware vendors.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reconstruct World Coordinates from Depth in OpenGL - opengl</title>
+    <meta name="description" content="Reconstructing 3D world coordinates directly from depth buffer values is a fundamental optimization in modern computer graphics pipelines, particularly in deferred shading and post-processing effects. Instead of storing explicit geometry or position buffe">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/reconstruct-world-coordinates-from-depth-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Reconstruct World Coordinates from Depth in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/reconstruct-world-coordinates-from-depth-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Reconstructing 3D world coordinates directly from depth buffer values is a fundamental optimization in modern computer graphics pipelines, particularly in deferred shading and post-processing effects. Instead of storing explicit geometry or position buffe" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="reconstruct-world-coordinates-from-depth-in-opengl">Reconstruct
+World Coordinates from Depth in OpenGL</h1>
+<p>Reconstructing 3D world coordinates directly from depth buffer values
+is a fundamental optimization in modern computer graphics pipelines,
+particularly in deferred shading and post-processing effects. Instead of
+storing explicit geometry or position buffers, developers can derive the
+original world-space position of any fragment using only its 2D screen
+coordinates, its sampled non-linear depth value, and the inverse of the
+camera's view-projection matrix. This article explains the underlying
+mathematics and provides a concise GLSL implementation to perform this
+transformation accurately.</p>
+<h3 id="the-coordinate-pipeline-in-reverse">The Coordinate Pipeline in
+Reverse</h3>
+<p>During standard rendering, a vertex travels from world space to
+screen space through a sequence of matrix multiplications:</p>
+<p><span class="math display">\[\text{World Space}
+\xrightarrow{\text{View Matrix}} \text{View Space}
+\xrightarrow{\text{Projection Matrix}} \text{Clip Space}
+\xrightarrow{\text{Perspective Divide}} \text{NDC}
+\xrightarrow{\text{Viewport Transform}} \text{Screen Space}\]</span></p>
+<p>To retrieve the original world coordinates, this pipeline must be run
+entirely in reverse:</p>
+<ol type="1">
+<li>Convert screen-space pixel coordinates and the depth sample into
+Normalized Device Coordinates (NDC).</li>
+<li>Multiply the NDC position by the inverse view-projection matrix
+(<span class="math inline">\((\mathbf{P} \cdot
+\mathbf{V})^{-1}\)</span>) to return to homogeneous clip space.</li>
+<li>Perform perspective division by dividing the resulting vector by its
+<span class="math inline">\(W\)</span> component to obtain Euclidean
+world-space coordinates.</li>
+</ol>
+<hr />
+<h3 id="step-1-mapping-screen-space-to-ndc">Step 1: Mapping Screen Space
+to NDC</h3>
+<p>In OpenGL, screen coordinates typically map to Normalized Device
+Coordinates in the range <span class="math inline">\([-1, 1]\)</span>
+across all three axes (<span class="math inline">\(X, Y,
+Z\)</span>).</p>
+<p>A depth texture sampled via standard samplers returns a value <span
+class="math inline">\(d \in [0, 1]\)</span>. In OpenGL's default clip
+space, depth spans from <span class="math inline">\(-1.0\)</span> (near
+plane) to <span class="math inline">\(1.0\)</span> (far plane).
+Therefore, the coordinates must be remapped:</p>
+<ul>
+<li><span class="math inline">\(X_{ndc} = UV.x \times 2.0 -
+1.0\)</span></li>
+<li><span class="math inline">\(Y_{ndc} = UV.y \times 2.0 -
+1.0\)</span></li>
+<li><span class="math inline">\(Z_{ndc} = \text{depth} \times 2.0 -
+1.0\)</span></li>
+</ul>
+<p>This yields the complete homogeneous coordinate in NDC:</p>
+<p><span class="math display">\[\mathbf{P}_{ndc} = \begin{bmatrix}
+X_{ndc} \\ Y_{ndc} \\ Z_{ndc} \\ 1.0 \end{bmatrix}\]</span></p>
+<hr />
+<h3 id="step-2-inverse-matrix-multiplication">Step 2: Inverse Matrix
+Multiplication</h3>
+<p>Combine the camera's view matrix (<span
+class="math inline">\(\mathbf{V}\)</span>) and projection matrix (<span
+class="math inline">\(\mathbf{P}\)</span>) on the CPU, invert the
+combined matrix, and pass it to the shader as a uniform:</p>
+<p><span class="math display">\[\mathbf{M}_{inv} = (\mathbf{P} \cdot
+\mathbf{V})^{-1}\]</span></p>
+<p>Multiplying <span class="math inline">\(\mathbf{M}_{inv}\)</span> by
+<span class="math inline">\(\mathbf{P}_{ndc}\)</span> transforms the
+point back into homogeneous world space (<span
+class="math inline">\(\mathbf{P}_{clip\_world}\)</span>):</p>
+<p><span class="math display">\[\mathbf{P}_{clip\_world} =
+\mathbf{M}_{inv} \cdot \mathbf{P}_{ndc}\]</span></p>
+<hr />
+<h3 id="step-3-perspective-division">Step 3: Perspective Division</h3>
+<p>Because the projection step applies a perspective warp encoded in the
+<span class="math inline">\(W\)</span> component, the unprojected vector
+is still scaled by <span class="math inline">\(W\)</span>. To recover
+the exact Cartesian world coordinates <span class="math inline">\((X, Y,
+Z)\)</span>, divide the vector by its <span
+class="math inline">\(W\)</span> component:</p>
+<p><span class="math display">\[\mathbf{P}_{world} =
+\frac{\mathbf{P}_{clip\_world}.xyz}{\mathbf{P}_{clip\_world}.w}\]</span></p>
+<hr />
+<h3 id="glsl-implementation">GLSL Implementation</h3>
+<p>Below is a complete GLSL function that extracts the world-space
+coordinate from a depth texture sample and screen-space UV
+coordinates:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 330 core</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">sampler2D</span> uDepthTexture<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">mat4</span> uInverseViewProjection<span class="op">;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="dt">in</span> <span class="dt">vec2</span> vTexCoord<span class="op">;</span> <span class="co">// Screen-space UVs in [0, 1]</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec4</span> FragColor<span class="op">;</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> <span class="fu">getWorldPositionFromDepth</span><span class="op">(</span><span class="dt">vec2</span> uv<span class="op">,</span> <span class="dt">float</span> depthSample<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Step 1: Map [0, 1] range to [-1, 1] NDC</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> clipSpacePosition <span class="op">=</span> <span class="dt">vec4</span><span class="op">(</span>uv <span class="op">*</span> <span class="fl">2.0</span> <span class="op">-</span> <span class="fl">1.0</span><span class="op">,</span> depthSample <span class="op">*</span> <span class="fl">2.0</span> <span class="op">-</span> <span class="fl">1.0</span><span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Step 2: Multiply by inverse view-projection matrix</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> worldSpacePosition <span class="op">=</span> uInverseViewProjection <span class="op">*</span> clipSpacePosition<span class="op">;</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Step 3: Perspective divide</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> worldSpacePosition<span class="op">.</span><span class="fu">xyz</span> <span class="op">/</span> worldSpacePosition<span class="op">.</span><span class="fu">w</span><span class="op">;</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> depth <span class="op">=</span> <span class="bu">texture</span><span class="op">(</span>uDepthTexture<span class="op">,</span> vTexCoord<span class="op">).</span><span class="fu">r</span><span class="op">;</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Discard background fragments at the far plane if necessary</span></span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> <span class="op">(</span>depth <span class="op">&gt;=</span> <span class="fl">1.0</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>        <span class="kw">discard</span><span class="op">;</span></span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> worldPos <span class="op">=</span> <span class="fu">getWorldPositionFromDepth</span><span class="op">(</span>vTexCoord<span class="op">,</span> depth<span class="op">);</span></span>
+<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Example: Output reconstructed world position directly</span></span>
+<span id="cb1-31"><a href="#cb1-31" aria-hidden="true" tabindex="-1"></a>    FragColor <span class="op">=</span> <span class="dt">vec4</span><span class="op">(</span>worldPos<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb1-32"><a href="#cb1-32" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<hr />
+<h3 id="key-technical-considerations">Key Technical Considerations</h3>
+<ul>
+<li><strong>Matrix Precision:</strong> Computing <span
+class="math inline">\((\mathbf{P} \cdot \mathbf{V})^{-1}\)</span> on the
+CPU using 64-bit double-precision floats before casting to 32-bit floats
+for the shader uniform helps reduce precision artifacts, particularly in
+scenes with expansive view distances.</li>
+<li><strong>Coordinate Conventions:</strong> If targeting APIs or modern
+OpenGL extensions that use a zero-to-one clip control
+(<code>glClipControl</code> with <code>GL_ZERO_TO_ONE</code>), do not
+remap <span class="math inline">\(Z\)</span> to <span
+class="math inline">\([-1, 1]\)</span>. Use <span
+class="math inline">\(Z_{ndc} = \text{depth}\)</span> directly.</li>
+<li><strong>View-Space Reconstruction:</strong> If calculations only
+require view-space positions (such as standard deferred lighting
+calculations), pass the inverse projection matrix (<span
+class="math inline">\(\mathbf{P}^{-1}\)</span>) alone instead of the
+combined inverse view-projection matrix.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

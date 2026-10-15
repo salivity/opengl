@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anisotropic Filtering in OpenGL Explained - opengl</title>
+    <meta name="description" content="This article explores how anisotropic filtering (AF) eliminates texture blurring on surfaces viewed at oblique angles in OpenGL applications. It covers the geometric limitations of traditional isotropic mipmapping, details how anisotropic algorithms sampl">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/anisotropic-filtering-in-open-gl-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Anisotropic Filtering in OpenGL Explained - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/anisotropic-filtering-in-open-gl-explained" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explores how anisotropic filtering (AF) eliminates texture blurring on surfaces viewed at oblique angles in OpenGL applications. It covers the geometric limitations of traditional isotropic mipmapping, details how anisotropic algorithms sampl" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="anisotropic-filtering-in-opengl-explained">Anisotropic Filtering
+in OpenGL Explained</h1>
+<p>This article explores how anisotropic filtering (AF) eliminates
+texture blurring on surfaces viewed at oblique angles in OpenGL
+applications. It covers the geometric limitations of traditional
+isotropic mipmapping, details how anisotropic algorithms sample
+elliptical footprints in texture space, and explains how to configure
+anisotropic filtering parameters within the OpenGL pipeline.</p>
+<h3 id="the-limits-of-isotropic-mipmapping">The Limits of Isotropic
+Mipmapping</h3>
+<p>Standard texturing techniques in OpenGL use isotropic mipmapping,
+such as bilinear or trilinear filtering. Isotropic filtering assumes
+that a square screen-space pixel maps to a roughly square area—or
+footprint—in texture space (UV space). This assumption holds true when a
+surface is facing the camera directly.</p>
+<p>When a textured polygon recedes into the distance at a steep angle,
+such as a floor or a runway, perspective compression occurs along one
+axis. As a result, a square pixel projects onto the surface as an
+elongated, stretched ellipse or trapezoid.</p>
+<p>Because standard mipmapping only uses square texel regions, the GPU
+must choose how to sample this elongated footprint:</p>
+<ul>
+<li>If it chooses a mipmap level based on the shorter axis
+(undersampling), the texture shimmers and aliases along the stretched
+axis.</li>
+<li>If it chooses a mipmap level based on the longer axis (oversampling
+to prevent aliasing), the texture is heavily downsampled along both
+axes.</li>
+</ul>
+<p>Standard trilinear filtering chooses the latter approach to eliminate
+aliasing, which causes severe, muddy blurring on surfaces viewed at
+grazing angles.</p>
+<h3 id="how-anisotropic-filtering-solves-blurring">How Anisotropic
+Filtering Solves Blurring</h3>
+<p>Anisotropic filtering resolves this distortion by decoupling the
+horizontal and vertical sampling rates based on the surface angle. The
+algorithm works through several key steps:</p>
+<ol type="1">
+<li><strong>Gradient Calculation:</strong> Using screen-space partial
+derivatives (<code>dFdx</code> and <code>dFdy</code>), the GPU analyzes
+how rapidly texture coordinates change relative to screen
+coordinates.</li>
+<li><strong>Determining the Anisotropic Footprint:</strong> The GPU
+determines the degree of anisotropy—the ratio between the major
+(longest) and minor (shortest) axes of the projected pixel footprint—and
+identifies the direction in which the distortion occurs.</li>
+<li><strong>Selecting a Higher-Detail Mipmap:</strong> Instead of
+dropping down to a low-resolution mipmap to cover the major axis, AF
+selects a mipmap level that corresponds to the higher resolution of the
+<em>minor</em> axis.</li>
+<li><strong>Multiple Sampling (Ripmapping/Slicing):</strong> Along the
+line of anisotropy (the major axis), the GPU takes multiple anisotropic
+texture samples (sub-samples) from the chosen mipmap level.</li>
+<li><strong>Weighted Blending:</strong> The GPU averages these multiple
+samples together to produce the final fragment color.</li>
+</ol>
+<p>By sampling multiple points along the trajectory of perspective
+compression, anisotropic filtering preserves sharp texture details
+across the non-compressed axis while simultaneously preventing aliasing
+along the compressed axis.</p>
+<h3 id="implementation-in-opengl">Implementation in OpenGL</h3>
+<p>In OpenGL, anisotropic filtering is supported via the
+<code>GL_ARB_texture_filter_anisotropic</code> extension or as standard
+core functionality in OpenGL 4.6.</p>
+<p>To implement anisotropic filtering, applications first query the
+maximum supported anisotropy level provided by the graphics driver:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>GLfloat maxAnisotropy <span class="op">=</span> <span class="fl">0.0</span><span class="bu">f</span><span class="op">;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>glGetFloatv<span class="op">(</span>GL_MAX_TEXTURE_MAX_ANISOTROPY<span class="op">,</span> <span class="op">&amp;</span>maxAnisotropy<span class="op">);</span></span></code></pre></div>
+<p>The application then applies this filter to a bound texture object
+using <code>glTexParameterf</code>:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>glBindTexture<span class="op">(</span>GL_TEXTURE_2D<span class="op">,</span> textureID<span class="op">);</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>glTexParameterf<span class="op">(</span>GL_TEXTURE_2D<span class="op">,</span> GL_TEXTURE_MIN_FILTER<span class="op">,</span> GL_LINEAR_MIPMAP_LINEAR<span class="op">);</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>glTexParameterf<span class="op">(</span>GL_TEXTURE_2D<span class="op">,</span> GL_TEXTURE_MAX_ANISOTROPY<span class="op">,</span> maxAnisotropy<span class="op">);</span></span></code></pre></div>
+<p>A value of <code>1.0f</code> disables anisotropic filtering
+(defaulting to standard isotropic filtering), while values such as
+<code>4.0f</code>, <code>8.0f</code>, or <code>16.0f</code> scale the
+maximum ratio of texel samples the hardware will gather along the
+stretched axis. Higher values produce clearer textures at extreme
+viewing angles with minimal impact on modern graphics hardware
+performance.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How ASTC Operates in OpenGL and OpenGL ES - opengl</title>
+    <meta name="description" content="Adaptive Scalable Texture Compression (ASTC) is an advanced lossy texture compression technology standardized by the Khronos Group to provide fine-grained control over texture quality and memory footprint. Within modern OpenGL and OpenGL ES ecosystems, AS">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-astc-operates-in-open-gl-and-open-gl-es">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How ASTC Operates in OpenGL and OpenGL ES - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-astc-operates-in-open-gl-and-open-gl-es" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Adaptive Scalable Texture Compression (ASTC) is an advanced lossy texture compression technology standardized by the Khronos Group to provide fine-grained control over texture quality and memory footprint. Within modern OpenGL and OpenGL ES ecosystems, AS" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-astc-operates-in-opengl-and-opengl-es">How ASTC Operates in
+OpenGL and OpenGL ES</h1>
+<p>Adaptive Scalable Texture Compression (ASTC) is an advanced lossy
+texture compression technology standardized by the Khronos Group to
+provide fine-grained control over texture quality and memory footprint.
+Within modern OpenGL and OpenGL ES ecosystems, ASTC operates as a
+unified, hardware-accelerated format that replaces older, fragmented
+compression standards. This article details the structural mechanics of
+ASTC, how modern graphic APIs expose its capabilities, and the pipeline
+workflow required to load and sample ASTC textures efficiently.</p>
+<h3 id="the-astc-compression-architecture">The ASTC Compression
+Architecture</h3>
+<p>ASTC compresses image data into fixed-size 128-bit (16-byte) data
+blocks. While the storage footprint per block is fixed, the spatial
+footprint—the number of texels each block represents—is variable.</p>
+<p>Developers can choose block footprints ranging from dense <span
+class="math inline">\(4\times4\)</span> grids (8.0 bits per pixel) to
+sparse <span class="math inline">\(12\times12\)</span> grids (0.89 bits
+per pixel) for 2D textures, alongside specialized 3D footprints ranging
+from <span class="math inline">\(3\times3\times3\)</span> to <span
+class="math inline">\(6\times6\times6\)</span>. Regardless of the
+dimension, the underlying decoding algorithm parses color endpoints,
+partition tables, and weight grids within the 128-bit payload. This
+flexibility allows engines to target specific quality-to-memory ratios
+on an individual asset basis using a single, unified format.</p>
+<h3 id="api-integration-and-extensions">API Integration and
+Extensions</h3>
+<p>In modern graphics systems, ASTC is integrated into OpenGL and OpenGL
+ES through core specifications and standard Khronos extensions:</p>
+<ul>
+<li><strong>OpenGL ES:</strong> ASTC support is mandated in OpenGL ES
+3.2 for the Low Dynamic Range (LDR) profile. On OpenGL ES 3.0 and 3.1
+devices, it is commonly supported via
+<code>GL_KHR_texture_compression_astc_ldr</code> or
+<code>GL_OES_texture_compression_astc</code>.</li>
+<li><strong>OpenGL (Desktop):</strong> Supported via
+<code>GL_KHR_texture_compression_astc_ldr</code> and
+<code>GL_KHR_texture_compression_astc_hdr</code>. Desktop drivers
+implement this extension natively on hardware with shared mobile
+architectures or via driver-level emulation and hardware support on
+newer graphics processors.</li>
+</ul>
+<p>The format supports both LDR (standard RGB/RGBA) and High Dynamic
+Range (HDR) modes, as well as distinct color spaces such as linear RGB
+and sRGB.</p>
+<h3 id="runtime-operation-in-the-graphics-pipeline">Runtime Operation in
+the Graphics Pipeline</h3>
+<p>The operational lifecycle of an ASTC texture within an OpenGL or
+OpenGL ES application follows distinct stages:</p>
+<h4 id="1-capability-verification">1. Capability Verification</h4>
+<p>Before allocating textures, applications query device capabilities to
+verify that ASTC formats are present. This is done by checking the
+extension string or querying supported formats:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>GLint numFormats <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>glGetIntegerv<span class="op">(</span>GL_NUM_COMPRESSED_TEXTURE_FORMATS<span class="op">,</span> <span class="op">&amp;</span>numFormats<span class="op">);</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>GLint formats<span class="op">[</span>numFormats<span class="op">];</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>glGetIntegerv<span class="op">(</span>GL_COMPRESSED_TEXTURE_FORMATS<span class="op">,</span> formats<span class="op">);</span></span></code></pre></div>
+<h4 id="2-texture-allocation-and-ingestion">2. Texture Allocation and
+Ingestion</h4>
+<p>ASTC textures are pre-compressed offline using tools such as ARM's
+<code>astcenc</code>. The resulting raw payload contains the 128-bit
+blocks without container headers.</p>
+<p>The client application passes this data directly to the GPU using
+<code>glCompressedTexImage2D</code> or the modern Direct State Access
+(DSA) alternative, <code>glCompressedTextureSubImage2D</code>. The
+internal format parameter dictates the block footprint and color
+space:</p>
+<ul>
+<li><code>GL_COMPRESSED_RGBA_ASTC_4x4_KHR</code></li>
+<li><code>GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x8_KHR</code></li>
+<li><code>GL_COMPRESSED_RGBA_ASTC_12x12_KHR</code></li>
+</ul>
+<p>The driver verifies that the byte size provided matches the
+formula:</p>
+<p><span class="math display">\[\text{Data Size} = \left\lceil
+\frac{\text{Width}}{\text{BlockWidth}} \right\rceil \times \left\lceil
+\frac{\text{Height}}{\text{BlockHeight}} \right\rceil \times 16 \text{
+bytes}\]</span></p>
+<h4 id="3-real-time-hardware-decompression">3. Real-Time Hardware
+Decompression</h4>
+<p>During shader execution, texture decompression does not occur on the
+CPU or during the initial API load call. Instead, compressed blocks
+reside in GPU VRAM.</p>
+<p>When a fragment shader calls a standard sampling function (such as
+<code>texture(sampler2D, uv)</code> in GLSL), the GPU's fixed-function
+Texture Processing Unit (TPU) fetches the required 128-bit block into
+the texture cache. Dedicated hardware decoders unpack the texel color in
+real time. Because the decoding logic is transparent to GLSL, no custom
+shader code is required to handle ASTC data.</p>
+<h3 id="system-performance-implications">System Performance
+Implications</h3>
+<p>By keeping textures compressed in GPU memory, ASTC directly reduces
+memory bandwidth usage—the primary contributor to thermal throttling and
+battery drain on mobile and embedded GPUs. Smaller block sizes provide
+near-lossless visual fidelity for normal maps and UI elements, while
+larger block sizes allow drastic bandwidth reduction for diffuse
+surfaces, enabling higher frame rates and larger asset budgets within
+modern OpenGL environments.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

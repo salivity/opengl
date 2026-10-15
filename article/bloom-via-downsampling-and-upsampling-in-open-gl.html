@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bloom via Downsampling and Upsampling in OpenGL - opengl</title>
+    <meta name="description" content="Bloom is a post-processing technique that simulates the optical diffusion of light caused by real-world camera lenses and human eyes when viewing intensely bright surfaces. In modern OpenGL pipelines, the industry-standard approach avoids performance-heav">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/bloom-via-downsampling-and-upsampling-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Bloom via Downsampling and Upsampling in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/bloom-via-downsampling-and-upsampling-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Bloom is a post-processing technique that simulates the optical diffusion of light caused by real-world camera lenses and human eyes when viewing intensely bright surfaces. In modern OpenGL pipelines, the industry-standard approach avoids performance-heav" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="bloom-via-downsampling-and-upsampling-in-opengl">Bloom via
+Downsampling and Upsampling in OpenGL</h1>
+<p>Bloom is a post-processing technique that simulates the optical
+diffusion of light caused by real-world camera lenses and human eyes
+when viewing intensely bright surfaces. In modern OpenGL pipelines, the
+industry-standard approach avoids performance-heavy, large-kernel
+Gaussian blurs by utilizing an iterative downsampling and upsampling
+pyramid—most notably popularized by Jorge Jimenez in <em>Call of Duty:
+Advanced Warfare</em>. This article outlines the architectural mechanics
+of this technique, detailing bright-pass extraction, multi-pass
+downsampling with anti-flicker filters, progressive additive upsampling,
+and final tone-mapped compositing.</p>
+<h3 id="1-high-level-pipeline-architecture">1. High-Level Pipeline
+Architecture</h3>
+<p>The progressive downsample/upsample bloom pipeline operates directly
+on a High Dynamic Range (HDR) scene color buffer across five distinct
+stages:</p>
+<ol type="1">
+<li><strong>Thresholding (Prefilter):</strong> Bright fragments
+exceeding a defined luminance threshold are extracted into a full- or
+half-resolution texture.</li>
+<li><strong>Mip Chain Allocation:</strong> A series of framebuffers or
+an explicit texture mip-chain is prepared, typically spanning 5 to 7
+levels, with each level half the dimensions of the previous one (e.g.,
+<span class="math inline">\(1920\times1080 \to 960\times540 \to \dots
+\to 60\times33\)</span>).</li>
+<li><strong>Downsample Passes:</strong> The extracted image is
+progressively downsampled through each mip level using a custom 13-tap
+bilinear filter to minimize temporal flickering and aliasing.</li>
+<li><strong>Upsample Passes:</strong> Starting from the lowest
+resolution mip, the image is progressively upsampled back to higher
+resolutions, utilizing a 9-tap 3x3 tent filter and OpenGL additive
+blending to merge layers.</li>
+<li><strong>Final Composite:</strong> The highest-resolution blurred
+result is combined with the original HDR scene texture during the final
+tone mapping and color-grading pass.</li>
+</ol>
+<h3 id="2-extracting-bright-pixels-prefilter-pass">2. Extracting Bright
+Pixels (Prefilter Pass)</h3>
+<p>Before downsampling, the pipeline filters out colors that should not
+cast a glow. The initial pass renders the HDR scene buffer into the base
+level of the bloom chain (<code>mip 0</code>).</p>
+<p>To prevent harsh, noisy cutoffs, a smooth thresholding function (soft
+knee) is evaluated in the fragment shader:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> <span class="fu">Prefilter</span><span class="op">(</span><span class="dt">vec3</span> color<span class="op">,</span> <span class="dt">float</span> threshold<span class="op">,</span> <span class="dt">vec3</span> curve<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> brightness <span class="op">=</span> <span class="bu">max</span><span class="op">(</span>color<span class="op">.</span><span class="fu">r</span><span class="op">,</span> <span class="bu">max</span><span class="op">(</span>color<span class="op">.</span><span class="fu">g</span><span class="op">,</span> color<span class="op">.</span><span class="fu">b</span><span class="op">));</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> soft <span class="op">=</span> brightness <span class="op">-</span> curve<span class="op">.</span><span class="fu">x</span><span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    soft <span class="op">=</span> <span class="bu">clamp</span><span class="op">(</span>soft<span class="op">,</span> <span class="fl">0.0</span><span class="op">,</span> curve<span class="op">.</span><span class="fu">y</span><span class="op">);</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    soft <span class="op">=</span> soft <span class="op">*</span> soft <span class="op">*</span> curve<span class="op">.</span><span class="fu">z</span><span class="op">;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> contribution <span class="op">=</span> <span class="bu">max</span><span class="op">(</span>soft<span class="op">,</span> brightness <span class="op">-</span> threshold<span class="op">)</span> <span class="op">/</span> <span class="bu">max</span><span class="op">(</span>brightness<span class="op">,</span> <span class="fl">1e-4</span><span class="op">);</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> color <span class="op">*</span> contribution<span class="op">;</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>This isolates specular highlights, emissive surfaces, and direct
+light sources while preserving smooth transitions.</p>
+<h3 id="3-progressive-downsampling-chain">3. Progressive Downsampling
+Chain</h3>
+<p>Downsampling reduces image dimensions in halves, naturally widening
+the effective filter footprint without increasing sample count. To
+prevent sample loss and sparkling (specular fireflies), Jimenez's 13-tap
+filter is used. This filter samples a <span
+class="math inline">\(4\times4\)</span> texel area using five
+overlapping bilinear texture fetches: one in the center and four at the
+diagonal corners.</p>
+<p>In OpenGL, the loop executes as follows:</p>
+<ol type="1">
+<li>Bind the framebuffer targeting <code>mip[i]</code>.</li>
+<li>Set
+<code>glViewport(0, 0, width &gt;&gt; i, height &gt;&gt; i)</code>.</li>
+<li>Bind <code>mip[i - 1]</code> as the source texture with linear
+filtering (<code>GL_LINEAR</code>).</li>
+<li>Execute a full-screen quad draw.</li>
+</ol>
+<p>The fragment shader for each downsample pass fetches 13 samples and
+uses a partial Karis average (weighting samples by luminance) on the
+very first downsample step to resolve temporal stability issues:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Jimenez 13-tap pattern offsets</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> a <span class="op">=</span> <span class="bu">texture</span><span class="op">(</span>srcTexture<span class="op">,</span> uv <span class="op">+</span> <span class="dt">vec2</span><span class="op">(-</span><span class="dv">2</span><span class="op">,</span>  <span class="dv">2</span><span class="op">)</span> <span class="op">*</span> texelSize<span class="op">).</span><span class="fu">rgb</span><span class="op">;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> b <span class="op">=</span> <span class="bu">texture</span><span class="op">(</span>srcTexture<span class="op">,</span> uv <span class="op">+</span> <span class="dt">vec2</span><span class="op">(</span> <span class="dv">0</span><span class="op">,</span>  <span class="dv">2</span><span class="op">)</span> <span class="op">*</span> texelSize<span class="op">).</span><span class="fu">rgb</span><span class="op">;</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> c <span class="op">=</span> <span class="bu">texture</span><span class="op">(</span>srcTexture<span class="op">,</span> uv <span class="op">+</span> <span class="dt">vec2</span><span class="op">(</span> <span class="dv">2</span><span class="op">,</span>  <span class="dv">2</span><span class="op">)</span> <span class="op">*</span> texelSize<span class="op">).</span><span class="fu">rgb</span><span class="op">;</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="co">// ... additional 10 taps across center and bottom ...</span></span></code></pre></div>
+<p>By the time the chain reaches the smallest mip (often around <span
+class="math inline">\(32\times18\)</span> or <span
+class="math inline">\(16\times9\)</span>), light has spread across
+hundreds of screen-space pixels with minimal computational overhead.</p>
+<h3 id="4-progressive-upsampling-with-additive-blending">4. Progressive
+Upsampling with Additive Blending</h3>
+<p>Simply resizing low-resolution textures back to the screen creates
+distinct blocky artifacts. To counter this, upsampling reverses the
+chain with a smooth reconstruction kernel, typically a 9-tap <span
+class="math inline">\(3\times3\)</span> tent filter with the following
+weights:</p>
+<ul>
+<li>Center: <span class="math inline">\(4/16\)</span></li>
+<li>Orthogonal neighbors: <span class="math inline">\(2/16\)</span></li>
+<li>Diagonal corners: <span class="math inline">\(1/16\)</span></li>
+</ul>
+<p>The upsampling loop progresses from the smallest mip back up to
+<code>mip 0</code>:</p>
+<ol type="1">
+<li><p>Bind the framebuffer containing <code>mip[i - 1]</code>.</p></li>
+<li><p>Set <code>glViewport</code> to the dimensions of
+<code>mip[i - 1]</code>.</p></li>
+<li><p>Enable additive blending:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>glEnable<span class="op">(</span>GL_BLEND<span class="op">);</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>glBlendFunc<span class="op">(</span>GL_ONE<span class="op">,</span> GL_ONE<span class="op">);</span></span></code></pre></div></li>
+<li><p>Bind <code>mip[i]</code> as the source texture.</p></li>
+<li><p>Render the full-screen quad with the 9-tap tent shader.</p></li>
+</ol>
+<p>Because additive blending is active, the upsampled content from
+<code>mip[i]</code> seamlessly adds directly on top of the previously
+generated downsampled data at <code>mip[i - 1]</code>. This accumulates
+fine-grained and wide-spread glows into a coherent, high-quality
+blur.</p>
+<h3 id="5-final-composition-and-tone-mapping">5. Final Composition and
+Tone Mapping</h3>
+<p>Once the upsampling chain returns to the base resolution
+(<code>mip 0</code>), the framebuffer contains a comprehensive diffusion
+map representing the bloom contribution. In the final rendering pass,
+this bloom texture and the original HDR scene texture are bound as
+inputs to the composite shader.</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">sampler2D</span> sceneColor<span class="op">;</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">sampler2D</span> bloomColor<span class="op">;</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">float</span> bloomIntensity<span class="op">;</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> hdrColor <span class="op">=</span> <span class="bu">texture</span><span class="op">(</span>sceneColor<span class="op">,</span> TexCoords<span class="op">).</span><span class="fu">rgb</span><span class="op">;</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> bloom <span class="op">=</span> <span class="bu">texture</span><span class="op">(</span>bloomColor<span class="op">,</span> TexCoords<span class="op">).</span><span class="fu">rgb</span> <span class="op">*</span> bloomIntensity<span class="op">;</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> combined <span class="op">=</span> hdrColor <span class="op">+</span> bloom<span class="op">;</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Tone mapping (e.g., ACES or Reinhard)</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> mapped <span class="op">=</span> <span class="dt">vec3</span><span class="op">(</span><span class="fl">1.0</span><span class="op">)</span> <span class="op">-</span> <span class="bu">exp</span><span class="op">(-</span>combined <span class="op">*</span> exposure<span class="op">);</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>    FragColor <span class="op">=</span> <span class="dt">vec4</span><span class="op">(</span>mapped<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>Applying bloom in HDR space before tone mapping ensures that light
+physically bleeds across darker borders correctly, simulating natural
+camera sensor saturation.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

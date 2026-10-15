@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Screen-Space Reflections Ray Marching in OpenGL - opengl</title>
+    <meta name="description" content="Screen-space reflections (SSR) create dynamic, real-time reflections by reusing scene data already rendered to the frame buffer. Inside an OpenGL fragment shader, this technique relies on ray marching through screen space, projecting reflection rays from">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/screen-space-reflections-ray-marching-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Screen-Space Reflections Ray Marching in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/screen-space-reflections-ray-marching-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Screen-space reflections (SSR) create dynamic, real-time reflections by reusing scene data already rendered to the frame buffer. Inside an OpenGL fragment shader, this technique relies on ray marching through screen space, projecting reflection rays from" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="screen-space-reflections-ray-marching-in-opengl">Screen-Space
+Reflections Ray Marching in OpenGL</h1>
+<p>Screen-space reflections (SSR) create dynamic, real-time reflections
+by reusing scene data already rendered to the frame buffer. Inside an
+OpenGL fragment shader, this technique relies on ray marching through
+screen space, projecting reflection rays from surface fragments and
+checking them against the scene's depth buffer. This article details the
+mathematical and algorithmic pipeline required to implement ray-marched
+SSR, from ray setup and depth intersection tests to binary search
+refinement and artifact mitigation.</p>
+<h3 id="1-required-buffers-and-inputs">1. Required Buffers and
+Inputs</h3>
+<p>To perform SSR in a deferred or post-processing pipeline, the
+fragment shader requires access to several G-buffer textures:</p>
+<ul>
+<li><strong>Depth Texture:</strong> Used to reconstruct 3D positions and
+evaluate ray-surface intersections.</li>
+<li><strong>Normal Texture:</strong> View-space surface normals for
+calculating the reflection direction.</li>
+<li><strong>Color/Albedo Texture:</strong> The fully rendered HDR scene
+color to sample reflection values from.</li>
+<li><strong>Projection and Inverse Projection Matrices:</strong> Uniform
+matrices to transform coordinates between view space and normalized
+device coordinate (NDC) space.</li>
+</ul>
+<h3 id="2-calculating-the-reflection-vector">2. Calculating the
+Reflection Vector</h3>
+<p>The process begins by reconstructing the current fragment's
+view-space position. Using the fragment's screen UV coordinates and
+sampling the depth buffer, you convert the screen-space coordinate into
+NDC space (coordinates ranging from -1.0 to 1.0) and multiply it by the
+inverse projection matrix:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> <span class="fu">getViewPosition</span><span class="op">(</span><span class="dt">vec2</span> texCoord<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> depth <span class="op">=</span> <span class="bu">texture</span><span class="op">(</span>depthTexture<span class="op">,</span> texCoord<span class="op">).</span><span class="fu">r</span> <span class="op">*</span> <span class="fl">2.0</span> <span class="op">-</span> <span class="fl">1.0</span><span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> clipSpacePosition <span class="op">=</span> <span class="dt">vec4</span><span class="op">(</span>texCoord <span class="op">*</span> <span class="fl">2.0</span> <span class="op">-</span> <span class="fl">1.0</span><span class="op">,</span> depth<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> viewSpacePosition <span class="op">=</span> invProjectionMatrix <span class="op">*</span> clipSpacePosition<span class="op">;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> viewSpacePosition<span class="op">.</span><span class="fu">xyz</span> <span class="op">/</span> viewSpacePosition<span class="op">.</span><span class="fu">w</span><span class="op">;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>The view vector points from the camera (which is at
+<code>vec3(0.0)</code> in view space) to the fragment position. Using
+the normalized view direction and the view-space normal, compute the
+reflection vector using the GLSL <code>reflect</code> function:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> viewDir <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span>viewPos<span class="op">);</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> reflectDir <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span><span class="bu">reflect</span><span class="op">(</span>viewDir<span class="op">,</span> normal<span class="op">));</span></span></code></pre></div>
+<h3 id="3-ray-marching-in-view-and-screen-space">3. Ray Marching in View
+and Screen Space</h3>
+<p>With the starting position and reflection vector determined, the ray
+advances iteratively along the reflection vector. While advanced methods
+march directly in screen-space 2D coordinates (using a DDA algorithm),
+uniform 3D view-space marching is standard and straightforward to
+implement:</p>
+<ol type="1">
+<li><strong>Define Steps:</strong> Establish a maximum number of steps
+(e.g., 30 to 100) and a step size.</li>
+<li><strong>March the Ray:</strong> In each iteration, increment the
+ray's position:
+<code>currentRayPos += reflectDir * stepSize</code>.</li>
+<li><strong>Project to Screen Space:</strong> Transform
+<code>currentRayPos</code> using the standard
+<code>projectionMatrix</code> to obtain clip coordinates, perform the
+perspective divide by <code>w</code>, and map the result to
+<code>[0.0, 1.0]</code> texture UV space.</li>
+<li><strong>Sample Scene Depth:</strong> Read the stored depth value at
+the projected UV coordinate and convert it to linear view-space
+depth.</li>
+</ol>
+<h3 id="4-detecting-intersections">4. Detecting Intersections</h3>
+<p>An intersection occurs when the ray travels behind geometry currently
+visible in the depth buffer. This requires checking two conditions:</p>
+<ul>
+<li>The ray's current view-space depth is greater than (or further away
+than) the depth sampled from the texture at the ray's projected UV.</li>
+<li>The difference between the ray depth and sampled depth is within a
+specified thickness threshold to prevent the ray from falsely hitting
+the back of thin geometry.</li>
+</ul>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> sampledDepth <span class="op">=</span> <span class="fu">getViewPosition</span><span class="op">(</span>projectedUV<span class="op">).</span><span class="fu">z</span><span class="op">;</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="kw">if</span> <span class="op">(</span>rayPos<span class="op">.</span><span class="fu">z</span> <span class="op">&lt;</span> sampledDepth <span class="op">&amp;&amp;</span> <span class="bu">abs</span><span class="op">(</span>rayPos<span class="op">.</span><span class="fu">z</span> <span class="op">-</span> sampledDepth<span class="op">)</span> <span class="op">&lt;</span> thickness<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Hit detected</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="5-binary-search-refinement">5. Binary Search Refinement</h3>
+<p>Uniform ray marching often produces stepping artifacts or missed
+intersections. When a hit is detected, a binary search refines the exact
+point of contact. The shader halves the step size and steps backward or
+forward depending on whether the refined ray is currently in front of or
+behind the surface depth. Repeating this for 4 to 8 iterations
+significantly sharpens reflections without heavily impacting
+performance.</p>
+<h3 id="6-shading-edge-fading-and-limitations">6. Shading, Edge Fading,
+and Limitations</h3>
+<p>Once the final UV intersection coordinate is determined, sample the
+scene color texture at that coordinate to get the reflected color.</p>
+<p>Because SSR only reflects data present in the current camera frame,
+rays intersecting off-screen geometry or backfaces lack valid data.
+Smooth falloff masks must be applied to prevent harsh cutoffs:</p>
+<ul>
+<li><strong>Screen Edge Fading:</strong> Attenuate reflection intensity
+as the hit UV coordinates approach <code>0.0</code> or
+<code>1.0</code>.</li>
+<li><strong>Fresnel Factor:</strong> Scale the reflection using the
+Schlick Fresnel approximation to ensure surfaces are more reflective at
+grazing angles.</li>
+<li><strong>Camera Facing Attenuation:</strong> Fade out reflection
+vectors that point directly toward the camera, as they will hit
+back-facing geometry not recorded in the depth buffer.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

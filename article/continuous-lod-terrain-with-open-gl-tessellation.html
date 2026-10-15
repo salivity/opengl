@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Continuous LOD Terrain with OpenGL Tessellation - opengl</title>
+    <meta name="description" content="Continuous Level of Detail (CLOD) terrain rendering dynamically scales geometric complexity relative to the camera to maintain high rendering performance while preserving visual fidelity. By offloading dynamic mesh generation to OpenGL tessellation shader">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/continuous-lod-terrain-with-open-gl-tessellation">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Continuous LOD Terrain with OpenGL Tessellation - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/continuous-lod-terrain-with-open-gl-tessellation" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Continuous Level of Detail (CLOD) terrain rendering dynamically scales geometric complexity relative to the camera to maintain high rendering performance while preserving visual fidelity. By offloading dynamic mesh generation to OpenGL tessellation shader" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="continuous-lod-terrain-with-opengl-tessellation">Continuous LOD
+Terrain with OpenGL Tessellation</h1>
+<p>Continuous Level of Detail (CLOD) terrain rendering dynamically
+scales geometric complexity relative to the camera to maintain high
+rendering performance while preserving visual fidelity. By offloading
+dynamic mesh generation to OpenGL tessellation shaders, modern rendering
+engines replace traditional, CPU-heavy terrain algorithms with
+GPU-driven pipelines. This article explains how the programmable stages
+of OpenGL tessellation—the Tessellation Control Shader and Tessellation
+Evaluation Shader—work together to evaluate distance metrics, smoothly
+transition geometric density, and sample displacement data directly on
+the GPU.</p>
+<h3 id="the-modern-clod-paradigm-shift">The Modern CLOD Paradigm
+Shift</h3>
+<p>Traditional CLOD algorithms, such as ROAM or quadtree-based Chunked
+LOD, rely heavily on the CPU to subdivide meshes, manage tree
+hierarchies, and stitch boundaries between differing resolution levels.
+Integrating OpenGL tessellation shifts this workload entirely to the
+GPU. Instead of sending millions of dynamically calculated triangles
+across the PCI Express bus each frame, the CPU submits a coarse base
+grid of flat patch primitives. The GPU tessellator then subdivides these
+patches on the fly based on runtime parameters.</p>
+<h3 id="role-of-the-tessellation-control-shader-tcs">Role of the
+Tessellation Control Shader (TCS)</h3>
+<p>The Tessellation Control Shader (TCS) serves as the decision-maker
+for terrain resolution. It receives base patch vertices and calculates
+the inner and outer tessellation levels (<code>gl_TessLevelInner</code>
+and <code>gl_TessLevelOuter</code>):</p>
+<ul>
+<li><strong>Distance-Based Metrics:</strong> The TCS calculates the
+Euclidean distance from the camera to the patch edges and centers.
+Patches closer to the viewer receive higher tessellation factors,
+generating dense geometry, while distant patches receive lower
+values.</li>
+<li><strong>Screen-Space Error:</strong> Advanced implementations
+project patch bounding boxes or edge lengths into screen space within
+the TCS. If an edge covers more pixels than a predefined threshold, its
+tessellation level increases to maintain uniform triangle density on
+screen.</li>
+<li><strong>Frustum and Normal Culling:</strong> Patches outside the
+view frustum or terrain faces angled sharply away from the camera can
+have their tessellation levels set to zero, instructing the GPU to
+discard the geometry before generating triangles.</li>
+</ul>
+<h3 id="eliminating-cracks-and-popping">Eliminating Cracks and
+"Popping"</h3>
+<p>A fundamental challenge of CLOD systems is resolving T-junctions
+(cracks) between adjacent patches of differing detail and preventing
+visual "popping" when detail levels change:</p>
+<ul>
+<li><strong>Watertight Stitching:</strong> In OpenGL, crack-free
+rendering is achieved by making the outer tessellation levels strictly
+dependent on edge properties shared identically by neighboring patches.
+Because adjacent patches share the exact same edge endpoints in world
+space, both patches compute identical values for
+<code>gl_TessLevelOuter</code>, automatically sealing seams without
+CPU-side skirt generation or index manipulation.</li>
+<li><strong>Fractional Spacing:</strong> Traditional discrete LOD models
+cause noticeable visual popping when a mesh abruptly swaps resolution.
+OpenGL provides fractional tessellation modes
+(<code>fractional_even_spacing</code> and
+<code>fractional_odd_spacing</code>). These modes smoothly fade new
+vertices in from existing geometry as camera distance changes, allowing
+tessellation factors to be continuous floating-point values rather than
+sudden integer jumps.</li>
+</ul>
+<h3
+id="vertex-generation-in-the-tessellation-evaluation-shader-tes">Vertex
+Generation in the Tessellation Evaluation Shader (TES)</h3>
+<p>Once the fixed-function tessellation primitive generator creates the
+subdivided barycentric or normalized quad coordinates, the Tessellation
+Evaluation Shader (TES) executes on each generated vertex:</p>
+<ol type="1">
+<li><strong>Coordinate Interpolation:</strong> The TES interpolates the
+base patch's corner coordinates using the normalized positions generated
+by the tessellator to find the vertex's base world-space <span
+class="math inline">\((X, Z)\)</span> coordinate.</li>
+<li><strong>Heightmap Sampling:</strong> Using these interpolated
+coordinates as texture coordinates, the TES samples a high-resolution 2D
+heightmap or displacement texture.</li>
+<li><strong>Displacement:</strong> The sampled height value displaces
+the vertex along the terrain normal (typically the <span
+class="math inline">\(Y\)</span>-axis).</li>
+</ol>
+<p>By separating the base horizontal layout in the coarse patch from
+vertical displacement in the TES, memory requirements remain minimal
+while visual surface detail reaches sub-pixel accuracy near the camera.
+Normal vectors and analytical slope data can also be calculated directly
+in the TES using neighboring height samples, providing accurate inputs
+for lighting and material splatting in the fragment shader.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

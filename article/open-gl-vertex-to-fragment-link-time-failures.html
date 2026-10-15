@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Vertex to Fragment Link-Time Failures - opengl</title>
+    <meta name="description" content="Link-time failures between the vertex and fragment shader stages in OpenGL typically occur when the interface blocks connecting them fail to satisfy the OpenGL Shading Language (GLSL) cross-stage matching rules. When the pipeline links a program, the driv">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-vertex-to-fragment-link-time-failures">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Vertex to Fragment Link-Time Failures - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-vertex-to-fragment-link-time-failures" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Link-time failures between the vertex and fragment shader stages in OpenGL typically occur when the interface blocks connecting them fail to satisfy the OpenGL Shading Language (GLSL) cross-stage matching rules. When the pipeline links a program, the driv" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-vertex-to-fragment-link-time-failures">OpenGL Vertex to
+Fragment Link-Time Failures</h1>
+<p>Link-time failures between the vertex and fragment shader stages in
+OpenGL typically occur when the interface blocks connecting them fail to
+satisfy the OpenGL Shading Language (GLSL) cross-stage matching rules.
+When the pipeline links a program, the driver strictly validates that
+output interface blocks declared in the vertex shader correspond
+precisely to input interface blocks in the fragment shader.
+Discrepancies in block names, member declarations, order, types, or
+qualifiers violate interface matching requirements, causing the shader
+program linking step (<code>glLinkProgram</code>) to fail.</p>
+<h3 id="mismatched-interface-block-names">Mismatched Interface Block
+Names</h3>
+<p>GLSL matches stage interfaces using the block type name, not the
+instance name. If a vertex shader defines an output block using one name
+and the fragment shader declares the corresponding input block with a
+different name, the linker will fail to find a matching partner.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Vertex Shader</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> VertexData <span class="op">{</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> normal<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="op">}</span> vs_out<span class="op">;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="co">// Fragment Shader - FAILS if named differently</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="dt">in</span> FragmentData <span class="op">{</span> <span class="co">// Must be named &#39;VertexData&#39;</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> normal<span class="op">;</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="op">}</span> fs_in<span class="op">;</span></span></code></pre></div>
+<p>Even though the internal layout and instance names may be identical,
+the block name itself acts as the primary identifier across stages.</p>
+<h3 id="member-declaration-ordering-and-type-discrepancies">Member
+Declaration, Ordering, and Type Discrepancies</h3>
+<p>The internal structure of the interface blocks must be an exact
+match. The linker verifies the following criteria:</p>
+<ul>
+<li><strong>Member Order:</strong> Members within the block must appear
+in the exact same sequence. Declaring <code>vec3 normal; vec2 uv;</code>
+in the vertex stage and <code>vec2 uv; vec3 normal;</code> in the
+fragment stage triggers a link failure.</li>
+<li><strong>Member Types and Names:</strong> Every member must have an
+identical type and identifier. Changing a type from <code>float</code>
+to <code>int</code>, changing array sizes, or introducing a typo into a
+variable name will prevent successful linking.</li>
+<li><strong>Missing or Extra Members:</strong> Both blocks must contain
+the exact same number of members. Adding an auxiliary variable to the
+vertex output block without adding it to the fragment input block causes
+a validation failure.</li>
+</ul>
+<h3 id="interpolation-qualifier-conflicts">Interpolation Qualifier
+Conflicts</h3>
+<p>Variables passed between the vertex and fragment stages require
+matching interpolation qualifiers. These include <code>smooth</code>
+(the default), <code>flat</code>, and <code>noperspective</code>. If a
+vertex output block member is marked with a qualifier such as
+<code>flat</code>, the matching member in the fragment stage must
+explicitly include the same qualifier.</p>
+<p>If one stage omits a qualifier while the other specifies a
+non-default qualifier (like <code>flat</code>), or if the two stages
+specify conflicting qualifiers, the program will not link.</p>
+<h3 id="auxiliary-storage-and-precision-qualifiers">Auxiliary Storage
+and Precision Qualifiers</h3>
+<p>Mismatched auxiliary qualifiers lead to linker errors:</p>
+<ul>
+<li><strong>Auxiliary Qualifiers:</strong> Qualifiers such as
+<code>centroid</code> or <code>sample</code> alter how values are
+evaluated during multisampling. These must be declared identically on
+both the producing vertex block member and the consuming fragment block
+member.</li>
+<li><strong>Invariant Qualifiers:</strong> If an output variable in the
+vertex stage is qualified with <code>invariant</code>, the corresponding
+input variable in the fragment stage must be compatible according to
+GLSL scoping rules.</li>
+<li><strong>Precision Qualifiers (OpenGL ES):</strong> In OpenGL ES
+environments, precision qualifiers (<code>lowp</code>,
+<code>mediump</code>, <code>highp</code>) applied to interface block
+members must match between the vertex and fragment stages to maintain
+consistent binary layout expectations.</li>
+</ul>
+<h3 id="explicit-location-and-component-aliasing-errors">Explicit
+Location and Component Aliasing Errors</h3>
+<p>When using explicit layout qualifiers (e.g.,
+<code>layout(location = 0)</code>), each assigned location must align
+properly:</p>
+<ul>
+<li><strong>Overlapping Locations:</strong> Assigning conflicting
+<code>location</code> or <code>component</code> indices to different
+members within the interface disrupts data slot allocation.</li>
+<li><strong>Location Inconsistencies:</strong> If locations are manually
+declared on the vertex outputs, matching <code>location</code>
+qualifiers must be applied consistently to the corresponding fragment
+inputs. A mismatch between explicit indices breaks the interface
+link.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GL_INVALID_ENUM and GL_INVALID_VALUE in OpenGL - opengl</title>
+    <meta name="description" content="This article provides an overview of two fundamental OpenGL error tokens: GLINVALIDENUM and GLINVALIDVALUE. It details what each error signifies within the OpenGL state machine, the common coding mistakes that trigger them, and how to effectively troubles">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/gl-invalid-enum-and-gl-invalid-value-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="GL_INVALID_ENUM and GL_INVALID_VALUE in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/gl-invalid-enum-and-gl-invalid-value-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article provides an overview of two fundamental OpenGL error tokens: GLINVALIDENUM and GLINVALIDVALUE. It details what each error signifies within the OpenGL state machine, the common coding mistakes that trigger them, and how to effectively troubles" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="gl_invalid_enum-and-gl_invalid_value-in-opengl">GL_INVALID_ENUM
+and GL_INVALID_VALUE in OpenGL</h1>
+<p>This article provides an overview of two fundamental OpenGL error
+tokens: <code>GL_INVALID_ENUM</code> and <code>GL_INVALID_VALUE</code>.
+It details what each error signifies within the OpenGL state machine,
+the common coding mistakes that trigger them, and how to effectively
+troubleshoot and resolve these issues in graphics applications.</p>
+<h2 id="what-is-gl_invalid_enum">What is GL_INVALID_ENUM?</h2>
+<p>The <code>GL_INVALID_ENUM</code> token (numeric value
+<code>0x0500</code>) indicates that an unacceptable value was provided
+for an enumerated argument.</p>
+<p>In OpenGL, many functions accept symbolic constants—enums defined as
+macros such as <code>GL_TRIANGLES</code>, <code>GL_TEXTURE_2D</code>, or
+<code>GL_FLOAT</code>—to configure behavior or specify data formats.
+When a function receives an enum value that is not recognized as a legal
+option for that specific parameter, the command is ignored, and the
+internal error flag is set to <code>GL_INVALID_ENUM</code>.</p>
+<h3 id="common-causes-of-gl_invalid_enum">Common Causes of
+GL_INVALID_ENUM</h3>
+<ul>
+<li><strong>Mismatched Target or Type:</strong> Passing an enum intended
+for one function to another, such as passing a texture filter parameter
+like <code>GL_LINEAR</code> to a function expecting a texture format
+like <code>GL_RGBA</code>.</li>
+<li><strong>Unsupported Capabilities:</strong> Using symbolic constants
+that belong to an extension or a newer OpenGL profile that the active
+graphics context does not support.</li>
+<li><strong>Typographical or Casting Errors:</strong> Passing raw
+integers or non-existent flags to parameters strictly reserved for
+specific <code>GLenum</code> sets.</li>
+</ul>
+<p>For example, calling <code>glEnable(GL_TEXTURE_2D)</code> in a modern
+core profile (OpenGL 3.3+) will trigger <code>GL_INVALID_ENUM</code>
+because fixed-function texturing states were deprecated and removed from
+the core specification.</p>
+<h2 id="what-is-gl_invalid_value">What is GL_INVALID_VALUE?</h2>
+<p>The <code>GL_INVALID_VALUE</code> token (numeric value
+<code>0x0501</code>) signifies that a numeric argument is out of its
+acceptable range.</p>
+<p>Unlike <code>GL_INVALID_ENUM</code>, which concerns symbolic tokens,
+<code>GL_INVALID_VALUE</code> pertains to standard numerical data types
+such as integers, floats, or dimensions. When a function expects a
+number within a specified domain (for example, non-negative dimensions
+or valid indices) and receives a value outside those boundaries, it
+records a <code>GL_INVALID_VALUE</code> error.</p>
+<h3 id="common-causes-of-gl_invalid_value">Common Causes of
+GL_INVALID_VALUE</h3>
+<ul>
+<li><strong>Negative Dimensions or Counts:</strong> Supplying negative
+numbers for sizes, widths, heights, or counts in functions like
+<code>glViewport</code>, <code>glTexImage2D</code>, or
+<code>glDrawArrays</code>.</li>
+<li><strong>Invalid Identifiers:</strong> Passing an object ID (such as
+a texture, buffer, or shader handle) that has not been generated by
+OpenGL or has already been deleted.</li>
+<li><strong>Out-of-Bounds Indices:</strong> Accessing an attribute index
+that exceeds <code>GL_MAX_VERTEX_ATTRIBS</code> in functions such as
+<code>glEnableVertexAttribArray</code>.</li>
+<li><strong>Invalid Offsets:</strong> Providing an offset that exceeds
+the boundaries of an allocated buffer in commands like
+<code>glBufferSubData</code>.</li>
+</ul>
+<p>For example, calling
+<code>glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, -512, 512, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL)</code>
+produces <code>GL_INVALID_VALUE</code> because the width parameter
+(<code>-512</code>) is strictly required to be non-negative.</p>
+<h2 id="key-differences">Key Differences</h2>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Property</th>
+<th style="text-align: left;">GL_INVALID_ENUM</th>
+<th style="text-align: left;">GL_INVALID_VALUE</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>Error Code</strong></td>
+<td style="text-align: left;"><code>0x0500</code></td>
+<td style="text-align: left;"><code>0x0501</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Applies To</strong></td>
+<td style="text-align: left;">Symbolic constants
+(<code>GLenum</code>)</td>
+<td style="text-align: left;">Numeric arguments (integers, floats,
+offsets)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Root Cause</strong></td>
+<td style="text-align: left;">The token is not a valid option for the
+function</td>
+<td style="text-align: left;">The value is outside the allowed numerical
+bounds</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Resolution</strong></td>
+<td style="text-align: left;">Provide the correct constant or check
+context version</td>
+<td style="text-align: left;">Verify parameters conform to size,
+boundary, and handle limits</td>
+</tr>
+</tbody>
+</table>
+<h2 id="diagnosing-these-errors">Diagnosing These Errors</h2>
+<p>OpenGL logs errors silently in its state machine. To detect when
+either error occurs:</p>
+<ol type="1">
+<li>Query <code>glGetError()</code> immediately after suspect API calls.
+The function returns the oldest error flag and clears it.</li>
+<li>In modern OpenGL (4.3+ or using the <code>KHR_debug</code>
+extension), enable debug output via
+<code>glEnable(GL_DEBUG_OUTPUT)</code>. Register a callback using
+<code>glDebugMessageCallback</code> to automatically receive detailed
+descriptions, error source lines, and severity levels whenever
+<code>GL_INVALID_ENUM</code> or <code>GL_INVALID_VALUE</code> is
+raised.</li>
+</ol></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

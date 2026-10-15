@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image-Based Lighting for Diffuse Surfaces in OpenGL PBR - opengl</title>
+    <meta name="description" content="Image-Based Lighting (IBL) is a rendering technique that treats an entire surrounding environment as an omnidirectional light source, capturing realistic ambient lighting rather than relying on discrete point or directional lights. In a Physically Based R">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/image-based-lighting-for-diffuse-surfaces-in-open-gl-pbr">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Image-Based Lighting for Diffuse Surfaces in OpenGL PBR - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/image-based-lighting-for-diffuse-surfaces-in-open-gl-pbr" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Image-Based Lighting (IBL) is a rendering technique that treats an entire surrounding environment as an omnidirectional light source, capturing realistic ambient lighting rather than relying on discrete point or directional lights. In a Physically Based R" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="image-based-lighting-for-diffuse-surfaces-in-opengl-pbr">Image-Based
+Lighting for Diffuse Surfaces in OpenGL PBR</h1>
+<p>Image-Based Lighting (IBL) is a rendering technique that treats an
+entire surrounding environment as an omnidirectional light source,
+capturing realistic ambient lighting rather than relying on discrete
+point or directional lights. In a Physically Based Rendering (PBR)
+pipeline using OpenGL, diffuse illumination from an environment is
+calculated by solving the diffuse irradiance integral across a
+hemisphere oriented around a surface's normal vector. This article
+explores what IBL is and breaks down the mathematical and practical
+steps required to convolve an environment map into an irradiance map for
+real-time diffuse shading in OpenGL.</p>
+<h2 id="what-is-image-based-lighting">What is Image-Based Lighting?</h2>
+<p>Traditional real-time lighting approximates light emission using
+mathematical sources like directional, point, and spot lights. While
+computationally inexpensive, these analytical lights fail to reproduce
+the complex, indirect ambient light bouncing off surrounding
+scenery.</p>
+<p>Image-Based Lighting solves this by using high dynamic range (HDR)
+images—typically stored as equirectangular panoramas or cubemaps—to
+represent the light arriving from all directions toward a scene. Instead
+of manually placing dozens of ambient fill lights, the environment
+itself becomes the light emitter. In a PBR context, this lighting is
+split into two primary components: diffuse irradiance and specular
+reflection.</p>
+<h2 id="the-diffuse-reflectance-equation">The Diffuse Reflectance
+Equation</h2>
+<p>Under the standard PBR Cook-Torrance model, total outgoing radiance
+is the sum of diffuse and specular terms. The diffuse component assumes
+ideal Lambertian reflection, meaning incoming light scatters equally in
+all directions across the hemisphere centered on the surface normal
+<span class="math inline">\(n\)</span>.</p>
+<p>The outgoing diffuse radiance <span
+class="math inline">\(L_o\)</span> is expressed by the hemisphere
+integral:</p>
+<p><span class="math display">\[L_o(p, \omega_o) = \frac{k_d c}{\pi}
+\int_{\Omega} L_i(p, \omega_i) (n \cdot \omega_i) d\omega_i\]</span></p>
+<p>Where:</p>
+<ul>
+<li><span class="math inline">\(k_d\)</span> is the ratio of incoming
+light that is refracted (diffuse).</li>
+<li><span class="math inline">\(c\)</span> is the surface albedo
+color.</li>
+<li><span class="math inline">\(\Omega\)</span> is the hemisphere
+oriented along normal <span class="math inline">\(n\)</span>.</li>
+<li><span class="math inline">\(L_i(p, \omega_i)\)</span> is the
+incoming radiance from direction <span
+class="math inline">\(\omega_i\)</span>.</li>
+<li><span class="math inline">\(n \cdot \omega_i\)</span> is the cosine
+attenuation factor.</li>
+</ul>
+<p>Computing this integral dynamically for every fragment during
+real-time rendering is too expensive because it requires sampling
+hundreds of light directions per pixel.</p>
+<h2 id="pre-computing-diffuse-irradiance-via-convolution">Pre-Computing
+Diffuse Irradiance via Convolution</h2>
+<p>Because the diffuse integral depends solely on the surface normal
+direction <span class="math inline">\(n\)</span>—and not on the viewing
+direction <span class="math inline">\(\omega_o\)</span>—the integral can
+be pre-computed for every possible normal orientation. This process is
+called convolution.</p>
+<p>Convolving an environment map involves integrating all incoming
+radiance over the hemisphere around a given normal vector <span
+class="math inline">\(n\)</span> and writing the result to a new
+cubemap, called an <strong>irradiance map</strong>. Because diffuse
+scattering blends light from all directions, the resulting irradiance
+map looks like an extremely blurred version of the original environment
+cubemap.</p>
+<h2 id="implementing-diffuse-ibl-in-opengl">Implementing Diffuse IBL in
+OpenGL</h2>
+<p>Implementing diffuse IBL in OpenGL consists of an offline or
+load-time pre-processing pass followed by a runtime sampling step.</p>
+<h3 id="1-environment-map-setup">1. Environment Map Setup</h3>
+<p>Load an equirectangular HDR image into OpenGL and project it onto a
+standard cubemap texture using a framebuffer object (FBO) and a simple
+vertex/fragment shader pass rendering to six cubemap faces.</p>
+<h3 id="2-hemisphere-convolution-shader">2. Hemisphere Convolution
+Shader</h3>
+<p>Render to a new, low-resolution cubemap (e.g., <span
+class="math inline">\(32 \times 32\)</span> pixels per face is usually
+sufficient due to the high degree of blur). The fragment shader loops
+over spherical coordinates <span class="math inline">\(\phi\)</span>
+(azimuth, 0 to <span class="math inline">\(2\pi\)</span>) and <span
+class="math inline">\(\theta\)</span> (polar, 0 to <span
+class="math inline">\(\pi/2\)</span>) to sample the original environment
+map:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> irradiance <span class="op">=</span> <span class="dt">vec3</span><span class="op">(</span><span class="fl">0.0</span><span class="op">);</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> up    <span class="op">=</span> <span class="dt">vec3</span><span class="op">(</span><span class="fl">0.0</span><span class="op">,</span> <span class="fl">1.0</span><span class="op">,</span> <span class="fl">0.0</span><span class="op">);</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> right <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span><span class="bu">cross</span><span class="op">(</span>up<span class="op">,</span> N<span class="op">));</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>up         <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span><span class="bu">cross</span><span class="op">(</span>N<span class="op">,</span> right<span class="op">));</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> sampleDelta <span class="op">=</span> <span class="fl">0.025</span><span class="op">;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> nrSamples <span class="op">=</span> <span class="fl">0.0</span><span class="op">;</span> </span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="kw">for</span><span class="op">(</span><span class="dt">float</span> phi <span class="op">=</span> <span class="fl">0.0</span><span class="op">;</span> phi <span class="op">&lt;</span> <span class="fl">2.0</span> <span class="op">*</span> PI<span class="op">;</span> phi <span class="op">+=</span> sampleDelta<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    <span class="kw">for</span><span class="op">(</span><span class="dt">float</span> theta <span class="op">=</span> <span class="fl">0.0</span><span class="op">;</span> theta <span class="op">&lt;</span> <span class="fl">0.5</span> <span class="op">*</span> PI<span class="op">;</span> theta <span class="op">+=</span> sampleDelta<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>        <span class="co">// Spherical to Cartesian (tangent space)</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>        <span class="dt">vec3</span> tangentSample <span class="op">=</span> <span class="dt">vec3</span><span class="op">(</span><span class="bu">sin</span><span class="op">(</span>theta<span class="op">)</span> <span class="op">*</span> <span class="bu">cos</span><span class="op">(</span>phi<span class="op">),</span> <span class="bu">sin</span><span class="op">(</span>theta<span class="op">)</span> <span class="op">*</span> <span class="bu">sin</span><span class="op">(</span>phi<span class="op">),</span> <span class="bu">cos</span><span class="op">(</span>theta<span class="op">));</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>        <span class="co">// Tangent space to world space</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>        <span class="dt">vec3</span> sampleVec <span class="op">=</span> tangentSample<span class="op">.</span><span class="fu">x</span> <span class="op">*</span> right <span class="op">+</span> tangentSample<span class="op">.</span><span class="fu">y</span> <span class="op">*</span> up <span class="op">+</span> tangentSample<span class="op">.</span><span class="fu">z</span> <span class="op">*</span> N<span class="op">;</span> </span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>        irradiance <span class="op">+=</span> <span class="bu">texture</span><span class="op">(</span>environmentMap<span class="op">,</span> sampleVec<span class="op">).</span><span class="fu">rgb</span> <span class="op">*</span> <span class="bu">cos</span><span class="op">(</span>theta<span class="op">)</span> <span class="op">*</span> <span class="bu">sin</span><span class="op">(</span>theta<span class="op">);</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>        nrSamples<span class="op">++;</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>irradiance <span class="op">=</span> PI <span class="op">*</span> irradiance <span class="op">*</span> <span class="op">(</span><span class="fl">1.0</span> <span class="op">/</span> <span class="dt">float</span><span class="op">(</span>nrSamples<span class="op">));</span></span></code></pre></div>
+<p>The term <span class="math inline">\(\cos(\theta)\)</span> accounts
+for the incident angle of the light, while <span
+class="math inline">\(\sin(\theta)\)</span> accounts for the shrinking
+surface area of spherical sample rings near the poles.</p>
+<h3 id="3-real-time-shading-integration">3. Real-Time Shading
+Integration</h3>
+<p>During the main PBR rendering pass, pass the pre-filtered irradiance
+cubemap to the fragment shader. Retrieve the ambient diffuse lighting
+using the fragment's world-space normal vector:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> ambientDiffuse <span class="op">=</span> <span class="bu">texture</span><span class="op">(</span>irradianceMap<span class="op">,</span> Normal<span class="op">).</span><span class="fu">rgb</span><span class="op">;</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> kD <span class="op">=</span> <span class="fl">1.0</span> <span class="op">-</span> F<span class="op">;</span> <span class="co">// F is the Fresnel factor calculated via the Fresnel-Schlick approximation</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>kD <span class="op">*=</span> <span class="fl">1.0</span> <span class="op">-</span> metallic<span class="op">;</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> diffuse <span class="op">=</span> kD <span class="op">*</span> ambientDiffuse <span class="op">*</span> albedo<span class="op">;</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> ambient <span class="op">=</span> diffuse <span class="op">*</span> ao<span class="op">;</span> <span class="co">// Modulate by ambient occlusion</span></span></code></pre></div>
+<p>By querying this single pre-calculated cubemap texture, the shader
+achieves accurate, physically plausible global ambient lighting with
+minimal runtime cost.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

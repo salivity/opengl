@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulating Rayleigh and Mie Scattering in OpenGL Shaders - opengl</title>
+    <meta name="description" content="This article provides an overview of atmospheric rendering through the simulation of Rayleigh and Mie scattering models within an OpenGL pipeline. It details the physical principles behind how light interacts with atmospheric particles, breaks down the ma">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/simulating-rayleigh-and-mie-scattering-in-open-gl-shaders">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Simulating Rayleigh and Mie Scattering in OpenGL Shaders - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/simulating-rayleigh-and-mie-scattering-in-open-gl-shaders" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article provides an overview of atmospheric rendering through the simulation of Rayleigh and Mie scattering models within an OpenGL pipeline. It details the physical principles behind how light interacts with atmospheric particles, breaks down the ma" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="simulating-rayleigh-and-mie-scattering-in-opengl-shaders">Simulating
+Rayleigh and Mie Scattering in OpenGL Shaders</h1>
+<p>This article provides an overview of atmospheric rendering through
+the simulation of Rayleigh and Mie scattering models within an OpenGL
+pipeline. It details the physical principles behind how light interacts
+with atmospheric particles, breaks down the mathematical equations
+governing phase and attenuation, and demonstrates how to structure an
+efficient ray-marching algorithm inside a GLSL fragment shader to
+generate realistic dynamic skies.</p>
+<hr />
+<h3 id="fundamentals-of-atmospheric-scattering">Fundamentals of
+Atmospheric Scattering</h3>
+<p>Atmospheric scattering occurs when photons emitted by a light source
+(primarily the Sun) collide with atmospheric particles and are
+redirected toward an observer. To recreate this in computer graphics,
+two distinct physical models are combined:</p>
+<ul>
+<li><strong>Rayleigh Scattering:</strong> Governs interactions with
+particles much smaller than the wavelength of visible light, such as
+nitrogen and oxygen molecules. Scattering intensity is inversely
+proportional to the fourth power of the wavelength (<span
+class="math inline">\(\lambda^{-4}\)</span>). Shorter wavelengths (blue
+light) scatter significantly more than longer wavelengths (red light),
+which produces the characteristic blue daytime sky and the warm amber
+hues of sunrise and sunset when light travels through a thicker
+atmospheric path.</li>
+<li><strong>Mie Scattering:</strong> Governs interactions with particles
+roughly equal to or larger than the wavelength of light, such as
+aerosols, dust, pollen, and water droplets. Mie scattering is mostly
+wavelength-independent, scattering all colors relatively equally to
+create a whitish haze. It exhibits a strong forward-scattering bias,
+producing a bright glow directly around the sun disc.</li>
+</ul>
+<h3 id="mathematical-formulation">Mathematical Formulation</h3>
+<p>The simulation solves the radiative transfer equation along a view
+ray using three primary components: density distribution, optical depth,
+and phase functions.</p>
+<h4 id="1-atmospheric-density">1. Atmospheric Density</h4>
+<p>Atmospheric density decreases exponentially with altitude. Given a
+point at altitude <span class="math inline">\(h\)</span> above the
+planet's surface:</p>
+<p><span class="math display">\[\rho_R(h) =
+\exp\left(-\frac{h}{H_R}\right)\]</span> <span
+class="math display">\[\rho_M(h) =
+\exp\left(-\frac{h}{H_M}\right)\]</span></p>
+<p>where <span class="math inline">\(H_R\)</span> (~8 km) and <span
+class="math inline">\(H_M\)</span> (~1.2 km) represent the scale heights
+for Rayleigh and Mie particles, defining the altitude at which density
+drops by a factor of <span class="math inline">\(e\)</span>.</p>
+<h4 id="2-transmittance-and-optical-depth">2. Transmittance and Optical
+Depth</h4>
+<p>The attenuation of light traveling between two points <span
+class="math inline">\(A\)</span> and <span
+class="math inline">\(B\)</span> follows the Beer-Lambert law:</p>
+<p><span class="math display">\[T(A, B) = \exp\left( - \sum_{i \in \{R,
+M\}} \beta_i \int_A^B \rho_i(h(s)) \, ds \right)\]</span></p>
+<p>where <span class="math inline">\(\beta_R\)</span> is the Rayleigh
+scattering coefficient vector (RGB) and <span
+class="math inline">\(\beta_M\)</span> is the Mie scattering/extinction
+coefficient.</p>
+<h4 id="3-phase-functions">3. Phase Functions</h4>
+<p>Phase functions describe the angular distribution of scattered light
+relative to the incident light direction <span
+class="math inline">\(\theta\)</span>:</p>
+<ul>
+<li><strong>Rayleigh Phase Function:</strong> <span
+class="math display">\[P_R(\theta) = \frac{3}{16\pi} (1 +
+\cos^2\theta)\]</span></li>
+<li><strong>Mie Phase Function (Henyey-Greenstein
+approximation):</strong> <span class="math display">\[P_M(\theta, g) =
+\frac{1}{4\pi} \frac{1 - g^2}{(1 + g^2 - 2g\cos\theta)^{3/2}}\]</span>
+The asymmetry factor <span class="math inline">\(g \in [0.76,
+0.99]\)</span> controls the intensity of forward scattering.</li>
+</ul>
+<hr />
+<h3 id="framing-the-simulation-in-an-opengl-shader">Framing the
+Simulation in an OpenGL Shader</h3>
+<p>In an OpenGL pipeline, atmospheric scattering is commonly evaluated
+in a screen-space post-processing pass or rendered across a full-screen
+quad mapped to the camera's far plane. The fragment shader implements a
+numerical integration technique known as <strong>ray
+marching</strong>.</p>
+<h4 id="step-1-ray-sphere-intersection">Step 1: Ray-Sphere
+Intersection</h4>
+<p>The shader reconstructs the normalized world-space view ray <span
+class="math inline">\(\vec{d}\)</span> from the camera position <span
+class="math inline">\(\vec{c}\)</span>. It then computes the
+intersections with two concentric spheres representing the planet
+surface (radius <span class="math inline">\(R_p\)</span>) and the outer
+atmospheric boundary (radius <span
+class="math inline">\(R_{atmo}\)</span>).</p>
+<ul>
+<li>If the ray points away from the atmosphere, the background color is
+returned.</li>
+<li>If the ray intersects the atmosphere, the integration range <span
+class="math inline">\([t_{start}, t_{end}]\)</span> is determined along
+<span class="math inline">\(\vec{d}\)</span>.</li>
+</ul>
+<h4 id="step-2-primary-ray-marching-view-ray">Step 2: Primary Ray
+Marching (View Ray)</h4>
+<p>The segment between <span class="math inline">\(t_{start}\)</span>
+and <span class="math inline">\(t_{end}\)</span> is divided into <span
+class="math inline">\(N\)</span> discrete samples (typically 16 to 64
+steps for real-time performance). At each primary sample point <span
+class="math inline">\(P_i\)</span>:</p>
+<ol type="1">
+<li>Compute the local altitude <span class="math inline">\(h = \|P_i\| -
+R_p\)</span> to calculate local densities <span
+class="math inline">\(\rho_R(h)\)</span> and <span
+class="math inline">\(\rho_M(h)\)</span>.</li>
+<li>Accumulate the optical depth from the camera to <span
+class="math inline">\(P_i\)</span>.</li>
+</ol>
+<h4 id="step-3-secondary-ray-marching-light-ray">Step 3: Secondary Ray
+Marching (Light Ray)</h4>
+<p>From sample point <span class="math inline">\(P_i\)</span>, a
+secondary ray is cast toward the directional light source (Sun) to
+calculate how much sunlight reaches <span
+class="math inline">\(P_i\)</span> without being scattered away:</p>
+<ol type="1">
+<li>Determine the intersection of the light ray with the top of the
+atmosphere.</li>
+<li>March along this path with <span class="math inline">\(M\)</span>
+secondary samples (typically 4 to 8 steps).</li>
+<li>Integrate the optical depths to obtain the total transmittance <span
+class="math inline">\(T(P_i, \text{Sun})\)</span>.</li>
+</ol>
+<h4 id="step-4-in-scattering-accumulation">Step 4: In-Scattering
+Accumulation</h4>
+<p>The total light reaching the camera is integrated by multiplying the
+attenuated sunlight by the local particle densities and the step length
+<span class="math inline">\(ds\)</span>:</p>
+<p><span class="math display">\[I_{step} = T(\text{Camera}, P_i) \cdot
+T(P_i, \text{Sun}) \cdot (\rho_R(h)\beta_R + \rho_M(h)\beta_M) \,
+ds\]</span></p>
+<h4 id="step-5-applying-phase-functions-and-sun-intensity">Step 5:
+Applying Phase Functions and Sun Intensity</h4>
+<p>Outside the loop, the phase functions are evaluated once using the
+angle between the view ray and the sun direction (<span
+class="math inline">\(\cos\theta = \vec{d} \cdot \vec{L}\)</span>). The
+accumulated Rayleigh and Mie sums are weighted by their respective phase
+values, multiplied by the incoming solar irradiance <span
+class="math inline">\(I_{sun}\)</span>, and combined into the final
+fragment output:</p>
+<p><span class="math display">\[\text{Final Color} = I_{sun} \cdot
+\left[ P_R(\theta)\beta_R \sum I_R + P_M(\theta, g)\beta_M \sum I_M
+\right]\]</span></p>
+<hr />
+<h3 id="performance-optimization-strategies">Performance Optimization
+Strategies</h3>
+<p>Direct nested ray marching requires <span class="math inline">\(N
+\times M\)</span> evaluations per fragment, which can be computationally
+expensive at high display resolutions. Real-time implementations in
+OpenGL typically employ optimizations:</p>
+<ul>
+<li><strong>Precomputed Look-Up Tables (LUTs):</strong> Systems like the
+Bruneton model precompute multi-scattering and optical depth integrals
+into 2D or 3D textures, reducing per-frame fragment shader workloads to
+a few texture lookups.</li>
+<li><strong>Half-Resolution Rendering:</strong> Running the atmospheric
+pass at half or quarter resolution and upsampling to full resolution
+using a bilateral depth-aware filter significantly minimizes fill-rate
+overhead.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

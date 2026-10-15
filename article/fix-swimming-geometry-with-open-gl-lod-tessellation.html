@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fix Swimming Geometry with OpenGL LOD Tessellation - opengl</title>
+    <meta name="description" content="Dynamic level of detail (LOD) tessellation in OpenGL eliminates swimming geometry artifacts by replacing abrupt discrete mesh swaps with smooth, continuous mesh density transitions during camera movement. Swimming artifacts typically arise when discrete L">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/fix-swimming-geometry-with-open-gl-lod-tessellation">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Fix Swimming Geometry with OpenGL LOD Tessellation - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/fix-swimming-geometry-with-open-gl-lod-tessellation" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Dynamic level of detail (LOD) tessellation in OpenGL eliminates swimming geometry artifacts by replacing abrupt discrete mesh swaps with smooth, continuous mesh density transitions during camera movement. Swimming artifacts typically arise when discrete L" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="fix-swimming-geometry-with-opengl-lod-tessellation">Fix Swimming
+Geometry with OpenGL LOD Tessellation</h1>
+<p>Dynamic level of detail (LOD) tessellation in OpenGL eliminates
+swimming geometry artifacts by replacing abrupt discrete mesh swaps with
+smooth, continuous mesh density transitions during camera movement.
+Swimming artifacts typically arise when discrete LOD transitions or
+camera-relative displacement sampling cause vertices and procedural
+details to visibly crawl across a surface. By leveraging OpenGL’s
+hardware tessellation pipeline—specifically using fractional spacing in
+the Tessellation Evaluation Shader (TES) and continuous distance metrics
+in the Tessellation Control Shader (TCS)—geometry scales continuously
+and maintains spatial stability relative to the world, completely
+removing visual popping and geometric crawl.</p>
+<h3 id="the-mechanics-of-swimming-geometry">The Mechanics of Swimming
+Geometry</h3>
+<p>Swimming geometry occurs when a surface's vertices appear to slide,
+jitter, or crawl as the camera translates or rotates. In traditional
+discrete LOD systems, meshes snap between fixed levels of detail,
+causing abrupt structural jumps. When combined with displacement mapping
+or procedural noise (such as terrain heightmaps), slight changes in
+camera position cause the underlying vertex sampling grid to shift
+unevenly across the height field. Because vertices are reallocated
+non-uniformly relative to the features they represent, the
+high-frequency features appear to "swim" through the mesh rather than
+remaining anchored in world space.</p>
+<h3
+id="fractional-spacing-in-the-tessellation-evaluation-shader">Fractional
+Spacing in the Tessellation Evaluation Shader</h3>
+<p>The primary solution to avoid popping between discrete states in
+OpenGL is fractional tessellation spacing. Standard integer tessellation
+forces the GPU to round tessellation levels to the nearest whole number,
+causing immediate structural snaps when a threshold is crossed.</p>
+<p>OpenGL provides two continuous spacing modes declared in the
+Tessellation Evaluation Shader:</p>
+<ul>
+<li><code>fractional_even_spacing</code></li>
+<li><code>fractional_odd_spacing</code></li>
+</ul>
+<p>By defining the primitive generation mode with fractional spacing
+(e.g., <code>layout(triangles, fractional_odd_spacing, ccw) in;</code>),
+the tessellation primitive generator smoothly scales new segments into
+existence. When the tessellation level increases, new vertex pairs fade
+in from an edge or point with an initial length of zero and gradually
+expand to full size, preventing any visible popping or sliding across
+camera frames.</p>
+<h3
+id="continuous-lod-calculation-in-the-tessellation-control-shader">Continuous
+LOD Calculation in the Tessellation Control Shader</h3>
+<p>To take advantage of fractional spacing, the Tessellation Control
+Shader must compute tessellation factors (<code>gl_TessLevelOuter</code>
+and <code>gl_TessLevelInner</code>) using continuous, floating-point
+functions rather than quantized distance buckets.</p>
+<ol type="1">
+<li><p><strong>Edge-Based Distance Evaluation:</strong> Instead of
+calculating a single LOD factor per patch based on the patch center,
+compute tessellation levels independently for each patch edge. Calculate
+the midpoint of each edge in world space, measure the distance from that
+midpoint to the camera position, and map that distance smoothly to a
+tessellation factor using a linear or power curve:</p>
+<p><span class="math display">\[\text{TessLevel} =
+\text{clamp}\left(\frac{\text{MaxDistance} -
+\text{Distance}}{\text{MaxDistance} - \text{MinDistance}}, 0.0,
+1.0\right) \times (\text{MaxTess} - \text{MinTess}) +
+\text{MinTess}\]</span></p></li>
+<li><p><strong>Screen-Space Target Length:</strong> Alternatively,
+project the world-space bounding sphere of each edge into normalized
+device coordinates (NDC) to determine its actual screen-space footprint.
+Defining tessellation based on target pixel size ensures that geometry
+density dynamically balances across screen transformations without
+shifting the underlying spatial reference points.</p></li>
+</ol>
+<h3 id="ensuring-edge-stitching-and-crack-prevention">Ensuring Edge
+Stitching and Crack Prevention</h3>
+<p>Geometric swimming can also manifest as flickering seam cracks along
+adjacent patches. If two adjacent patches evaluate the same shared edge
+differently, their edge vertices will not align, creating gaps that
+flash during camera motion. To prevent this:</p>
+<ul>
+<li>Calculate edge tessellation factors using exclusively the two
+vertices defining that shared edge.</li>
+<li>Ensure the function is symmetric so that regardless of edge winding
+order (<span class="math inline">\(AB\)</span> versus <span
+class="math inline">\(BA\)</span>), both patches assign the exact same
+value to <code>gl_TessLevelOuter</code>.</li>
+<li>Derive inner tessellation factors (<code>gl_TessLevelInner</code>)
+as an average or maximum of the outer factors to maintain structural
+integrity across the interior of the patch.</li>
+</ul>
+<h3 id="world-space-anchoring-in-displacement-mapping">World-Space
+Anchoring in Displacement Mapping</h3>
+<p>Even with fractional tessellation, surfaces will swim if displacement
+data is evaluated incorrectly. In the Tessellation Evaluation Shader,
+compute the final vertex positions using continuous barycentric
+interpolation (<code>gl_TessCoord</code>), followed by sampling
+displacement maps or procedural noise functions strictly in world-space
+coordinates:</p>
+<ul>
+<li>Do not sample height functions using view-space coordinates or
+camera-dependent projections.</li>
+<li>Anchor UVs and world-space sampling points to the static topology of
+the patch base.</li>
+<li>Apply analytical or sampled normal vectors in the Fragment Shader
+derived from the undisturbed world coordinates, ensuring lighting does
+not oscillate as the underlying tessellation factor adjusts.</li>
+</ul>
+<p>Through the combination of fractional primitive spacing, continuous
+edge-based factor evaluation, and world-space displacement mapping,
+OpenGL renders geometry that dynamically adapts its resolution to camera
+distance while maintaining absolute spatial stability.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

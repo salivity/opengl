@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How MSAA Works in an OpenGL Framebuffer - opengl</title>
+    <meta name="description" content="Multi-Sample Anti-Aliasing (MSAA) in an OpenGL framebuffer smooths jagged polygon edges by decoupling geometric visibility testing from fragment shader execution. Rather than running costly fragment shaders multiple times per pixel like traditional supers">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-msaa-works-in-an-open-gl-framebuffer">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How MSAA Works in an OpenGL Framebuffer - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-msaa-works-in-an-open-gl-framebuffer" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Multi-Sample Anti-Aliasing (MSAA) in an OpenGL framebuffer smooths jagged polygon edges by decoupling geometric visibility testing from fragment shader execution. Rather than running costly fragment shaders multiple times per pixel like traditional supers" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-msaa-works-in-an-opengl-framebuffer">How MSAA Works in an
+OpenGL Framebuffer</h1>
+<p>Multi-Sample Anti-Aliasing (MSAA) in an OpenGL framebuffer smooths
+jagged polygon edges by decoupling geometric visibility testing from
+fragment shader execution. Rather than running costly fragment shaders
+multiple times per pixel like traditional supersampling, MSAA evaluates
+the fragment shader once per covered pixel and stores the resulting
+color across multiple depth, stencil, and coverage sub-samples. This
+article explains the internal mechanics of MSAA in OpenGL, covering
+multisample buffer allocation, sub-sample rasterization, depth/stencil
+evaluation, and the final resolve process.</p>
+<h3 id="multisample-storage-allocation">Multisample Storage
+Allocation</h3>
+<p>To support MSAA, an OpenGL Framebuffer Object (FBO) must bind
+attachments that support multiple samples per pixel. Standard 2D
+textures or renderbuffers allocate memory for a single color, depth, and
+stencil value per pixel coordinate. In contrast, multisample
+attachments—created via <code>glTexImage2DMultisample</code> or
+<code>glRenderbufferStorageMultisample</code>—allocate dedicated storage
+for <span class="math inline">\(N\)</span> distinct samples per pixel
+(commonly 2x, 4x, or 8x).</p>
+<p>Each sample within a pixel has a predefined sub-pixel offset
+determined by the GPU hardware. When a multisample FBO is bound, the
+hardware configures its rasterization pipeline to evaluate primitive
+coverage against these specific sub-sample locations rather than a
+single pixel center.</p>
+<h3 id="rasterization-and-coverage-testing">Rasterization and Coverage
+Testing</h3>
+<p>During the rasterization stage of a geometric primitive (such as a
+triangle), the GPU tests the primitive against the positions of all
+<span class="math inline">\(N\)</span> sub-samples within each candidate
+pixel.</p>
+<ol type="1">
+<li><strong>Coverage Mask Generation:</strong> The GPU computes an <span
+class="math inline">\(N\)</span>-bit coverage mask. If a triangle covers
+samples 0, 1, and 3 out of 4, the coverage mask for that pixel is set to
+<code>1101</code> binary.</li>
+<li><strong>Sample Interpolation:</strong> By default, pixel attributes
+are interpolated at the pixel's center. If the pixel center lies outside
+the polygon boundary, attributes are evaluated at the centroid of the
+covered samples (using the <code>centroid</code> qualifier in GLSL) to
+prevent interpolation artifacts.</li>
+</ol>
+<h3 id="fragment-shader-execution">Fragment Shader Execution</h3>
+<p>MSAA achieves performance efficiency by executing the fragment shader
+only once per primitive that covers at least one sub-sample in the
+pixel:</p>
+<ul>
+<li>The fragment shader executes and produces a single output
+color.</li>
+<li>Unlike Super-Sample Anti-Aliasing (SSAA), the arithmetic operations
+of the fragment shader are not repeated for every individual sample
+point.</li>
+<li>The single computed color is then staged to be broadcast to all
+sub-samples that passed both the coverage test and subsequent
+depth/stencil tests.</li>
+</ul>
+<p><em>(Note: If GLSL's <code>sample</code> qualifier or
+<code>GL_SAMPLE_SHADING</code> is explicitly enabled, OpenGL forces
+per-sample shading, reverting the behavior closer to SSAA for that
+specific pass).</em></p>
+<h3 id="per-sample-depth-and-stencil-operations">Per-Sample Depth and
+Stencil Operations</h3>
+<p>While color computation happens per pixel, visibility testing happens
+per sample:</p>
+<ul>
+<li><strong>Depth/Stencil Testing:</strong> The rasterizer interpolates
+the primitive's depth (<span class="math inline">\(Z\)</span>) value at
+each individual sub-sample location. The depth test and stencil test are
+evaluated independently for every covered sample.</li>
+<li><strong>Storage Update:</strong> If sample <span
+class="math inline">\(i\)</span> passes the depth and stencil tests, its
+dedicated depth and stencil values are updated in the multisample
+buffer, and the pixel's evaluated color value is written into sample
+<span class="math inline">\(i\)</span>'s color slot.</li>
+<li>Samples that fail the test or were not covered by the primitive
+remain unchanged, preserving the color and depth values of previously
+rendered geometry.</li>
+</ul>
+<p>This allows edges of overlapping triangles to occupy different
+sub-samples within the exact same pixel, generating accurate edge
+transitions without re-shading the interior of the surface.</p>
+<h3 id="the-downsample-resolve-operation">The Downsample (Resolve)
+Operation</h3>
+<p>A multisample framebuffer cannot be presented directly to the screen
+or sampled as a standard 2D texture because its underlying memory layout
+holds multiple color values per pixel. The data must undergo a "resolve"
+operation.</p>
+<p>In OpenGL, this resolve step is triggered using
+<code>glBlitFramebuffer</code>:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>glBindFramebuffer<span class="op">(</span>GL_READ_FRAMEBUFFER<span class="op">,</span> multisampleFbo<span class="op">);</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>glBindFramebuffer<span class="op">(</span>GL_DRAW_FRAMEBUFFER<span class="op">,</span> defaultOrStandardFbo<span class="op">);</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>glBlitFramebuffer<span class="op">(</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">,</span> width<span class="op">,</span> height<span class="op">,</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">,</span> width<span class="op">,</span> height<span class="op">,</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    GL_COLOR_BUFFER_BIT<span class="op">,</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    GL_NEAREST</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="op">);</span></span></code></pre></div>
+<p>During this blit operation, the GPU's fixed-function hardware
+averages the color values of all <span class="math inline">\(N\)</span>
+sub-samples for each pixel:</p>
+<p><span class="math display">\[\text{Final Color} = \frac{1}{N}
+\sum_{i=0}^{N-1} \text{SampleColor}_i\]</span></p>
+<p>The resulting averaged color is written to the destination
+single-sample framebuffer, producing smooth, anti-aliased edges along
+geometric boundaries.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

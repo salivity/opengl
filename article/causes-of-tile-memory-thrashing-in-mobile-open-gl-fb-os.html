@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Causes of Tile Memory Thrashing in Mobile OpenGL FBOs - opengl</title>
+    <meta name="description" content="In mobile OpenGL development, heavy reliance on Framebuffer Objects (FBOs) often leads to a severe performance bottleneck known as tile memory thrashing. Because mobile graphics processors rely on Tile-Based Deferred Rendering (TBDR) architectures, switch">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/causes-of-tile-memory-thrashing-in-mobile-open-gl-fb-os">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Causes of Tile Memory Thrashing in Mobile OpenGL FBOs - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/causes-of-tile-memory-thrashing-in-mobile-open-gl-fb-os" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In mobile OpenGL development, heavy reliance on Framebuffer Objects (FBOs) often leads to a severe performance bottleneck known as tile memory thrashing. Because mobile graphics processors rely on Tile-Based Deferred Rendering (TBDR) architectures, switch" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="causes-of-tile-memory-thrashing-in-mobile-opengl-fbos">Causes of
+Tile Memory Thrashing in Mobile OpenGL FBOs</h1>
+<p>In mobile OpenGL development, heavy reliance on Framebuffer Objects
+(FBOs) often leads to a severe performance bottleneck known as tile
+memory thrashing. Because mobile graphics processors rely on Tile-Based
+Deferred Rendering (TBDR) architectures, switching between multiple FBOs
+or mismanaging render targets forces the GPU to constantly flush and
+reload pixel data between fast on-chip tile memory and slow system RAM.
+Understanding how TBDR functions and identifying the specific operations
+that trigger these redundant memory transactions is essential for
+maintaining high frame rates and thermal efficiency on mobile
+devices.</p>
+<h3 id="understanding-the-tbdr-architecture">Understanding the TBDR
+Architecture</h3>
+<p>Unlike desktop GPUs that typically use Immediate Mode Rendering
+(IMR), mobile GPUs—such as ARM Mali, Qualcomm Adreno, and Imagination
+PowerVR—employ Tile-Based (Deferred) Rendering architectures.</p>
+<p>A TBDR GPU divides the render screen into small grids called tiles
+(commonly 16x16 or 32x32 pixels). It processes geometry first, assigns
+primitives to the corresponding tiles, and then shades one tile at a
+time entirely within small, high-speed, on-chip SRAM cache. Once shading
+for that tile is finished, the completed pixel data is resolved and
+written out to main system memory (DRAM).</p>
+<p>Tile memory thrashing occurs when the GPU cannot complete its work
+within this on-chip cache and is forced to repeatedly evict and reload
+tile data across the memory bus.</p>
+<h3 id="primary-causes-of-tile-memory-thrashing">Primary Causes of Tile
+Memory Thrashing</h3>
+<h4 id="1-frequent-fbo-switching-ping-ponging">1. Frequent FBO Switching
+(Ping-Ponging)</h4>
+<p>Every time <code>glBindFramebuffer()</code> is called to activate a
+different FBO, the mobile driver must close the current rendering pass.
+The contents of the on-chip tile memory must be written back to external
+DRAM, and the next FBO's attachments must be loaded from DRAM into tile
+memory. Alternating between multiple FBOs within a single frame—such as
+repeatedly swapping textures for blur passes or multi-step
+post-processing—multiplies these high-cost memory transfers.</p>
+<h4 id="2-missing-clear-or-invalidate-directives">2. Missing Clear or
+Invalidate Directives</h4>
+<p>When switching to an FBO, the GPU needs to know whether the existing
+contents in system memory matter.</p>
+<ul>
+<li><strong>Unnecessary Loads:</strong> If an FBO is bound without
+immediately calling <code>glClear()</code> or passing
+<code>GL_DONT_CARE</code> (via extensions or subpasses), the GPU assumes
+the previous content must be preserved and loads the full texture from
+DRAM into tile memory before rendering.</li>
+<li><strong>Unnecessary Stores:</strong> If depth, stencil, or auxiliary
+color attachments are not discarded at the end of a render pass using
+<code>glInvalidateFramebuffer()</code>, the GPU wastes memory bandwidth
+writing intermediate data back to system memory that will never be
+displayed.</li>
+</ul>
+<h4 id="3-intermediate-sampling-read-after-write-hazards">3.
+Intermediate Sampling (Read-After-Write Hazards)</h4>
+<p>Attempting to sample a texture that was just written to by an active
+FBO creates a pipeline dependency. If the texture is not fully resolved,
+the GPU must flush its current tile pipelines, wait for the writes to
+complete to DRAM, and then read the texture back through the texture
+cache. This stalls the pipeline and breaks the hardware's
+tile-pipelining optimizations.</p>
+<h4 id="4-oversized-attachments-and-multiple-render-targets-mrt">4.
+Oversized Attachments and Multiple Render Targets (MRT)</h4>
+<p>On-chip tile memory has a strict physical capacity (often just a few
+kilobytes per tile). Using high-precision buffers (e.g., 32-bit
+floating-point textures), extensive Multiple Render Targets (MRT) for
+deferred shading, or high-sample multisample anti-aliasing (MSAA) can
+exceed this physical limit. When attachments exceed the tile buffer
+capacity, the hardware may be forced to split rendering passes or spill
+intermediate samples into external memory.</p>
+<h3 id="mitigation-strategies">Mitigation Strategies</h3>
+<ul>
+<li><strong>Batch by Render Target:</strong> Group all drawing commands
+associated with a specific FBO together to minimize switching.</li>
+<li><strong>Explicit Clears and Discards:</strong> Always clear
+attachments at the start of a pass with <code>glClear()</code>, and
+explicitly invalidate temporary attachments (like depth and stencil
+buffers) with <code>glInvalidateFramebuffer()</code> before
+unbinding.</li>
+<li><strong>Leverage Native On-Chip Extensions:</strong> Use features
+like <code>GL_EXT_shader_pixel_local_storage</code> or subpasses in
+modern APIs (Vulkan) to perform multi-pass computations directly within
+on-chip memory without flushing to DRAM.</li>
+<li><strong>Downscale Intermediate Targets:</strong> Use the lowest
+acceptable resolution and bit depth for off-screen buffers to minimize
+the volume of data transferred when flushes do occur.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

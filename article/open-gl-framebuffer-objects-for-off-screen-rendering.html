@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Framebuffer Objects for Off-Screen Rendering - opengl</title>
+    <meta name="description" content="This article explores how Framebuffer Objects (FBOs) function in OpenGL to redirect graphic output away from the default display window and into off-screen memory. By decoupling rendering from the physical screen, FBOs allow developers to treat rendered s">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-framebuffer-objects-for-off-screen-rendering">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Framebuffer Objects for Off-Screen Rendering - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-framebuffer-objects-for-off-screen-rendering" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explores how Framebuffer Objects (FBOs) function in OpenGL to redirect graphic output away from the default display window and into off-screen memory. By decoupling rendering from the physical screen, FBOs allow developers to treat rendered s" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-framebuffer-objects-for-off-screen-rendering">OpenGL
+Framebuffer Objects for Off-Screen Rendering</h1>
+<p>This article explores how Framebuffer Objects (FBOs) function in
+OpenGL to redirect graphic output away from the default display window
+and into off-screen memory. By decoupling rendering from the physical
+screen, FBOs allow developers to treat rendered scenes as textures or
+pixel buffers, enabling advanced graphical techniques such as
+post-processing effects, shadow mapping, deferred shading, and
+environmental reflections.</p>
+<h2 id="the-default-framebuffer-vs-fbos">The Default Framebuffer vs.
+FBOs</h2>
+<p>In a standard OpenGL pipeline, drawing commands write pixel data
+directly to the default framebuffer provided by the operating system or
+windowing system (such as GLFW or SDL). This buffer is tied directly to
+the display output, presenting frames directly to the user via front and
+back swap chains.</p>
+<p>A Framebuffer Object is an OpenGL-managed entity that acts as an
+alternate destination for rendering commands. Rather than storing image
+data directly, an FBO serves as a container that bundles multiple memory
+attachments, allowing rendering operations to bypass the screen entirely
+and execute in off-screen GPU memory.</p>
+<h2 id="architecture-and-attachments-of-an-fbo">Architecture and
+Attachments of an FBO</h2>
+<p>An FBO itself does not contain any pixel storage. Instead, it defines
+logical attachment points to which memory-backed targets are bound:</p>
+<ul>
+<li><strong>Texture Attachments:</strong> Standard OpenGL 2D textures
+can be bound as color, depth, or stencil attachments. Rendering to a
+texture allows subsequent shader passes to sample that texture as an
+input, creating multi-pass pipelines.</li>
+<li><strong>Renderbuffer Objects (RBOs):</strong> Highly optimized,
+write-only memory buffers ideal for depth and stencil testing. Unlike
+textures, RBO data cannot be directly sampled in a shader, making them
+faster for auxiliary buffers where read access inside a fragment shader
+is not required.</li>
+</ul>
+<p>An FBO can host multiple color attachments simultaneously
+(<code>GL_COLOR_ATTACHMENT0</code> through
+<code>GL_COLOR_ATTACHMENTn</code>), which enables Multiple Render
+Targets (MRT)—a technique essential for outputting positions, normals,
+and material properties simultaneously in a single pass.</p>
+<h2 id="the-off-screen-rendering-workflow">The Off-Screen Rendering
+Workflow</h2>
+<p>Off-screen rendering using an FBO follows a clear, repeatable
+cycle:</p>
+<ol type="1">
+<li><strong>Creation and Configuration:</strong> Generate the FBO handle
+using <code>glGenFramebuffers</code> and bind it with
+<code>glBindFramebuffer(GL_FRAMEBUFFER, fbo)</code>.</li>
+<li><strong>Attaching Storage:</strong> Allocate memory for a texture or
+RBO and attach it using <code>glFramebufferTexture2D</code> or
+<code>glFramebufferRenderbuffer</code>.</li>
+<li><strong>Completeness Check:</strong> Validate the setup using
+<code>glCheckFramebufferStatus(GL_FRAMEBUFFER)</code> to ensure hardware
+and format compatibility.</li>
+<li><strong>Redirection:</strong> Direct drawing calls to the custom FBO
+by binding it before issuing draw commands. OpenGL now writes color,
+depth, and stencil data to the attached textures or RBOs instead of the
+screen.</li>
+<li><strong>Reverting to the Screen:</strong> Bind the default
+framebuffer using <code>glBindFramebuffer(GL_FRAMEBUFFER, 0)</code> once
+off-screen rendering is complete.</li>
+<li><strong>Sampling the Result:</strong> Pass the generated texture
+attachments to downstream shader programs for post-processing or
+lighting calculations, rendering the final composite to a screen-aligned
+quad.</li>
+</ol>
+<h2 id="practical-off-screen-rendering-techniques">Practical Off-Screen
+Rendering Techniques</h2>
+<p>By isolating the render targets, FBOs enable several foundational
+graphics workflows:</p>
+<ul>
+<li><strong>Post-Processing:</strong> The 3D scene is rendered into an
+off-screen texture. A full-screen quad is then drawn using a custom
+fragment shader that samples this texture to apply algorithms such as
+Gaussian blur, bloom, tone mapping, or depth-of-field.</li>
+<li><strong>Shadow Mapping:</strong> The scene is rendered from the
+perspective of a light source into an FBO with only a depth texture
+attached. The resulting depth map is later sampled during the main
+camera pass to calculate occlusions and shadows.</li>
+<li><strong>Deferred Shading:</strong> Geometrical attributes (diffuse
+color, world-space normals, surface roughness) are rendered to separate
+textures attached to a single FBO via MRT, constructing a "G-Buffer."
+Lighting passes then decouple scene complexity from geometry counts by
+reading these textures in screenspace.</li>
+<li><strong>Dynamic Reflections and Mirrors:</strong> Scenes can be
+rendered off-screen from an inverted or secondary perspective to
+generate real-time reflection maps applied to reflective surfaces in the
+primary view.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

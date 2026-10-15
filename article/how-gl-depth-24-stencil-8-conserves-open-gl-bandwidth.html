@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How GL_DEPTH24_STENCIL8 Conserves OpenGL Bandwidth - opengl</title>
+    <meta name="description" content="Packed depth-stencil formats like GLDEPTH24STENCIL8 conserve memory bandwidth by combining a 24-bit depth value and an 8-bit stencil value into a single, contiguous 32-bit word per pixel. Instead of requiring the GPU to issue separate memory transactions">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-gl-depth-24-stencil-8-conserves-open-gl-bandwidth">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How GL_DEPTH24_STENCIL8 Conserves OpenGL Bandwidth - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-gl-depth-24-stencil-8-conserves-open-gl-bandwidth" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Packed depth-stencil formats like GLDEPTH24STENCIL8 conserve memory bandwidth by combining a 24-bit depth value and an 8-bit stencil value into a single, contiguous 32-bit word per pixel. Instead of requiring the GPU to issue separate memory transactions" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-gl_depth24_stencil8-conserves-opengl-bandwidth">How
+GL_DEPTH24_STENCIL8 Conserves OpenGL Bandwidth</h1>
+<p>Packed depth-stencil formats like <code>GL_DEPTH24_STENCIL8</code>
+conserve memory bandwidth by combining a 24-bit depth value and an 8-bit
+stencil value into a single, contiguous 32-bit word per pixel. Instead
+of requiring the GPU to issue separate memory transactions over the
+memory bus for independent depth and stencil buffers, this packed layout
+enables synchronized, single-transaction reads and writes. This
+structure optimizes GPU cache line utilization, aligns naturally with
+modern hardware memory architectures, and eliminates redundant bus
+traffic during rendering passes that perform simultaneous depth and
+stencil testing.</p>
+<h3 id="native-32-bit-alignment">Native 32-Bit Alignment</h3>
+<p>Modern GPU memory controllers and cache hierarchies are fundamentally
+optimized for power-of-two data words, predominantly 32-bit, 64-bit, or
+128-bit aligned addresses. Allocating an isolated 24-bit depth buffer
+causes memory alignment challenges: the hardware must either pad the
+24-bit values to 32 bits—wasting 25% of the allocated memory without any
+functional benefit—or handle unaligned memory accesses, which degrade
+performance.</p>
+<p>By pairing the 24-bit depth value with an 8-bit stencil value,
+<code>GL_DEPTH24_STENCIL8</code> forms an exact 32-bit (4-byte)
+structure. This alignment matches native GPU memory channels perfectly,
+maximizing throughput for every byte transmitted across the memory
+bus.</p>
+<h3 id="single-cycle-memory-transactions">Single-Cycle Memory
+Transactions</h3>
+<p>During typical rasterization, the fragment processing pipeline
+evaluates both depth and stencil tests simultaneously for every
+generated fragment. If depth and stencil data reside in distinct buffers
+(such as an independent <code>GL_DEPTH_COMPONENT24</code> and
+<code>GL_STENCIL_INDEX8</code>), the GPU memory controller must generate
+two separate memory addresses, fetch from two different memory regions,
+and wait for two round-trip requests.</p>
+<p>With <code>GL_DEPTH24_STENCIL8</code>, the GPU fetches both
+components in a single memory transaction. When reading the depth value
+to evaluate visibility, the stencil value arrives in the same payload at
+no additional transfer cost. When a fragment updates both buffers, a
+single 32-bit write operation commits both states to video memory,
+effectively halving the number of individual read/write operations
+issued over the bus.</p>
+<h3 id="spatial-locality-and-cache-line-efficiency">Spatial Locality and
+Cache Line Efficiency</h3>
+<p>GPUs transfer data between VRAM and the L1/L2 caches in fixed-size
+blocks known as cache lines, usually 64 or 128 bytes wide. Storing depth
+and stencil values interleaved in a single texture ensures high spatial
+locality.</p>
+<p>A single 64-byte cache line request brings in the complete depth and
+stencil payload for 16 contiguous screen pixels. If the components were
+decoupled, the GPU would need to load two separate cache lines—one from
+the depth allocation and one from the stencil allocation—to process the
+same 16 pixels. By doubling the functional density of each fetched cache
+line, <code>GL_DEPTH24_STENCIL8</code> prevents cache thrashing and
+preserves cache capacity for color textures and geometry data.</p>
+<h3 id="co-located-hierarchical-z-and-stencil-traversal">Co-located
+Hierarchical Z and Stencil Traversal</h3>
+<p>Modern GPUs incorporate hardware-level compression mechanisms, such
+as Hierarchical Z (HiZ) and Hierarchical Stencil (HiStencil), to discard
+non-visible pixels prior to fragment shading. When depth and stencil
+share a unified surface format, the GPU's rasterizers can track tiled
+visibility metadata across both planes concurrently. This shared tile
+metadata allows the memory controller to quickly determine whether a
+32-bit block needs to be fetched from main VRAM at all, avoiding memory
+bus round-trips for fully occluded geometry.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

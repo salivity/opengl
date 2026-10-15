@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generating Geometry with OpenGL Compute Shaders - opengl</title>
+    <meta name="description" content="Compute shaders in modern OpenGL provide a flexible, general-purpose method for procedural geometry generation, terrain tessellation, and particle meshing. By executing arbitrary compute workloads across parallel workgroups, compute shaders can generate t">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/generating-geometry-with-open-gl-compute-shaders">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Generating Geometry with OpenGL Compute Shaders - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/generating-geometry-with-open-gl-compute-shaders" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Compute shaders in modern OpenGL provide a flexible, general-purpose method for procedural geometry generation, terrain tessellation, and particle meshing. By executing arbitrary compute workloads across parallel workgroups, compute shaders can generate t" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="generating-geometry-with-opengl-compute-shaders">Generating
+Geometry with OpenGL Compute Shaders</h1>
+<p>Compute shaders in modern OpenGL provide a flexible, general-purpose
+method for procedural geometry generation, terrain tessellation, and
+particle meshing. By executing arbitrary compute workloads across
+parallel workgroups, compute shaders can generate triangle primitives by
+writing vertex coordinates, normals, and indices directly into memory
+buffers. Because compute shaders bypass the traditional fixed-function
+pipeline, they do not write directly to legacy Transform Feedback
+targets; instead, they output to Shader Storage Buffer Objects (SSBOs)
+that simultaneously double as Vertex Buffer Objects (VBOs), allowing the
+rasterizer to immediately consume the synthesized mesh data.</p>
+<h3 id="the-unified-buffer-architecture">The Unified Buffer
+Architecture</h3>
+<p>The key to generating vertex and index data in a compute shader and
+consuming it in a rendering pass is OpenGL's flexible buffer binding
+model. An OpenGL buffer is merely an allocated block of GPU memory; its
+role is determined by the binding target used at any given time.</p>
+<ol type="1">
+<li><strong>Buffer Allocation</strong>: Allocate a buffer using
+<code>glNamedBufferStorage</code> or <code>glBufferData</code>. Flag the
+buffer for dynamic storage, allowing it to be bound both as an SSBO
+(<code>GL_SHADER_STORAGE_BUFFER</code>) for the compute pass and as a
+VBO (<code>GL_ARRAY_BUFFER</code>) or element buffer
+(<code>GL_ELEMENT_ARRAY_BUFFER</code>) for the draw pass.</li>
+<li><strong>Compute Binding</strong>: Bind the buffer to an indexed
+target via
+<code>glBindBufferBase(GL_SHADER_STORAGE_BUFFER, binding_index, buffer_id)</code>.</li>
+<li><strong>Vertex Array Configuration</strong>: In the Vertex Array
+Object (VAO), bind the exact same buffer using
+<code>glVertexArrayVertexBuffer</code> or
+<code>glBindBuffer(GL_ARRAY_BUFFER, buffer_id)</code> and define its
+vertex attribute layouts using <code>glVertexAttribPointer</code>.</li>
+</ol>
+<h3 id="writing-vertices-in-the-compute-shader">Writing Vertices in the
+Compute Shader</h3>
+<p>Within the compute shader (GLSL), the target buffer is declared as a
+<code>buffer</code> block, typically using the <code>std430</code>
+layout for tightly packed, efficient memory alignment.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 430 core</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span>local_size_x <span class="op">=</span> <span class="dv">64</span><span class="op">,</span> local_size_y <span class="op">=</span> <span class="dv">1</span><span class="op">,</span> local_size_z <span class="op">=</span> <span class="dv">1</span><span class="op">)</span> <span class="dt">in</span><span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> Vertex <span class="op">{</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> position<span class="op">;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> normal<span class="op">;</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">std430</span><span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">writeonly</span> <span class="kw">buffer</span> OutputMesh <span class="op">{</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    Vertex <span class="dt">vertices</span><span class="op">[];</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint</span> triangleIndex <span class="op">=</span> <span class="bu">gl_GlobalInvocationID</span><span class="op">.</span><span class="fu">x</span><span class="op">;</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint</span> vertexOffset <span class="op">=</span> triangleIndex <span class="op">*</span> <span class="dv">3</span><span class="op">;</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Procedural generation logic for three vertices of a triangle</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vertices</span><span class="op">[</span>vertexOffset <span class="op">+</span> <span class="dv">0</span><span class="op">].</span><span class="fu">position</span> <span class="op">=</span> <span class="dt">vec4</span><span class="op">(...);</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vertices</span><span class="op">[</span>vertexOffset <span class="op">+</span> <span class="dv">1</span><span class="op">].</span><span class="fu">position</span> <span class="op">=</span> <span class="dt">vec4</span><span class="op">(...);</span></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vertices</span><span class="op">[</span>vertexOffset <span class="op">+</span> <span class="dv">2</span><span class="op">].</span><span class="fu">position</span> <span class="op">=</span> <span class="dt">vec4</span><span class="op">(...);</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>The shader calculates triangle vertices linearly or parametrically
+using thread invocation IDs (<code>gl_GlobalInvocationID</code>). Each
+thread can compute an entire triangle (writing three distinct
+<code>Vertex</code> structures) or handle a single vertex within a
+grid.</p>
+<h3 id="memory-synchronization">Memory Synchronization</h3>
+<p>Compute shaders execute asynchronously relative to the rest of the
+OpenGL pipeline. To prevent data hazards—such as the vertex puller
+reading unwritten or partially written vertex data—a memory barrier must
+be placed between the compute dispatch and the draw call:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Dispatch the compute shader</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>glUseProgram<span class="op">(</span>computeProgram<span class="op">);</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>glBindBufferBase<span class="op">(</span>GL_SHADER_STORAGE_BUFFER<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> meshBuffer<span class="op">);</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>glDispatchCompute<span class="op">(</span>numWorkgroupsX<span class="op">,</span> <span class="dv">1</span><span class="op">,</span> <span class="dv">1</span><span class="op">);</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="co">// Ensure compute writes are visible to vertex attribute fetching</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>glMemoryBarrier<span class="op">(</span>GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT <span class="op">|</span> GL_ELEMENT_ARRAY_BARRIER_BIT<span class="op">);</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="co">// Render the generated geometry</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>glUseProgram<span class="op">(</span>renderProgram<span class="op">);</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>glBindVertexArray<span class="op">(</span>meshVAO<span class="op">);</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>glDrawArrays<span class="op">(</span>GL_TRIANGLES<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> totalGeneratedVertices<span class="op">);</span></span></code></pre></div>
+<p>If the generated geometry uses an index buffer instead of unindexed
+arrays, include <code>GL_ELEMENT_ARRAY_BARRIER_BIT</code> in the memory
+barrier mask.</p>
+<h3 id="dynamic-counts-and-indirect-drawing">Dynamic Counts and Indirect
+Drawing</h3>
+<p>When the exact number of generated triangles is unknown ahead of
+time—such as in Marching Cubes or dynamic frustum culling
+algorithms—atomic counters inside the compute shader track the emitted
+vertex count.</p>
+<p>Rather than reading this count back to the CPU via
+<code>glGetBufferSubData</code> (which causes a pipeline stall), the
+compute shader writes the count directly into a
+<code>DrawArraysIndirectCommand</code> struct inside a
+<code>GL_DRAW_INDIRECT_BUFFER</code>. The draw pass then uses
+<code>glDrawArraysIndirect</code> or
+<code>glDrawElementsIndirect</code>, allowing entire compute-to-draw
+generation loops to reside entirely on the GPU without CPU
+intervention.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Fence Sync Objects for Lock-Free Ring Buffers - opengl</title>
+    <meta name="description" content="This article explains how OpenGL fence sync objects allow high-throughput, lock-free ring buffer management between CPU writes and GPU reads. By combining persistently mapped buffers with lightweight synchronization primitives, developers can continuously">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-fence-sync-objects-for-lock-free-ring-buffers">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Fence Sync Objects for Lock-Free Ring Buffers - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-fence-sync-objects-for-lock-free-ring-buffers" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how OpenGL fence sync objects allow high-throughput, lock-free ring buffer management between CPU writes and GPU reads. By combining persistently mapped buffers with lightweight synchronization primitives, developers can continuously" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-fence-sync-objects-for-lock-free-ring-buffers">OpenGL
+Fence Sync Objects for Lock-Free Ring Buffers</h1>
+<p>This article explains how OpenGL fence sync objects allow
+high-throughput, lock-free ring buffer management between CPU writes and
+GPU reads. By combining persistently mapped buffers with lightweight
+synchronization primitives, developers can continuously stream dynamic
+geometry and uniform data without pipeline stalls, buffer reallocations,
+or traditional operating system locks.</p>
+<h3 id="the-cpu-gpu-synchronization-problem">The CPU-GPU Synchronization
+Problem</h3>
+<p>In graphics programming, the CPU constructs scenes and prepares data,
+while the GPU asynchronously executes rendering commands queued in a
+pipeline. When the CPU must update dynamic data—such as particle
+positions, skeletal transforms, or uniform structures—simply writing to
+a shared buffer introduces a race condition. The CPU might overwrite
+data that a pending draw call on the GPU has not yet consumed.</p>
+<p>Traditional workarounds include buffer orphaning via
+<code>glBufferData</code> or calling blocking functions like
+<code>glFinish</code>. Buffer orphaning forces the driver to reallocate
+memory dynamically under the hood, increasing CPU overhead, while
+blocking synchronization stalls the entire execution pipeline, leaving
+execution units idle.</p>
+<h3 id="the-ring-buffer-architecture">The Ring Buffer Architecture</h3>
+<p>A ring buffer (or circular buffer) resolves this friction by
+allocating a single, contiguous GPU buffer partitioned into multiple
+fixed-size segments (commonly three or more to absorb frame latency).
+The CPU advances a write pointer through these segments in sequence,
+wrapping back to the beginning when it reaches the end:</p>
+<ol type="1">
+<li><strong>Segment Partitioning:</strong> A buffer of size <span
+class="math inline">\(S\)</span> is divided into <span
+class="math inline">\(N\)</span> distinct slices of size <span
+class="math inline">\(M = S / N\)</span>.</li>
+<li><strong>Persistent Mapping:</strong> The buffer is created using
+<code>glBufferStorage</code> with <code>GL_MAP_WRITE_BIT</code>,
+<code>GL_MAP_PERSISTENT_BIT</code>, and typically
+<code>GL_MAP_COHERENT_BIT</code>. This maps the buffer into CPU virtual
+address space for the application's lifetime, eliminating expensive
+repeated mapping calls.</li>
+<li><strong>Circular Traversal:</strong> The CPU writes chunk data to
+slice <span class="math inline">\(i\)</span>, dispatches work, moves to
+slice <span class="math inline">\((i + 1) \pmod N\)</span>, and only
+overwrites slice <span class="math inline">\(i\)</span> once the GPU has
+completed all work associated with it.</li>
+</ol>
+<h3 id="enabling-lock-free-coordination-with-fence-syncs">Enabling
+Lock-Free Coordination with Fence Syncs</h3>
+<p>Fence sync objects provide the bridge between the asynchronous CPU
+and GPU timelines without requiring thread locks or kernel-level
+synchronization primitives. In OpenGL, these are managed using
+<code>GLsync</code> objects via <code>glFenceSync</code>,
+<code>glClientWaitSync</code>, and <code>glDeleteSync</code>.</p>
+<h4 id="1-placing-the-fence">1. Placing the Fence</h4>
+<p>Immediately after dispatching the draw calls that read data from
+buffer slice <span class="math inline">\(i\)</span>, the CPU places a
+marker directly into the OpenGL command stream:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>GLsync fence <span class="op">=</span> glFenceSync<span class="op">(</span>GL_SYNC_GPU_COMMANDS_COMPLETE<span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span></code></pre></div>
+<p>Because the fence is placed after the draw call in the command queue,
+the GPU guarantees that this fence will transition to a signaled state
+only after all preceding commands—specifically the reads from slice
+<span class="math inline">\(i\)</span>—are entirely finished.</p>
+<h4 id="2-checking-segment-availability">2. Checking Segment
+Availability</h4>
+<p>When the CPU circular index wraps around and is about to write into
+slice <span class="math inline">\(i\)</span> again, it must verify that
+the corresponding fence has signaled before modifying memory:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>GLenum waitReturn <span class="op">=</span> glClientWaitSync<span class="op">(</span>fence<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span></code></pre></div>
+<p>By passing a timeout of <code>0</code>, the CPU performs an
+instantaneous, non-blocking poll.</p>
+<ul>
+<li>If <code>waitReturn</code> is <code>GL_ALREADY_SIGNALED</code> or
+<code>GL_CONDITION_SATISFIED</code>, the GPU is finished with that
+slice. The CPU safely deletes the old sync object
+(<code>glDeleteSync</code>), writes new data into the slice, and
+continues.</li>
+<li>If the poll returns <code>GL_TIMEOUT_EXPIRED</code>, the GPU is
+still processing data in that slice.</li>
+</ul>
+<h4 id="3-handling-backpressure">3. Handling Backpressure</h4>
+<p>Because the check can be performed non-blockingly, the architecture
+remains lock-free during steady-state operation. If the buffer is
+appropriately sized (e.g., enough segments to cover two to three frames
+of latency), the fence will almost always be signaled by the time the
+CPU loops back.</p>
+<p>If the GPU falls behind and a segment is still in use, the CPU can
+either:</p>
+<ul>
+<li>Execute alternate independent tasks while periodically polling
+(cooperative scheduling).</li>
+<li>Apply a targeted blocking wait using a non-zero timeout in
+<code>glClientWaitSync</code> to sleep until the GPU catches up, pacing
+the frame rate to the GPU's processing capacity.</li>
+</ul>
+<h3 id="key-benefits-of-the-pattern">Key Benefits of the Pattern</h3>
+<ul>
+<li><strong>Zero Allocation Overhead:</strong> Memory is allocated once
+at startup. The driver never has to reallocate memory or manage internal
+buffer copies behind the scenes.</li>
+<li><strong>No Cache Flushes:</strong> When combined with
+<code>GL_MAP_COHERENT_BIT</code>, writes directly reach GPU-accessible
+memory without requiring manual invocations of
+<code>glFlushMappedBufferRange</code>.</li>
+<li><strong>Maximized Hardware Utilization:</strong> The CPU and GPU
+operate completely decoupled. The CPU writes smoothly to available
+memory ahead of time, while the GPU reads queued workloads
+uninterrupted.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

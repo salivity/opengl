@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Low-Precision Lighting Issues in OpenGL ES - opengl</title>
+    <meta name="description" content="Computing lighting equations in OpenGL ES requires balancing rendering performance with visual fidelity, particularly when targeting mobile GPUs with limited resources. Utilizing low-precision data types—such as lowp or mediump—can significantly boost fra">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/low-precision-lighting-issues-in-open-gl-es">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Low-Precision Lighting Issues in OpenGL ES - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/low-precision-lighting-issues-in-open-gl-es" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Computing lighting equations in OpenGL ES requires balancing rendering performance with visual fidelity, particularly when targeting mobile GPUs with limited resources. Utilizing low-precision data types—such as lowp or mediump—can significantly boost fra" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="low-precision-lighting-issues-in-opengl-es">Low-Precision
+Lighting Issues in OpenGL ES</h1>
+<p>Computing lighting equations in OpenGL ES requires balancing
+rendering performance with visual fidelity, particularly when targeting
+mobile GPUs with limited resources. Utilizing low-precision data
+types—such as <code>lowp</code> or <code>mediump</code>—can
+significantly boost frame rates and reduce bandwidth, but it often
+introduces severe numerical artifacts into illumination models. This
+article outlines the primary precision issues that arise when
+calculating lighting equations with reduced-precision variables,
+including color banding, normalization errors, specular collapse, and
+distance attenuation breakdown.</p>
+<h3 id="color-banding-and-quantization">Color Banding and
+Quantization</h3>
+<p>The most visible consequence of low precision is color banding, or
+posterization. In OpenGL ES, the <code>lowp</code> qualifier often maps
+to an 8-bit fixed-point representation or a 10-bit float, providing a
+very narrow dynamic range. When computing smooth color transitions—such
+as standard Lambertian diffuse gradients (<span class="math inline">\(N
+\cdot L\)</span>)—the limited bit depth cannot represent the subtle,
+continuous fractional steps between neighboring pixels. Instead of a
+smooth gradation from light to shadow, the output snaps into noticeable,
+stepped bands of solid color.</p>
+<h3 id="normalization-and-dot-product-drift">Normalization and Dot
+Product Drift</h3>
+<p>Accurate lighting calculations depend on unit-length vectors for
+surface normals (<span class="math inline">\(N\)</span>), light
+directions (<span class="math inline">\(L\)</span>), and view vectors
+(<span class="math inline">\(V\)</span>). In low precision:</p>
+<ul>
+<li><strong>Vector Length Distortions:</strong> Calculating a vector's
+length requires squaring components, summing them, and computing the
+square root. In <code>lowp</code> (and occasionally <code>mediump</code>
+for large vectors), the intermediate squared terms can suffer from
+underflow or loss of fractional precision, yielding inaccurate
+magnitudes.</li>
+<li><strong>Faulty Normalization:</strong> When normal vectors deviate
+from unit length due to coarse arithmetic, the subsequent dot products
+(<span class="math inline">\(N \cdot L\)</span> or <span
+class="math inline">\(N \cdot H\)</span>) produce values outside the
+intended <span class="math inline">\([0.0, 1.0]\)</span> range. This
+leads to artificial brightening, blackened patches on curved surfaces,
+or sudden terminator lines where light abruptly cuts off.</li>
+</ul>
+<h3 id="specular-highlight-collapse">Specular Highlight Collapse</h3>
+<p>Specular components, such as those in the Phong or Blinn-Phong
+reflection models, rely on raising a dot product to an exponent: <span
+class="math inline">\((N \cdot H)^\alpha\)</span>.</p>
+<p>Low-precision variables struggle significantly with high
+exponents:</p>
+<ol type="1">
+<li><strong>Underflow:</strong> If the base value is slightly less than
+<span class="math inline">\(1.0\)</span>, raising it to a power like
+<span class="math inline">\(32\)</span> or <span
+class="math inline">\(64\)</span> results in extremely small fractions
+that easily underflow to zero in <code>lowp</code> or low-end
+<code>mediump</code> representations. This causes specular highlights to
+shrink drastically or vanish entirely.</li>
+<li><strong>Aliasing and Shimmering:</strong> Small changes in vertex
+positions or interpolated fragment values cause large jumps in the
+exponentiated result. When combined with low precision, specular spots
+flicker, exhibit jagged pixelated edges, or pop abruptly across frames
+as the camera moves.</li>
+</ol>
+<h3 id="attenuation-and-distance-overflow">Attenuation and Distance
+Overflow</h3>
+<p>Point and spot lights rely on attenuation factors calculated using
+the distance (<span class="math inline">\(d\)</span>) between the
+surface and the light source, typically using quadratic formulas such
+as:</p>
+<p><span class="math display">\[\text{Attenuation} = \frac{1.0}{k_c +
+k_l d + k_q d^2}\]</span></p>
+<p>In systems using half-precision (<code>mediump</code>), the maximum
+representable value is typically <span
+class="math inline">\(65,504\)</span>. If world-space coordinates are
+large, the squared distance <span class="math inline">\(d^2\)</span>
+rapidly exceeds this limit, resulting in arithmetic overflow. An
+overflow results in an infinity or NaN (Not a Number), producing visual
+artifacts such as black holes, harsh circular boundaries, or entirely
+unlit geometry. In <code>lowp</code>, where the maximum range can be as
+low as <span class="math inline">\(2.0\)</span>, computing world-space
+distances is practically impossible.</p>
+<h3 id="mitigation-strategies">Mitigation Strategies</h3>
+<p>To resolve these issues without sacrificing mobile performance:</p>
+<ul>
+<li>Reserve <code>highp</code> for world-space positions, depth values,
+and distance calculations to prevent attenuation overflow.</li>
+<li>Use <code>mediump</code> for normalized vectors (normals, tangents,
+directions) and dot products to preserve smooth gradients.</li>
+<li>Restrict <code>lowp</code> strictly to final, clamped color outputs
+or simple, pre-baked tint operations where dynamic range constraints do
+not cause visible artifacts.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

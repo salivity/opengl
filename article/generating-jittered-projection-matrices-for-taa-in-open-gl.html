@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generating Jittered Projection Matrices for TAA in OpenGL - opengl</title>
+    <meta name="description" content="Temporal Anti-Aliasing (TAA) mitigates geometric aliasing and specular shimmer by supersampling the scene over multiple consecutive frames. To implement TAA in OpenGL, the camera’s perspective projection matrix must be perturbed every frame by a sub-pixel">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/generating-jittered-projection-matrices-for-taa-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Generating Jittered Projection Matrices for TAA in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/generating-jittered-projection-matrices-for-taa-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Temporal Anti-Aliasing (TAA) mitigates geometric aliasing and specular shimmer by supersampling the scene over multiple consecutive frames. To implement TAA in OpenGL, the camera’s perspective projection matrix must be perturbed every frame by a sub-pixel" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="generating-jittered-projection-matrices-for-taa-in-opengl">Generating
+Jittered Projection Matrices for TAA in OpenGL</h1>
+<p>Temporal Anti-Aliasing (TAA) mitigates geometric aliasing and
+specular shimmer by supersampling the scene over multiple consecutive
+frames. To implement TAA in OpenGL, the camera’s perspective projection
+matrix must be perturbed every frame by a sub-pixel offset, allowing the
+rasterizer to sample different locations within each pixel footprint.
+This article details the mathematical adjustments required to apply
+sub-pixel jitter to an OpenGL projection matrix, explains sample
+distribution patterns, and addresses the handling of motion vectors for
+temporal reconstruction.</p>
+<h3 id="calculating-the-sub-pixel-jitter-offset">Calculating the
+Sub-Pixel Jitter Offset</h3>
+<p>A standard pixel occupies a <span class="math inline">\([0, 1] \times
+[0, 1]\)</span> area in viewport coordinates, which maps to a range of
+<span class="math inline">\([-1, 1]\)</span> in OpenGL Normalized Device
+Coordinates (NDC). Because NDC covers a span of <span
+class="math inline">\(2.0\)</span> units along both the X and Y axes,
+the size of a single pixel in NDC is:</p>
+<p><span class="math display">\[\text{PixelSize}_{\text{NDC}} = \left(
+\frac{2.0}{\text{ViewportWidth}}, \frac{2.0}{\text{ViewportHeight}}
+\right)\]</span></p>
+<p>To jitter the camera, choose a sub-pixel sample offset <span
+class="math inline">\((\delta_x, \delta_y)\)</span> where each component
+typically lies in the range <span class="math inline">\([-0.5,
+0.5]\)</span>. The required offset in NDC space is:</p>
+<p><span class="math display">\[J_x = \frac{2.0 \times
+\delta_x}{\text{ViewportWidth}}\]</span> <span
+class="math display">\[J_y = \frac{2.0 \times
+\delta_y}{\text{ViewportHeight}}\]</span></p>
+<p>Commonly, low-discrepancy sequences such as the Halton <span
+class="math inline">\((2, 3)\)</span> sequence are used to generate
+<span class="math inline">\((\delta_x, \delta_y)\)</span> across an 8-
+or 16-frame cycle. The raw Halton output in the range <span
+class="math inline">\([0, 1)\)</span> must be mapped to <span
+class="math inline">\([-0.5, 0.5)\)</span> by subtracting <span
+class="math inline">\(0.5\)</span>.</p>
+<h3 id="modifying-the-opengl-projection-matrix">Modifying the OpenGL
+Projection Matrix</h3>
+<p>In OpenGL, a standard symmetric perspective projection matrix takes
+the following form (row-major display):</p>
+<p><span class="math display">\[P = \begin{bmatrix}
+\frac{2n}{r - l} &amp; 0 &amp; \frac{r + l}{r - l} &amp; 0 \\
+0 &amp; \frac{2n}{t - b} &amp; \frac{t + b}{t - b} &amp; 0 \\
+0 &amp; 0 &amp; -\frac{f + n}{f - n} &amp; -\frac{2fn}{f - n} \\
+0 &amp; 0 &amp; -1 &amp; 0
+\end{bmatrix}\]</span></p>
+<p>Clipping coordinates are generated via <span
+class="math inline">\(V_{\text{clip}} = P \times
+V_{\text{eye}}\)</span>, and NDC is computed by the perspective
+divide:</p>
+<p><span class="math display">\[X_{\text{ndc}} =
+\frac{X_{\text{clip}}}{W_{\text{clip}}}, \quad Y_{\text{ndc}} =
+\frac{Y_{\text{clip}}}{W_{\text{clip}}}\]</span></p>
+<p>Because <span class="math inline">\(W_{\text{clip}} =
+-Z_{\text{eye}}\)</span> in standard OpenGL perspective projections, an
+offset directly added to NDC space requires adjusting the terms in the
+projection matrix that scale with <span
+class="math inline">\(W_{\text{clip}}\)</span>. Specifically, the third
+column elements (representing the perspective center shift) must be
+modified:</p>
+<p><span class="math display">\[P_{0,2}&#39; = P_{0,2} + J_x\]</span>
+<span class="math display">\[P_{1,2}&#39; = P_{1,2} + J_y\]</span></p>
+<p>In column-major matrix conventions (such as standard GLSL and OpenGL
+Mathematics / GLM):</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Column-major representation: matrix[column][row]</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>glm<span class="op">::</span>mat4 projection <span class="op">=</span> glm<span class="op">::</span>perspective<span class="op">(</span>fov<span class="op">,</span> aspectRatio<span class="op">,</span> nearPlane<span class="op">,</span> farPlane<span class="op">);</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> jitterX <span class="op">=</span> <span class="op">((</span>haltonX <span class="op">-</span> <span class="fl">0.5</span><span class="bu">f</span><span class="op">)</span> <span class="op">*</span> <span class="fl">2.0</span><span class="bu">f</span><span class="op">)</span> <span class="op">/</span> viewportWidth<span class="op">;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> jitterY <span class="op">=</span> <span class="op">((</span>haltonY <span class="op">-</span> <span class="fl">0.5</span><span class="bu">f</span><span class="op">)</span> <span class="op">*</span> <span class="fl">2.0</span><span class="bu">f</span><span class="op">)</span> <span class="op">/</span> viewportHeight<span class="op">;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>projection<span class="op">[</span><span class="dv">2</span><span class="op">][</span><span class="dv">0</span><span class="op">]</span> <span class="op">+=</span> jitterX<span class="op">;</span> <span class="co">// Row 0, Column 2</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>projection<span class="op">[</span><span class="dv">2</span><span class="op">][</span><span class="dv">1</span><span class="op">]</span> <span class="op">+=</span> jitterY<span class="op">;</span> <span class="co">// Row 1, Column 2</span></span></code></pre></div>
+<p>This modification directly introduces the NDC translation during the
+perspective divide without altering the field of view, focal length, or
+depth precision (<span class="math inline">\(Z_{\text{ndc}}\)</span>
+remains unaffected).</p>
+<h3 id="frustum-plane-alternative">Frustum Plane Alternative</h3>
+<p>Alternatively, if the projection matrix is constructed directly from
+asymmetric frustum boundaries <span class="math inline">\((left, right,
+bottom, top)\)</span>, the jitter can be introduced at the frustum
+definition:</p>
+<p><span class="math display">\[\text{offset}_x = \delta_x \times
+\frac{right - left}{\text{ViewportWidth}}\]</span> <span
+class="math display">\[\text{offset}_y = \delta_y \times \frac{top -
+bottom}{\text{ViewportHeight}}\]</span></p>
+<p>Applying these offsets updates the bounds to:</p>
+<p><span class="math display">\[left&#39; = left + \text{offset}_x,
+\quad right&#39; = right + \text{offset}_x\]</span> <span
+class="math display">\[bottom&#39; = bottom + \text{offset}_y, \quad
+top&#39; = top + \text{offset}_y\]</span></p>
+<p>Passing these adjusted boundaries to <code>glFrustum</code> produces
+an identical jittered projection matrix.</p>
+<h3 id="implications-for-velocity-buffers">Implications for Velocity
+Buffers</h3>
+<p>When rendering motion vectors for TAA temporal reprojection, the
+jitter must not be included in the velocity calculation. If the jitter
+is incorporated into pixel motion vectors, the temporal resolver will
+interpret camera jitter as surface motion, resulting in severe image
+smearing.</p>
+<p>Compute motion vectors using the unjittered current view-projection
+matrix and the unjittered previous view-projection matrix:</p>
+<p><span class="math display">\[\text{Velocity} =
+\text{NDC}_{\text{current, unjittered}} - \text{NDC}_{\text{previous,
+unjittered}}\]</span></p>
+<p>If unjittered matrices are unavailable during velocity calculation,
+subtract the current frame's <span class="math inline">\((J_x,
+J_y)\)</span> and add the previous frame's <span
+class="math inline">\((J_x, J_y)\)</span> manually in the motion vector
+shader.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

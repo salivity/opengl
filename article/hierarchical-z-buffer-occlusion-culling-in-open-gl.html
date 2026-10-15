@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hierarchical Z-Buffer Occlusion Culling in OpenGL - opengl</title>
+    <meta name="description" content="Hierarchical Z-Buffering (HZB) enables rapid GPU-driven occlusion culling by testing simplified object bounding boxes against a multi-resolution depth pyramid within an OpenGL compute shader. Instead of relying on slow CPU readbacks or hardware occlusion">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/hierarchical-z-buffer-occlusion-culling-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Hierarchical Z-Buffer Occlusion Culling in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/hierarchical-z-buffer-occlusion-culling-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Hierarchical Z-Buffering (HZB) enables rapid GPU-driven occlusion culling by testing simplified object bounding boxes against a multi-resolution depth pyramid within an OpenGL compute shader. Instead of relying on slow CPU readbacks or hardware occlusion" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="hierarchical-z-buffer-occlusion-culling-in-opengl">Hierarchical
+Z-Buffer Occlusion Culling in OpenGL</h1>
+<p>Hierarchical Z-Buffering (HZB) enables rapid GPU-driven occlusion
+culling by testing simplified object bounding boxes against a
+multi-resolution depth pyramid within an OpenGL compute shader. Instead
+of relying on slow CPU readbacks or hardware occlusion queries that
+stall the rendering pipeline, an HZB compute pass tests tens of
+thousands of bounding volumes in parallel. By selecting a depth mipmap
+level that corresponds to the screen-space size of an object, the GPU
+determines visibility using a single texture fetch, selectively writing
+visible draw commands into an indirect draw buffer before main rendering
+begins.</p>
+<h3 id="the-hierarchical-depth-pyramid">The Hierarchical Depth
+Pyramid</h3>
+<p>The foundation of HZB is a depth mipmap chain where each texel at mip
+level <span class="math inline">\(n+1\)</span> stores the conservative
+depth of a <span class="math inline">\(2 \times 2\)</span> block of
+texels from mip level <span class="math inline">\(n\)</span>. In a
+standard depth configuration (near = 0, far = 1), conservative occlusion
+culling requires finding the maximum depth value within the texel
+neighborhood. If Reverse-Z is employed (near = 1, far = 0, which
+provides better floating-point precision), the reduction function uses
+the minimum depth.</p>
+<p>In OpenGL, this pyramid is generated immediately after an early depth
+pre-pass or from the previous frame's depth buffer. A compute shader or
+a series of downsampling passes reads the source depth buffer and writes
+to successive mip levels of an image texture (<code>GL_R32F</code>),
+computing:</p>
+<p><span class="math display">\[\text{texel}_{n+1}(x, y) = \max_{i,j \in
+\{0, 1\}} \left( \text{texel}_n(2x + i, 2y + j) \right)\]</span></p>
+<h3 id="screen-space-bounding-box-projection">Screen-Space Bounding Box
+Projection</h3>
+<p>Within the culling compute shader (<code>glDispatchCompute</code>),
+each invocation processes one object or meshlet. The compute thread
+performs the following steps:</p>
+<ol type="1">
+<li><strong>Transform Bounding Volume:</strong> The eight corners of the
+object's Axis-Aligned Bounding Box (AABB) in world space are transformed
+into clip space using the view-projection matrix.</li>
+<li><strong>Frustum Culling:</strong> If all vertices fall outside the
+view frustum boundaries, the bounding box is discarded immediately.</li>
+<li><strong>Perspective Division and Screen Mapping:</strong> Vertices
+are converted to Normalized Device Coordinates (NDC) by dividing by
+<span class="math inline">\(w\)</span>. The coordinates are then mapped
+to <span class="math inline">\([0, 1]\)</span> screen space to establish
+a 2D screen-space bounding rectangle defined by <span
+class="math inline">\([u_{\min}, v_{\min}]\)</span> and <span
+class="math inline">\([u_{\max}, v_{\max}]\)</span>.</li>
+<li><strong>Determine Nearest Depth:</strong> The minimum <span
+class="math inline">\(z\)</span> coordinate across all transformed
+corners in NDC represents the closest point of the bounding box to the
+camera (<span class="math inline">\(z_{\text{nearest}}\)</span>).</li>
+</ol>
+<h3 id="constant-time-footprint-sampling">Constant-Time Footprint
+Sampling</h3>
+<p>The key efficiency of HZB is converting a potentially large screen
+area into a constant number of depth comparisons:</p>
+<ol type="1">
+<li><strong>Calculate Dimensions:</strong> The pixel width and height of
+the bounding rectangle are computed using the viewport resolution: <span
+class="math display">\[\text{width} = (u_{\max} - u_{\min}) \times
+\text{viewWidth}\]</span> <span class="math display">\[\text{height} =
+(v_{\max} - v_{\min}) \times \text{viewHeight}\]</span></li>
+<li><strong>Mip Level Selection:</strong> The algorithm selects a mipmap
+level <span class="math inline">\(L\)</span> such that the bounding
+rectangle covers no more than a <span class="math inline">\(2 \times
+2\)</span> pixel area on that level: <span class="math display">\[L =
+\lfloor \log_2(\max(\text{width}, \text{height})) \rfloor\]</span></li>
+<li><strong>Texture Sampling:</strong> At mip level <span
+class="math inline">\(L\)</span>, the compute shader reads the depth
+values covering the bounding box. Since the mip selection bounds the
+footprint to roughly <span class="math inline">\(2 \times 2\)</span>
+texels, sampling can be done with a small, fixed number of texture
+gathers or point-samples (typically 4 samples).</li>
+<li><strong>Visibility Evaluation:</strong> The maximum depth from the
+sampled footprint is compared against <span
+class="math inline">\(z_{\text{nearest}}\)</span>. If <span
+class="math inline">\(z_{\text{nearest}}\)</span> is greater than the
+sampled HZB depth, the bounding box lies entirely behind geometry
+already present in the depth buffer and is marked as occluded.</li>
+</ol>
+<h3 id="opengl-compute-pass-and-indirect-execution">OpenGL Compute Pass
+and Indirect Execution</h3>
+<p>The result of the visibility test directly informs the rendering
+pipeline without CPU intervention. The compute shader manages an array
+of <code>DrawElementsIndirectCommand</code> structs stored in a Shader
+Storage Buffer Object (SSBO):</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">std430</span><span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">writeonly</span> <span class="kw">buffer</span> DrawCommands <span class="op">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    DrawElementsIndirectCommand commands<span class="op">[];</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
+<p>When an instance passes both frustum and HZB occlusion tests, the
+compute shader increments an atomic counter (<code>atomicAdd</code>) to
+allocate an output slot, writes the instance data, and sets the
+<code>instanceCount</code> parameter of the indirect command.</p>
+<p>Following the compute dispatch, a memory barrier is placed via
+<code>glMemoryBarrier(GL_COMMAND_BARRIER_BIT | GL_SHADER_STORAGE_BARRIER_BIT)</code>.
+The application then executes <code>glMultiDrawElementsIndirect</code>,
+rendering only the surviving visible geometry with zero CPU-GPU
+synchronization stalls.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

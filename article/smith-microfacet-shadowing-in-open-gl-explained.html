@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smith Microfacet Shadowing in OpenGL Explained - opengl</title>
+    <meta name="description" content="This article explores how the Smith geometric attenuation function models microfacet self-shadowing and masking within physically based rendering (PBR) pipelines in OpenGL. Microfacet theory assumes rough surfaces consist of microscopic specular facets, m">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/smith-microfacet-shadowing-in-open-gl-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Smith Microfacet Shadowing in OpenGL Explained - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/smith-microfacet-shadowing-in-open-gl-explained" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explores how the Smith geometric attenuation function models microfacet self-shadowing and masking within physically based rendering (PBR) pipelines in OpenGL. Microfacet theory assumes rough surfaces consist of microscopic specular facets, m" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="smith-microfacet-shadowing-in-opengl-explained">Smith Microfacet
+Shadowing in OpenGL Explained</h1>
+<p>This article explores how the Smith geometric attenuation function
+models microfacet self-shadowing and masking within physically based
+rendering (PBR) pipelines in OpenGL. Microfacet theory assumes rough
+surfaces consist of microscopic specular facets, many of which occlude
+one another depending on surface roughness and view angles. By
+decoupling or correlating the occlusion of incoming light rays and
+outgoing viewing rays, the Smith formulation provides an
+energy-conserving statistical approximation of surface self-occlusion
+that can be evaluated efficiently within standard GLSL fragment
+shaders.</p>
+<h3 id="the-physics-of-masking-and-shadowing">The Physics of Masking and
+Shadowing</h3>
+<p>In microfacet theory (such as the Cook-Torrance specular BRDF), light
+reflection is governed by three primary factors: normal distribution
+(<span class="math inline">\(D\)</span>), Fresnel reflectance (<span
+class="math inline">\(F\)</span>), and geometric attenuation (<span
+class="math inline">\(G\)</span>). As light interacts with a rough
+macro-surface, microscopic peaks and valleys cause two distinct forms of
+geometric occlusion:</p>
+<ol type="1">
+<li><strong>Shadowing:</strong> Incoming light rays from the light
+direction (<span class="math inline">\(L\)</span>) are intercepted by
+neighboring microfacets before they can strike a given microfacet
+oriented toward the half-vector (<span
+class="math inline">\(H\)</span>).</li>
+<li><strong>Masking:</strong> Light that successfully reflects off an
+oriented microfacet toward the observer (<span
+class="math inline">\(V\)</span>) is blocked by adjacent microfacets
+before it can leave the surface.</li>
+</ol>
+<p>Without accounting for these effects, microfacet distribution
+functions overestimate reflected radiance at grazing angles, violating
+the conservation of energy and creating unnatural, overly bright
+silhouettes.</p>
+<h3 id="the-smith-formulation">The Smith Formulation</h3>
+<p>The Smith formulation solves this by statistically estimating the
+fraction of microfacets that are visible from a given direction. Rather
+than evaluating complex individual micro-geometries, it derives
+visibility based on the roughness parameter (<span
+class="math inline">\(\alpha\)</span>) and the macro-surface normal
+(<span class="math inline">\(N\)</span>).</p>
+<h4 id="separable-smith-model">Separable Smith Model</h4>
+<p>Originally, the Smith approach assumed that shadowing and masking are
+independent events. The joint geometric attenuation factor <span
+class="math inline">\(G(L, V)\)</span> is expressed as the product of
+two separate monodirectional shadowing functions, <span
+class="math inline">\(G_1\)</span>:</p>
+<p><span class="math display">\[G(L, V) = G_1(L) \cdot
+G_1(V)\]</span></p>
+<p>Where:</p>
+<ul>
+<li><span class="math inline">\(G_1(L)\)</span> is the probability that
+a microfacet is illuminated (shadowing).</li>
+<li><span class="math inline">\(G_1(V)\)</span> is the probability that
+a microfacet is visible to the camera (masking).</li>
+</ul>
+<h4 id="height-correlated-smith-model">Height-Correlated Smith
+Model</h4>
+<p>In reality, microfacets positioned higher on the surface are
+simultaneously less likely to be shadowed and less likely to be masked.
+Modern real-time engines using OpenGL prefer the height-correlated Smith
+model derived by Eric Heitz, which accounts for the statistical
+correlation between masking and shadowing:</p>
+<p><span class="math display">\[G(L, V) = \frac{2(N \cdot L)(N \cdot
+V)}{(N \cdot V)\sqrt{\alpha^2 + (1 - \alpha^2)(N \cdot L)^2} + (N \cdot
+L)\sqrt{\alpha^2 + (1 - \alpha^2)(N \cdot V)^2}}\]</span></p>
+<p>This prevents the separable formulation from over-darkening rough
+surfaces at grazing angles.</p>
+<h3 id="integration-in-opengl-shaders">Integration in OpenGL
+Shaders</h3>
+<p>In an OpenGL fragment shader implementing Cook-Torrance specular
+BRDF, the specular term is typically defined as:</p>
+<p><span class="math display">\[f_{spec} = \frac{D(H) \cdot F(V, H)
+\cdot G(L, V)}{4(N \cdot L)(N \cdot V)}\]</span></p>
+<p>Evaluating <span class="math inline">\(G(L, V)\)</span> independently
+often involves redundant computations with the denominator <span
+class="math inline">\(4(N \cdot L)(N \cdot V)\)</span>. Shading
+languages typically combine geometric attenuation with the Cook-Torrance
+denominator into a single visibility term, <span
+class="math inline">\(V(L, V)\)</span>:</p>
+<p><span class="math display">\[V(L, V) = \frac{G(L, V)}{4(N \cdot L)(N
+\cdot V)}\]</span></p>
+<p>Using the height-correlated GGX formulation, this reduces in GLSL
+to:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> <span class="fu">geometrySmithCorrelated</span><span class="op">(</span><span class="dt">float</span> NdotV<span class="op">,</span> <span class="dt">float</span> NdotL<span class="op">,</span> <span class="dt">float</span> roughness<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> a2 <span class="op">=</span> roughness <span class="op">*</span> roughness<span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> lambdaV <span class="op">=</span> NdotL <span class="op">*</span> <span class="bu">sqrt</span><span class="op">(</span>a2 <span class="op">+</span> <span class="op">(</span><span class="fl">1.0</span> <span class="op">-</span> a2<span class="op">)</span> <span class="op">*</span> <span class="op">(</span>NdotV <span class="op">*</span> NdotV<span class="op">));</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> lambdaL <span class="op">=</span> NdotV <span class="op">*</span> <span class="bu">sqrt</span><span class="op">(</span>a2 <span class="op">+</span> <span class="op">(</span><span class="fl">1.0</span> <span class="op">-</span> a2<span class="op">)</span> <span class="op">*</span> <span class="op">(</span>NdotL <span class="op">*</span> NdotL<span class="op">));</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> <span class="fl">0.5</span> <span class="op">/</span> <span class="op">(</span>lambdaV <span class="op">+</span> lambdaL<span class="op">);</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>Alternatively, many real-time implementations use the Schlick
+approximation of the Smith model, known as
+<strong>Smith-Schlick</strong>:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> <span class="fu">geometrySchlickGGX</span><span class="op">(</span><span class="dt">float</span> NdotV<span class="op">,</span> <span class="dt">float</span> roughness<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> r <span class="op">=</span> roughness <span class="op">+</span> <span class="fl">1.0</span><span class="op">;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> k <span class="op">=</span> <span class="op">(</span>r <span class="op">*</span> r<span class="op">)</span> <span class="op">/</span> <span class="fl">8.0</span><span class="op">;</span> <span class="co">// Optimized for direct lighting</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> denom <span class="op">=</span> NdotV <span class="op">*</span> <span class="op">(</span><span class="fl">1.0</span> <span class="op">-</span> k<span class="op">)</span> <span class="op">+</span> k<span class="op">;</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> NdotV <span class="op">/</span> denom<span class="op">;</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> <span class="fu">geometrySmith</span><span class="op">(</span><span class="dt">float</span> NdotV<span class="op">,</span> <span class="dt">float</span> NdotL<span class="op">,</span> <span class="dt">float</span> roughness<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> ggx1 <span class="op">=</span> <span class="fu">geometrySchlickGGX</span><span class="op">(</span>NdotV<span class="op">,</span> roughness<span class="op">);</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> ggx2 <span class="op">=</span> <span class="fu">geometrySchlickGGX</span><span class="op">(</span>NdotL<span class="op">,</span> roughness<span class="op">);</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> ggx1 <span class="op">*</span> ggx2<span class="op">;</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="behavioral-characteristics">Behavioral Characteristics</h3>
+<ul>
+<li><strong>Grazing Angles:</strong> As the angle between the surface
+normal and the view vector (<span class="math inline">\(N \cdot
+V\)</span>) approaches zero, <span class="math inline">\(G_1(V)\)</span>
+drops toward zero, aggressively attenuating the reflection. This
+directly balances the Fresnel factor (<span
+class="math inline">\(F\)</span>), which surges toward 1.0 at grazing
+angles, avoiding unrealistic glare.</li>
+<li><strong>Roughness Scaling:</strong> On smoother surfaces (<span
+class="math inline">\(\alpha \approx 0\)</span>), self-occlusion is
+negligible except at extreme edges. On rougher surfaces (<span
+class="math inline">\(\alpha \approx 1\)</span>), micro-level peaks and
+valleys cause substantial light scattering, resulting in lower overall
+specular intensity and a broader, softer highlight spread across the
+surface.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

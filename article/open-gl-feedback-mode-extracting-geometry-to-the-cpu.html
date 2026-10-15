@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Feedback Mode: Extracting Geometry to the CPU - opengl</title>
+    <meta name="description" content="In early graphics programming, OpenGL was predominantly designed as a write-only pipeline where vertex data was transformed and immediately rasterized to the display. Feedback mode provided a rare exception to this unidirectional flow, allowing developers">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-feedback-mode-extracting-geometry-to-the-cpu">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Feedback Mode: Extracting Geometry to the CPU - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-feedback-mode-extracting-geometry-to-the-cpu" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In early graphics programming, OpenGL was predominantly designed as a write-only pipeline where vertex data was transformed and immediately rasterized to the display. Feedback mode provided a rare exception to this unidirectional flow, allowing developers" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-feedback-mode-extracting-geometry-to-the-cpu">OpenGL
+Feedback Mode: Extracting Geometry to the CPU</h1>
+<p>In early graphics programming, OpenGL was predominantly designed as a
+write-only pipeline where vertex data was transformed and immediately
+rasterized to the display. Feedback mode provided a rare exception to
+this unidirectional flow, allowing developers to intercept geometry
+after it had passed through transformation, lighting, and clipping
+stages, and return it directly to CPU memory. This article explains how
+OpenGL feedback mode functioned, how applications configured memory
+buffers to parse geometric output, and why this legacy mechanism was
+essential before the advent of modern programmable shaders and transform
+feedback.</p>
+<h2 id="the-architectural-need-for-feedback-mode">The Architectural Need
+for Feedback Mode</h2>
+<p>In early 3D architectures, geometric transformations—including
+modelview matrix multiplication, projection, perspective division, and
+viewport mapping—were computationally expensive operations. Workstations
+often featured dedicated hardware for vertex transformations, while the
+host CPU was significantly slower.</p>
+<p>If an application needed to know where primitives ended up on screen
+for tasks like collision detection, ray-casting selection, spatial
+partitioning, or exporting transformed models, the CPU would
+traditionally have to duplicate the graphics hardware's transformation
+math. OpenGL feedback mode bypassed this redundancy by allowing the
+hardware transformation pipeline to process the geometry and write the
+resulting primitive coordinates back into system memory instead of
+rasterizing them to the frame buffer.</p>
+<h2 id="initiating-and-configuring-feedback-mode">Initiating and
+Configuring Feedback Mode</h2>
+<p>To retrieve geometry calculations, an application transitioned OpenGL
+from its default rendering state into feedback state using a dedicated
+sequence of calls.</p>
+<h3 id="1-allocating-the-feedback-buffer">1. Allocating the Feedback
+Buffer</h3>
+<p>Before switching modes, the CPU allocated an array of floating-point
+values and registered it with OpenGL using
+<code>glFeedbackBuffer</code>:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>GLfloat feedbackBuffer<span class="op">[</span><span class="dv">1024</span><span class="op">];</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>glFeedbackBuffer<span class="op">(</span><span class="dv">1024</span><span class="op">,</span> GL_3D<span class="op">,</span> feedbackBuffer<span class="op">);</span></span></code></pre></div>
+<p>The function took three parameters: the buffer size, a format type
+(such as <code>GL_2D</code>, <code>GL_3D</code>,
+<code>GL_3D_COLOR</code>, or <code>GL_4D_COLOR_TEXTURE</code>), and a
+pointer to the allocated memory. The format type dictated how many
+values OpenGL would record per vertex. For example, <code>GL_3D</code>
+instructed OpenGL to record window coordinates <span
+class="math inline">\(X\)</span>, <span
+class="math inline">\(Y\)</span>, and <span
+class="math inline">\(Z\)</span> for every generated vertex.</p>
+<h3 id="2-changing-the-render-mode">2. Changing the Render Mode</h3>
+<p>The application then called <code>glRenderMode</code> to switch
+execution:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>glRenderMode<span class="op">(</span>GL_FEEDBACK<span class="op">);</span></span></code></pre></div>
+<p>While in <code>GL_FEEDBACK</code> mode, normal drawing commands (such
+as <code>glBegin()</code>, <code>glVertex3f()</code>, and
+<code>glEnd()</code>) did not produce pixels on the screen. Instead, the
+primitives traversed the geometry pipeline, were clipped against the
+view frustum, and their resulting transformed window coordinates were
+written into the array.</p>
+<h2 id="the-tokenized-data-stream">The Tokenized Data Stream</h2>
+<p>OpenGL organized the feedback buffer as a linear stream of
+floating-point numbers prefixed by distinct identification tokens.
+Because primitives could be clipped or culled, the number of vertices
+output by the pipeline was not guaranteed to match the number sent by
+the application.</p>
+<p>When a primitive was processed, OpenGL wrote a primitive token,
+followed by the vertex data:</p>
+<ul>
+<li><strong>Tokens:</strong> Constants cast to floats, such as
+<code>GL_POINT_TOKEN</code>, <code>GL_LINE_TOKEN</code>,
+<code>GL_POLYGON_TOKEN</code>, or <code>GL_BITMAP_TOKEN</code>.</li>
+<li><strong>Vertex Data:</strong> The coordinates and optional
+color/texture attributes defined by the format type selected in
+<code>glFeedbackBuffer</code>.</li>
+</ul>
+<p>For example, a triangle processed under <code>GL_3D</code> would
+insert <code>GL_POLYGON_TOKEN</code>, followed by a float indicating the
+vertex count (3), followed by nine floats representing the <span
+class="math inline">\((X, Y, Z)\)</span> window coordinates for the
+three vertices. If clipping occurred against the view frustum, the
+pipeline might generate a polygon with more than three vertices to
+account for the clipped edges, and the token stream accurately reflected
+this newly generated geometry.</p>
+<p>Developers could also manually inject markers into the stream using
+<code>glPassThrough(GLfloat token)</code>. This inserted a
+<code>GL_PASS_THROUGH_TOKEN</code> followed by the specified value,
+enabling the CPU to correlate parts of the parsed buffer with specific
+objects in the scene graph.</p>
+<h2 id="returning-to-render-mode-and-parsing">Returning to Render Mode
+and Parsing</h2>
+<p>To finalize data collection, the application switched back to normal
+rendering:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>GLint count <span class="op">=</span> glRenderMode<span class="op">(</span>GL_RENDER<span class="op">);</span></span></code></pre></div>
+<p>Calling <code>glRenderMode(GL_RENDER)</code> returned the total
+number of floating-point values written to the feedback buffer. If the
+returned count was negative or exceeded the buffer capacity, an overflow
+had occurred, signaling that the buffer needed to be resized.</p>
+<p>The CPU then parsed the linear array sequentially:</p>
+<ol type="1">
+<li>Read the token identifier.</li>
+<li>Determine the primitive type and read the associated vertex
+count.</li>
+<li>Extract the transformed floating-point coordinates.</li>
+<li>Advance the array pointer based on the primitive type and coordinate
+format.</li>
+<li>Repeat until all returned elements were processed.</li>
+</ol>
+<h2 id="limitations-and-modern-replacement">Limitations and Modern
+Replacement</h2>
+<p>Feedback mode was fully synchronous. Switching to
+<code>GL_FEEDBACK</code> and reading back values caused pipeline stalls,
+forcing the CPU to wait until the GPU completed all pending geometry
+work. Furthermore, consumer GPUs rarely optimized this path in hardware,
+frequently falling back to software emulation in the driver.</p>
+<p>With the introduction of OpenGL 3.0, feedback mode was deprecated and
+subsequently removed from the core profile. It was superseded by
+<strong>Transform Feedback</strong>
+(<code>GL_TRANSFORM_FEEDBACK</code>), which captures vertex data after
+vertex or geometry shader execution. Unlike legacy feedback mode, modern
+transform feedback writes raw binary attributes into dedicated GPU
+buffer objects (VBOs), keeping data on the GPU for subsequent rendering
+passes or compute operations without incurring CPU-side readback
+overhead.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

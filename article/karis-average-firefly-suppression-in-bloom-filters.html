@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Karis Average Firefly Suppression in Bloom Filters - opengl</title>
+    <meta name="description" content="Physically based bloom pipelines in modern OpenGL renderers rely on multi-pass downsampling and upsampling chains to produce smooth, photorealistic light bleeding from high dynamic range (HDR) light sources. However, extremely bright subpixel specular hig">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/karis-average-firefly-suppression-in-bloom-filters">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Karis Average Firefly Suppression in Bloom Filters - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/karis-average-firefly-suppression-in-bloom-filters" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Physically based bloom pipelines in modern OpenGL renderers rely on multi-pass downsampling and upsampling chains to produce smooth, photorealistic light bleeding from high dynamic range (HDR) light sources. However, extremely bright subpixel specular hig" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="karis-average-firefly-suppression-in-bloom-filters">Karis
+Average Firefly Suppression in Bloom Filters</h1>
+<p>Physically based bloom pipelines in modern OpenGL renderers rely on
+multi-pass downsampling and upsampling chains to produce smooth,
+photorealistic light bleeding from high dynamic range (HDR) light
+sources. However, extremely bright subpixel specular highlights often
+produce distracting temporal artifacts and swimming noise, commonly
+known as "fireflies." This article explains what the Karis average is,
+why fireflies emerge in physically based bloom filters, and how this
+luminance-weighted filtering technique effectively mitigates
+single-pixel energy spikes without muddying the overall lighting
+presentation.</p>
+<h2 id="the-firefly-problem-in-hdr-bloom">The Firefly Problem in HDR
+Bloom</h2>
+<p>In a physically based lighting pipeline, HDR surfaces, emissive
+materials, and specular reflections can emit luminance values orders of
+magnitude higher than standard monitor capabilities (e.g., values
+exceeding 1,000.0 or 10,000.0 alongside standard mid-tones around
+1.0).</p>
+<p>When these values occupy only one or two pixels—typical of fine
+metallic edges or sharp roughness reflections—standard downsampling
+algorithms struggle. A naive box filter or standard bilinear downsample
+takes a mathematical mean of neighboring pixels. Because the intensity
+of an HDR firefly is disproportionately high, a single pixel can
+dominate an entire <span class="math inline">\(2 \times 2\)</span> or
+<span class="math inline">\(4 \times 4\)</span> downsampled quad. As the
+camera moves even slightly, this high-energy highlight enters and leaves
+different pixel footprints, causing the downsampled bloom mip chain to
+flicker, pop, and pulse violently between frames.</p>
+<h2 id="what-is-the-karis-average">What is the Karis Average?</h2>
+<p>The Karis average is a partial tone-mapping, luminance-weighted
+downsampling approach introduced by Brian Karis at Epic Games. Rather
+than averaging neighboring samples linearly, the Karis average
+calculates a weighting factor for each sample based on its perceived
+brightness.</p>
+<p>The formula typically relies on a rational function derived from
+simple Reinhard tone mapping:</p>
+<p><span class="math display">\[w_i = \frac{1}{1 + L(c_i)}\]</span></p>
+<p>Where:</p>
+<ul>
+<li><span class="math inline">\(c_i\)</span> is the sampled HDR color
+vector (RGB).</li>
+<li><span class="math inline">\(L(c_i)\)</span> is the scalar perceived
+luminance of that color, usually computed via standard luminance
+weights: <span class="math inline">\(\text{dot}(c_i, \text{vec3}(0.2126,
+0.7152, 0.0722))\)</span>.</li>
+<li><span class="math inline">\(w_i\)</span> is the resulting scalar
+weight applied to sample <span class="math inline">\(c_i\)</span>.</li>
+</ul>
+<p>The filtered output color <span
+class="math inline">\(C_{out}\)</span> is then calculated as the
+weighted sum divided by the sum of all weights:</p>
+<p><span class="math display">\[C_{out} = \frac{\sum_{i} (w_i \cdot
+c_i)}{\sum_{i} w_i}\]</span></p>
+<h2 id="how-the-karis-average-suppresses-fireflies">How the Karis
+Average Suppresses Fireflies</h2>
+<p>The mechanism that suppresses fireflies is the dampening effect the
+weight <span class="math inline">\(w_i\)</span> has on high-energy
+pixels:</p>
+<ol type="1">
+<li><strong>Energy Compression:</strong> For pixels with low or moderate
+luminance (<span class="math inline">\(L \approx 1.0\)</span>), the
+weight remains close to <span class="math inline">\(0.5\)</span>,
+allowing neighboring non-extreme pixels to retain equal influence. For a
+firefly pixel with extreme luminance (<span class="math inline">\(L =
+10,000.0\)</span>), the weight drops to roughly <span
+class="math inline">\(0.0001\)</span>.</li>
+<li><strong>Preventing Quad Takeover:</strong> In standard averaging,
+one pixel with a value of <span class="math inline">\(10,000.0\)</span>
+surrounded by three pixels with values of <span
+class="math inline">\(1.0\)</span> produces an average value of <span
+class="math inline">\(2,500.75\)</span>. With the Karis average,
+multiplying by the luminance weight effectively squashes the extreme
+pixel down to approximately <span class="math inline">\(1.0\)</span>
+during the intermediate accumulation, preventing it from overwhelming
+the localized average.</li>
+<li><strong>Temporal Stability:</strong> By dampening individual
+subpixel spikes before they spread across the mip chain, the localized
+energy level remains stable across consecutive frames, removing the
+jarring flickering effect without destroying the perceived bloom
+effect.</li>
+</ol>
+<h2 id="implementation-in-an-opengl-bloom-chain">Implementation in an
+OpenGL Bloom Chain</h2>
+<p>Modern bloom techniques, such as the 13-tap tent filter popularized
+by Jorge Jimenez, construct a mip chain by downsampling the screen-space
+HDR buffer through multiple iterations.</p>
+<p>Because the Karis average alters the linear radiance distribution, it
+should <strong>only</strong> be executed during the initial downsample
+pass (from the full-resolution HDR framebuffer to the first mip level).
+Applying the Karis average across every downsampling stage would
+progressively dim the entire bloom buffer and violate energy
+conservation principles. Once fireflies are suppressed in the first
+downsampling stage, subsequent downsampling and upsampling passes can
+safely use standard linear weighted filters.</p>
+<p>In an OpenGL fragment shader for the first downsample pass, a 13-tap
+filter is typically divided into overlapping groups of four samples
+(quads). The Karis average is computed per quad to retain local
+contrast:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Relative luminance helper</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> <span class="fu">Luminance</span><span class="op">(</span><span class="dt">vec3</span> color<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> <span class="bu">dot</span><span class="op">(</span>color<span class="op">,</span> <span class="dt">vec3</span><span class="op">(</span><span class="fl">0.2126</span><span class="op">,</span> <span class="fl">0.7152</span><span class="op">,</span> <span class="fl">0.0722</span><span class="op">));</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="co">// Karis weight helper</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> <span class="fu">KarisWeight</span><span class="op">(</span><span class="dt">vec3</span> color<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> <span class="fl">1.0</span> <span class="op">/</span> <span class="op">(</span><span class="fl">1.0</span> <span class="op">+</span> <span class="fu">Luminance</span><span class="op">(</span>color<span class="op">));</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="co">// Example quad downsample using Karis averaging</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> <span class="fu">DownsampleQuad</span><span class="op">(</span><span class="dt">vec3</span> c0<span class="op">,</span> <span class="dt">vec3</span> c1<span class="op">,</span> <span class="dt">vec3</span> c2<span class="op">,</span> <span class="dt">vec3</span> c3<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> w0 <span class="op">=</span> <span class="fu">KarisWeight</span><span class="op">(</span>c0<span class="op">);</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> w1 <span class="op">=</span> <span class="fu">KarisWeight</span><span class="op">(</span>c1<span class="op">);</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> w2 <span class="op">=</span> <span class="fu">KarisWeight</span><span class="op">(</span>c2<span class="op">);</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> w3 <span class="op">=</span> <span class="fu">KarisWeight</span><span class="op">(</span>c3<span class="op">);</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> <span class="op">(</span>c0 <span class="op">*</span> w0 <span class="op">+</span> c1 <span class="op">*</span> w1 <span class="op">+</span> c2 <span class="op">*</span> w2 <span class="op">+</span> c3 <span class="op">*</span> w3<span class="op">)</span> <span class="op">/</span> <span class="op">(</span>w0 <span class="op">+</span> w1 <span class="op">+</span> w2 <span class="op">+</span> w3<span class="op">);</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>By computing and applying these weights during the initial
+downsample, the OpenGL bloom filter prevents extreme isolated luminance
+spikes from degrading visual fidelity while maintaining the broad,
+smooth glow expected from physically based rendering.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

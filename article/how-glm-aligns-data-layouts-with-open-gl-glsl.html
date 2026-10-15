@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How GLM Aligns Data Layouts with OpenGL GLSL - opengl</title>
+    <meta name="description" content="This article explains how the OpenGL Mathematics (GLM) library mirrors the memory layouts and data structures of the OpenGL Shading Language (GLSL). It covers the fundamental type mapping of vectors and matrices, column-major storage design, contiguous me">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-glm-aligns-data-layouts-with-open-gl-glsl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How GLM Aligns Data Layouts with OpenGL GLSL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-glm-aligns-data-layouts-with-open-gl-glsl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how the OpenGL Mathematics (GLM) library mirrors the memory layouts and data structures of the OpenGL Shading Language (GLSL). It covers the fundamental type mapping of vectors and matrices, column-major storage design, contiguous me" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-glm-aligns-data-layouts-with-opengl-glsl">How GLM Aligns
+Data Layouts with OpenGL GLSL</h1>
+<p>This article explains how the OpenGL Mathematics (GLM) library
+mirrors the memory layouts and data structures of the OpenGL Shading
+Language (GLSL). It covers the fundamental type mapping of vectors and
+matrices, column-major storage design, contiguous memory guarantees, and
+the use of explicit alignment directives to conform to interface block
+rules like <code>std140</code> and <code>std430</code>.</p>
+<h3 id="standard-layout-and-trivially-copyable-types">Standard Layout
+and Trivially Copyable Types</h3>
+<p>GLM achieves layout compatibility primarily by designing its core
+types as standard-layout, trivially copyable C++ structures. A GLSL type
+like <code>vec3</code> or <code>vec4</code> represents a packed sequence
+of 32-bit IEEE 754 floating-point values. In GLM, vector types are
+implemented as unions or flat member structures without virtual methods,
+custom copy constructors, or hidden metadata.</p>
+<p>For instance, <code>glm::vec4</code> contains four contiguous 32-bit
+floats (<code>x</code>, <code>y</code>, <code>z</code>, <code>w</code>).
+Because the structure is standard-layout, its binary footprint in system
+memory is identical to a four-element C-style array
+(<code>float[4]</code>). This allows developers to pass GLM structures
+directly to OpenGL API calls—such as <code>glVertexAttribPointer</code>
+or <code>glBufferData</code>—by simply casting the pointer or using
+<code>glm::value_ptr()</code>.</p>
+<h3 id="column-major-matrix-representation">Column-Major Matrix
+Representation</h3>
+<p>GLSL defines matrices as column-major arrays of vectors. A
+<code>mat4</code> in GLSL consists of four column vectors, each with
+four components. To ensure 1:1 memory compatibility, GLM adopts the
+exact same convention.</p>
+<p>In GLM, <code>glm::mat4</code> is internally structured as an array
+of four <code>glm::vec4</code> column vectors:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> mat4 <span class="op">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    vec4 value<span class="op">[</span><span class="dv">4</span><span class="op">];</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
+<p>Because of this column-first contiguous layout, a
+<code>glm::mat4</code> occupies exactly 16 consecutive
+<code>float</code> values (64 bytes). When uploading matrices to shaders
+via <code>glUniformMatrix4fv</code>, the <code>transpose</code>
+parameter can be set to <code>GL_FALSE</code> because the internal
+arrangement matches what the GLSL runtime expects natively.</p>
+<h3 id="direct-memory-access-with-glmvalue_ptr">Direct Memory Access
+with <code>glm::value_ptr</code></h3>
+<p>Because GLM structures maintain rigorous memory contiguity, accessing
+the raw pointer to their internal data is safe and well-defined. The
+helper function <code>glm::value_ptr</code> from
+<code>&lt;glm/gtc/type_ptr.hpp&gt;</code> returns a direct pointer to
+the first scalar element of any vector or matrix:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>glm<span class="op">::</span>mat4 projection <span class="op">=</span> glm<span class="op">::</span>perspective<span class="op">(...);</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>glUniformMatrix4fv<span class="op">(</span>location<span class="op">,</span> <span class="dv">1</span><span class="op">,</span> GL_FALSE<span class="op">,</span> glm<span class="op">::</span>value_ptr<span class="op">(</span>projection<span class="op">));</span></span></code></pre></div>
+<p>This avoids the need for data transformation, copying, or
+serialization before transferring data from CPU memory to GPU
+buffers.</p>
+<h3 id="handling-buffer-layout-rules-std140-and-std430">Handling Buffer
+Layout Rules: <code>std140</code> and <code>std430</code></h3>
+<p>While basic uniforms can be packed tightly, OpenGL Uniform Buffer
+Objects (UBOs) and Shader Storage Buffer Objects (SSBOs) mandate strict
+memory layout specifications:</p>
+<ul>
+<li><strong><code>std140</code> Layout:</strong> Enforces rigid base
+alignments. For example, a <code>vec3</code> must be aligned to the size
+of a <code>vec4</code> (16 bytes), meaning a structure with a
+<code>vec3</code> followed by a <code>float</code> must align to 16
+bytes rather than packing tightly to 12 + 4 bytes.</li>
+<li><strong><code>std430</code> Layout:</strong> Used primarily in
+SSBOs, relaxing some alignment requirements while maintaining structure
+and array rules.</li>
+</ul>
+<p>To resolve alignment mismatches between default C++ packing and GPU
+layout rules, GLM provides the
+<code>&lt;glm/gtc/type_aligned.hpp&gt;</code> extension. This header
+defines aligned variants of standard types, such as
+<code>glm::aligned_vec4</code> and <code>glm::aligned_mat4</code>. These
+types leverage C++ <code>alignas</code> specifiers to enforce the
+padding and memory boundaries required by the OpenGL specification:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> UniformBufferBlock <span class="op">{</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    glm<span class="op">::</span>aligned_vec3 position<span class="op">;</span> <span class="co">// Enforces 16-byte alignment as required by std140</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> scale<span class="op">;</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
+<p>By combining standard-layout plain structures, column-major matrix
+conventions, and explicit hardware alignment attributes, GLM ensures its
+types map bit-for-bit to their GLSL counterparts.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

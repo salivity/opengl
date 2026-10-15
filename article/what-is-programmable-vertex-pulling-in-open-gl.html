@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>What Is Programmable Vertex Pulling in OpenGL? - opengl</title>
+    <meta name="description" content="Programmable vertex pulling is a modern rendering technique in graphics programming where the vertex shader manually fetches its own attribute data directly from memory buffers, entirely bypassing the GPU’s fixed-function vertex fetch hardware. Traditiona">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/what-is-programmable-vertex-pulling-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="What Is Programmable Vertex Pulling in OpenGL? - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/what-is-programmable-vertex-pulling-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Programmable vertex pulling is a modern rendering technique in graphics programming where the vertex shader manually fetches its own attribute data directly from memory buffers, entirely bypassing the GPU’s fixed-function vertex fetch hardware. Traditiona" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="what-is-programmable-vertex-pulling-in-opengl">What Is
+Programmable Vertex Pulling in OpenGL?</h1>
+<p>Programmable vertex pulling is a modern rendering technique in
+graphics programming where the vertex shader manually fetches its own
+attribute data directly from memory buffers, entirely bypassing the
+GPU’s fixed-function vertex fetch hardware. Traditionally, OpenGL relies
+on complex state machines, including Vertex Array Objects (VAOs) and
+attribute configurations, to automatically feed data to vertex shaders.
+By shifting the responsibility of data fetching from fixed-function
+drivers into shader code, programmable vertex pulling simplifies
+pipeline state management, enhances performance during draw calls, and
+enables more flexible, GPU-driven rendering architectures.</p>
+<h3 id="the-conventional-approach-vertex-array-states">The Conventional
+Approach: Vertex Array States</h3>
+<p>In traditional OpenGL pipelines, passing vertex data to a shader
+involves defining an explicit memory layout via the CPU. The process
+typically requires:</p>
+<ol type="1">
+<li>Generating and binding Vertex Buffer Objects (VBOs) holding raw
+vertex data.</li>
+<li>Generating and binding a Vertex Array Object (VAO) to capture vertex
+format state.</li>
+<li>Invoking <code>glVertexAttribPointer</code> (or
+<code>glVertexArrayAttribFormat</code> in modern direct-state-access
+OpenGL) to specify data types, component counts, normalization flags,
+strides, and memory offsets for each vertex attribute.</li>
+<li>Calling <code>glEnableVertexAttribArray</code> to enable specific
+attribute locations.</li>
+</ol>
+<p>Under this model, the hardware's fixed-function Input Assembler (IA)
+interprets the VAO configuration at draw time. For each vertex index,
+the IA reads the memory specified by the VBOs, unpacks the data into the
+requested format (such as converting a normalized
+<code>GL_UNSIGNED_BYTE</code> into a <code>vec4</code>), and places the
+result into the vertex shader’s <code>in</code> variables before the
+shader executes.</p>
+<p>While conceptually straightforward, this architecture introduces
+substantial driver overhead. The graphics driver must validate VAO state
+changes, track bindings, and dynamically configure hardware fetch units,
+which often becomes a CPU-side bottleneck in applications requiring
+thousands of draw calls with varying vertex formats.</p>
+<h3 id="how-programmable-vertex-pulling-works">How Programmable Vertex
+Pulling Works</h3>
+<p>Programmable vertex pulling replaces fixed-function attribute parsing
+with direct shader memory reads. Instead of feeding vertex data through
+explicit input attributes (<code>layout(location = x) in ...</code>),
+the vertex data is loaded into Shader Storage Buffer Objects (SSBOs) or
+Texture Buffer Objects (TBOs).</p>
+<p>The vertex shader accesses this memory programmatically using
+built-in system values—most notably <code>gl_VertexID</code> (or
+<code>gl_BaseVertex</code> and <code>gl_InstanceID</code>).</p>
+<p>In GLSL, a vertex pulling shader binds a buffer block containing an
+array of structs or raw data:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 460 core</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> Vertex <span class="op">{</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> position<span class="op">;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec2</span> texCoord<span class="op">;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> normal<span class="op">;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">std430</span><span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">readonly</span> <span class="kw">buffer</span> VertexBuffer <span class="op">{</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    Vertex <span class="dt">vertices</span><span class="op">[];</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec2</span> v_TexCoord<span class="op">;</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>    Vertex v <span class="op">=</span> <span class="dt">vertices</span><span class="op">[</span><span class="bu">gl_VertexID</span><span class="op">];</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    <span class="bu">gl_Position</span> <span class="op">=</span> v<span class="op">.</span><span class="fu">position</span><span class="op">;</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>    v_TexCoord <span class="op">=</span> v<span class="op">.</span><span class="fu">texCoord</span><span class="op">;</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>Because the shader reads directly from the buffer using indexing
+arithmetic, the GPU no longer needs an Input Assembler configuration to
+decode the data.</p>
+<h3 id="replacing-vertex-array-states-in-application-code">Replacing
+Vertex Array States in Application Code</h3>
+<p>Adopting programmable vertex pulling drastically simplifies OpenGL
+application code by rendering VAO management virtually obsolete.</p>
+<h4 id="1-elimination-of-glvertexattribpointer">1. Elimination of
+<code>glVertexAttribPointer</code></h4>
+<p>Because the shader accesses structured memory directly via SSBOs,
+calls to <code>glVertexAttribPointer</code>,
+<code>glVertexAttribIPointer</code>, and
+<code>glEnableVertexAttribArray</code> are eliminated. The CPU no longer
+describes strides, offsets, or attribute locations to the OpenGL state
+machine.</p>
+<h4 id="2-reduction-of-vaos-to-empty-placeholders">2. Reduction of VAOs
+to Empty Placeholders</h4>
+<p>Core profile OpenGL requires a VAO to be bound when dispatching draw
+calls such as <code>glDrawArrays</code>. With programmable vertex
+pulling, the application only needs to allocate and bind a single,
+globally shared "dummy" VAO once during initialization:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>GLuint dummyVAO<span class="op">;</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>glGenVertexArrays<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="op">&amp;</span>dummyVAO<span class="op">);</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>glBindVertexArray<span class="op">(</span>dummyVAO<span class="op">);</span></span></code></pre></div>
+<p>This empty VAO contains no attribute configurations or buffer
+bindings, fully satisfying the driver requirements without storing any
+vertex layout state.</p>
+<h4 id="3-standardized-buffer-bindings">3. Standardized Buffer
+Bindings</h4>
+<p>Instead of binding VBOs through the vertex array state, vertex
+buffers are bound to generic binding points using
+<code>glBindBufferBase</code> or <code>glBindBufferRange</code>:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>glBindBufferBase<span class="op">(</span>GL_SHADER_STORAGE_BUFFER<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> vertexBufferHandle<span class="op">);</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>glDrawArrays<span class="op">(</span>GL_TRIANGLES<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> vertexCount<span class="op">);</span></span></code></pre></div>
+<p>Switching data sources between draw calls only requires rebinding
+buffer targets or passing an offset, significantly reducing the driver
+validation cost compared to binding complex VAOs.</p>
+<h3 id="benefits-and-trade-offs">Benefits and Trade-Offs</h3>
+<h4 id="key-advantages">Key Advantages</h4>
+<ul>
+<li><strong>Reduced Driver Overhead:</strong> By eliminating the state
+transitions associated with distinct VAOs and attribute formats, CPU
+driver validation overhead is substantially lowered.</li>
+<li><strong>Support for Arbitrary Layouts:</strong> Shaders can
+interpret data dynamically. A single buffer can store varying vertex
+structures, compressed formats, or indirection tables (such as vertex
+indices stored within the vertex buffer itself).</li>
+<li><strong>GPU-Driven Rendering:</strong> Programmable pulling
+integrates seamlessly with indirect draw calls
+(<code>glDrawArraysIndirect</code>) and compute shaders. Compute shaders
+can generate vertex data directly into SSBOs, which the vertex shader
+then consumes immediately without CPU-side buffer re-specification.</li>
+</ul>
+<h4 id="trade-offs">Trade-Offs</h4>
+<ul>
+<li><strong>Loss of Fixed-Function Decompression:</strong>
+Fixed-function hardware often handles implicit type conversion (such as
+packed 10-10-10-2 formats or 8-bit normalized integers) automatically.
+When using programmable pulling with SSBOs, the developer must manually
+implement unpack instructions (e.g., <code>unpackUnorm4x8</code>) inside
+the shader if compact formats are used.</li>
+<li><strong>Cache Architecture Differences:</strong> Depending on the
+underlying GPU architecture, reading data through an SSBO relies on the
+general L1/L2 cache instead of dedicated, specialized vertex cache
+hardware, which may alter memory access performance characteristics on
+older hardware.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

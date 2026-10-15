@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Floating-Point Cancellation in OpenGL Cameras - opengl</title>
+    <meta name="description" content="When rendering virtual worlds millions of units away from the origin in OpenGL, standard 32-bit single-precision floating-point numbers exhaust their precision, resulting in a phenomenon known as catastrophic floating-point cancellation. This precision lo">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/floating-point-cancellation-in-open-gl-cameras">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Floating-Point Cancellation in OpenGL Cameras - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/floating-point-cancellation-in-open-gl-cameras" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="When rendering virtual worlds millions of units away from the origin in OpenGL, standard 32-bit single-precision floating-point numbers exhaust their precision, resulting in a phenomenon known as catastrophic floating-point cancellation. This precision lo" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="floating-point-cancellation-in-opengl-cameras">Floating-Point
+Cancellation in OpenGL Cameras</h1>
+<p>When rendering virtual worlds millions of units away from the origin
+in OpenGL, standard 32-bit single-precision floating-point numbers
+exhaust their precision, resulting in a phenomenon known as catastrophic
+floating-point cancellation. This precision loss causes severe rendering
+artifacts, including vertex jitter, mesh tearing, and depth-buffer
+failure. This article explores the mathematical causes of floating-point
+cancellation during coordinate transformations in OpenGL and details the
+standard techniques used to resolve it.</p>
+<h3 id="the-limits-of-32-bit-floating-point-precision">The Limits of
+32-Bit Floating-Point Precision</h3>
+<p>Standard graphics pipelines, including OpenGL shaders, rely primarily
+on the IEEE 754 standard for 32-bit single-precision floating-point
+numbers (<code>float</code>). A 32-bit float allocates 1 bit for the
+sign, 8 bits for the exponent, and 23 bits for the significand
+(mantissa), providing roughly 7 decimal digits of precision.</p>
+<p>Precision is not uniformly distributed across the number line; it
+scales with magnitude. The distance between consecutive representable
+numbers—the Unit in the Last Place (ULP)—grows as numbers move farther
+from zero:</p>
+<ul>
+<li>Between 1 and 2, the ULP is approximately <span
+class="math inline">\(0.000000119\)</span> units.</li>
+<li>Between 1,048,576 and 2,097,152, the ULP jumps to <span
+class="math inline">\(0.125\)</span> units.</li>
+<li>Between 8,388,608 and 16,777,216, the ULP reaches <span
+class="math inline">\(1.0\)</span> unit.</li>
+</ul>
+<p>When a camera moves millions of units away from the origin,
+coordinates operate where representable numbers are spaced by
+millimeters, centimeters, or even meters rather than microscopic
+fractions.</p>
+<h3 id="how-catastrophic-cancellation-occurs">How Catastrophic
+Cancellation Occurs</h3>
+<p>Catastrophic cancellation occurs when two large, nearly identical
+floating-point values are subtracted from one another. In this
+operation, the most significant digits cancel each other out, leaving
+the result dependent on the least significant bits, which often contain
+rounding errors or no meaningful information.</p>
+<p>In the standard OpenGL transformation pipeline, the view matrix
+translates world coordinates into camera-relative view space:</p>
+<p><span class="math display">\[\mathbf{P}_{\text{view}} = \mathbf{V}
+\times \mathbf{P}_{\text{world}}\]</span></p>
+<p>This transformation implicitly computes:</p>
+<p><span class="math display">\[\mathbf{P}_{\text{view}} =
+\mathbf{P}_{\text{world}} - \mathbf{C}_{\text{world}}\]</span></p>
+<p>where <span class="math inline">\(\mathbf{C}_{\text{world}}\)</span>
+is the camera position and <span
+class="math inline">\(\mathbf{P}_{\text{world}}\)</span> is the vertex
+position.</p>
+<p>If an object is located at <span
+class="math inline">\((10,000,001.05, 0, 0)\)</span> and the camera is
+at <span class="math inline">\((10,000,000.0, 0, 0)\)</span>, both
+vectors require 8 significant digits to preserve sub-unit detail.
+Because a 32-bit float only reliably stores 7 decimal digits, the
+fractional value <span class="math inline">\(0.05\)</span> is truncated
+or rounded to fit into the significand before or during the subtraction.
+When the subtraction occurs, the high-order magnitude (<span
+class="math inline">\(10,000,000\)</span>) cancels out, leaving behind
+an inaccurate, quantized value rather than the exact relative distance
+of <span class="math inline">\(1.05\)</span>.</p>
+<h3 id="visual-manifestations-in-the-renderer">Visual Manifestations in
+the Renderer</h3>
+<p>The consequences of this loss of precision manifest in several
+noticeable ways on screen:</p>
+<ul>
+<li><strong>Vertex Jitter and Shaking:</strong> As the camera moves
+continuously through space, the floating-point values for vertices snap
+abruptly between discrete representable intervals. This creates intense
+visual flickering and geometric wobbling.</li>
+<li><strong>Geometry Disintegration:</strong> Complex meshes warp
+because adjacent vertices round to different intervals, tearing polygons
+apart and breaking continuous surfaces.</li>
+<li><strong>Z-Fighting:</strong> The depth buffer
+(<code>gl_Position.z / gl_Position.w</code>) depends on accurate
+distance calculations. When differences between large numbers collapse,
+depth sorting fails, causing coplanar and nearby polygons to flicker
+through one another.</li>
+<li><strong>Lighting and Normal Distortion:</strong> Calculating dynamic
+light directions and surface reflections requires subtracting
+world-space positions. Cancellation in these operations distorts surface
+normals and creates noisy lighting artifacts.</li>
+</ul>
+<h3 id="solutions-to-prevent-floating-point-cancellation">Solutions to
+Prevent Floating-Point Cancellation</h3>
+<p>Modern engines resolve this problem by restructuring coordinate
+calculations so that large subtractions never occur on the GPU in
+single-precision math.</p>
+<h4 id="1-camera-relative-rendering-relative-to-eye">1. Camera-Relative
+Rendering (Relative-to-Eye)</h4>
+<p>The most common solution is moving the translation step to the CPU.
+The CPU maintains all world positions in 64-bit double precision
+(<code>double</code> or <code>glm::dvec3</code>), which provides
+approximately 15 to 17 decimal digits of precision.</p>
+<p>Before sending transformation data to the GPU, the CPU subtracts the
+camera position from the model position:</p>
+<p><span class="math display">\[\mathbf{M}_{\text{relative}} =
+\mathbf{P}_{\text{object}} - \mathbf{C}_{\text{camera}}\]</span></p>
+<p>Because the subtraction is performed in 64-bit precision, no
+cancellation occurs. The resulting camera-relative coordinates are small
+numbers situated near the origin, which can be safely cast down to
+32-bit floats and passed into the vertex shader. The vertex shader then
+applies only rotation and projection matrices without suffering
+precision loss.</p>
+<h4 id="2-floating-origin-systems">2. Floating Origin Systems</h4>
+<p>In a floating origin architecture, the entire coordinate system
+recenters dynamically. When the camera travels beyond a designated
+threshold from the world origin (such as 1,000 or 5,000 units), the
+engine subtracts the camera's current offset from all objects in the
+world and resets the camera's position back to <span
+class="math inline">\((0, 0, 0)\)</span>. This keeps absolute coordinate
+values consistently small, ensuring that 32-bit floating-point precision
+remains high throughout the gameplay area.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

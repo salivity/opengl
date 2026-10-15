@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dual Quaternion Skinning in OpenGL Shaders - opengl</title>
+    <meta name="description" content="Dual quaternion skinning (DQS) is an advanced skeletal animation technique designed to eliminate the unnatural volume-loss artifacts—often referred to as the &quot;candy-wrapper&quot; effect—inherent in standard Linear Blend Skinning (LBS). This article provides a">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/dual-quaternion-skinning-in-open-gl-shaders">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Dual Quaternion Skinning in OpenGL Shaders - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/dual-quaternion-skinning-in-open-gl-shaders" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Dual quaternion skinning (DQS) is an advanced skeletal animation technique designed to eliminate the unnatural volume-loss artifacts—often referred to as the &quot;candy-wrapper&quot; effect—inherent in standard Linear Blend Skinning (LBS). This article provides a" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dual-quaternion-skinning-in-opengl-shaders">Dual Quaternion
+Skinning in OpenGL Shaders</h1>
+<p>Dual quaternion skinning (DQS) is an advanced skeletal animation
+technique designed to eliminate the unnatural volume-loss
+artifacts—often referred to as the "candy-wrapper" effect—inherent in
+standard Linear Blend Skinning (LBS). This article provides a
+comprehensive breakdown of the mathematics behind dual quaternions and
+explains how to implement and evaluate dual quaternion skinning directly
+inside an OpenGL vertex shader using GLSL.</p>
+<h2 id="understanding-dual-quaternion-skinning">Understanding Dual
+Quaternion Skinning</h2>
+<p>In traditional skeletal animation, Linear Blend Skinning interpolates
+standard <span class="math inline">\(4 \times 4\)</span> transformation
+matrices using vertex bone weights. Because linear matrix interpolation
+does not inherently preserve orthogonality, severe twisting or bending
+causes the mesh to collapse inward.</p>
+<p>Dual quaternions resolve this by representing rigid spatial
+transformations (rotation and translation) as a single mathematical
+entity. A dual number has the form <span class="math inline">\(a +
+\varepsilon b\)</span>, where <span
+class="math inline">\(\varepsilon\)</span> is the dual unit satisfying
+<span class="math inline">\(\varepsilon^2 = 0\)</span>. Extending this
+to quaternions yields a dual quaternion <span
+class="math inline">\(\hat{q}\)</span>:</p>
+<p><span class="math display">\[\hat{q} = q_r + \varepsilon
+q_d\]</span></p>
+<ul>
+<li><strong>Real part (<span
+class="math inline">\(q_r\)</span>):</strong> A unit quaternion
+representing 3D rotation.</li>
+<li><strong>Dual part (<span
+class="math inline">\(q_d\)</span>):</strong> A quaternion encoding
+translation <span class="math inline">\(t = (t_x, t_y, t_z)\)</span>,
+defined as <span class="math inline">\(q_d = \frac{1}{2} t q_r\)</span>,
+where <span class="math inline">\(t\)</span> is treated as a pure
+quaternion <span class="math inline">\((0, t_x, t_y, t_z)\)</span>.</li>
+</ul>
+<p>By linearly blending dual quaternions (Dual quaternion Linear
+Blending, or DLB) and normalizing the result, the transformation retains
+its rigid structure, preserving vertex volume across joint limits
+without computationally expensive matrix polar decompositions.</p>
+<h2 id="data-representation-for-the-vertex-shader">Data Representation
+for the Vertex Shader</h2>
+<p>To pass dual quaternions to an OpenGL vertex shader, each bone's
+transform is packaged into two 4-component vectors: one for <span
+class="math inline">\(q_r\)</span> and one for <span
+class="math inline">\(q_d\)</span>. This is typically submitted using a
+uniform buffer object (UBO) or uniform array of type <code>mat2x4</code>
+or paired <code>vec4</code> arrays:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Uniform block holding bone dual quaternions</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">std140</span><span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="kw">uniform</span> BoneData <span class="op">{</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">mat2x4</span> bones<span class="op">[</span><span class="dv">128</span><span class="op">];</span> <span class="co">// [0] = real part (rotation), [1] = dual part (translation)</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
+<p>Standard vertex attributes are required per vertex:</p>
+<ul>
+<li><code>in vec3 inPosition;</code></li>
+<li><code>in vec3 inNormal;</code></li>
+<li><code>in uvec4 inBoneIndices;</code></li>
+<li><code>in vec4 inBoneWeights;</code></li>
+</ul>
+<h2 id="processing-inside-the-glsl-vertex-shader">Processing Inside the
+GLSL Vertex Shader</h2>
+<p>Computing skinning inside the vertex shader involves three core
+operations: handling antipodality during blending, normalizing the
+blended dual quaternion, and transforming the vertex position and
+normal.</p>
+<h3 id="1-handling-antipodal-alignment">1. Handling Antipodal
+Alignment</h3>
+<p>Quaternions <span class="math inline">\(q\)</span> and <span
+class="math inline">\(-q\)</span> define identical 3D rotations, but
+interpolating between opposite signs cancels them out rather than
+blending them. Before accumulating influences, the shader checks the dot
+product of the current bone's real quaternion against the primary bone's
+real quaternion. If the dot product is negative, the sign of the dual
+quaternion is inverted.</p>
+<h3 id="2-dual-quaternion-blending-dlb">2. Dual Quaternion Blending
+(DLB)</h3>
+<p>The bone transforms are linearly combined according to their
+normalized weights:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="dt">mat2x4</span> <span class="fu">blendDualQuat</span><span class="op">(</span><span class="dt">uvec4</span> indices<span class="op">,</span> <span class="dt">vec4</span> weights<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">mat2x4</span> dq0 <span class="op">=</span> bones<span class="op">[</span>indices<span class="op">[</span><span class="dv">0</span><span class="op">]];</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">mat2x4</span> blended <span class="op">=</span> dq0 <span class="op">*</span> weights<span class="op">[</span><span class="dv">0</span><span class="op">];</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">for</span> <span class="op">(</span><span class="dt">int</span> i <span class="op">=</span> <span class="dv">1</span><span class="op">;</span> i <span class="op">&lt;</span> <span class="dv">4</span><span class="op">;</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>        <span class="dt">mat2x4</span> dqi <span class="op">=</span> bones<span class="op">[</span>indices<span class="op">[</span>i<span class="op">]];</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>        <span class="co">// Antipodal handling: flip sign if orientation differs</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>        <span class="dt">float</span> <span class="bu">sign</span> <span class="op">=</span> <span class="bu">dot</span><span class="op">(</span>dq0<span class="op">[</span><span class="dv">0</span><span class="op">],</span> dqi<span class="op">[</span><span class="dv">0</span><span class="op">])</span> <span class="op">&lt;</span> <span class="fl">0.0</span> <span class="op">?</span> <span class="op">-</span><span class="fl">1.0</span> <span class="op">:</span> <span class="fl">1.0</span><span class="op">;</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>        blended <span class="op">+=</span> dqi <span class="op">*</span> <span class="op">(</span>weights<span class="op">[</span>i<span class="op">]</span> <span class="op">*</span> <span class="bu">sign</span><span class="op">);</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> blended<span class="op">;</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="3-normalization-and-position-transformation">3. Normalization
+and Position Transformation</h3>
+<p>After summing, the accumulated dual quaternion must be normalized.
+The magnitude of the blended dual quaternion is determined exclusively
+by the magnitude of its real component:</p>
+<p><span class="math display">\[s = \frac{1}{\|q_r\|}\]</span> <span
+class="math display">\[\hat{q}_{\text{norm}} = (s \cdot q_r) +
+\varepsilon (s \cdot q_d)\]</span></p>
+<p>Once normalized, the vertex position <span
+class="math inline">\(v\)</span> can be transformed directly using
+vector algebra instead of converting back to a <span
+class="math inline">\(4 \times 4\)</span> matrix:</p>
+<p><span class="math display">\[v&#39; = v + 2 q_r \times (q_r \times v
++ q_d.xyz) + 2 (q_r.w \cdot q_d.xyz - q_d.w \cdot q_r.xyz)\]</span></p>
+<h3 id="complete-glsl-vertex-transformation-example">Complete GLSL
+Vertex Transformation Example</h3>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 450 core</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">in</span> <span class="dt">vec3</span> inPosition<span class="op">;</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">1</span><span class="op">)</span> <span class="dt">in</span> <span class="dt">vec3</span> inNormal<span class="op">;</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">2</span><span class="op">)</span> <span class="dt">in</span> <span class="dt">uvec4</span> inBoneIndices<span class="op">;</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">3</span><span class="op">)</span> <span class="dt">in</span> <span class="dt">vec4</span> inBoneWeights<span class="op">;</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">std140</span><span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="kw">uniform</span> BoneData <span class="op">{</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">mat2x4</span> bones<span class="op">[</span><span class="dv">128</span><span class="op">];</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">mat4</span> uViewProjection<span class="op">;</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec3</span> fragNormal<span class="op">;</span></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>    <span class="co">// 1. Blend influences</span></span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>    <span class="dt">mat2x4</span> dq0 <span class="op">=</span> bones<span class="op">[</span>inBoneIndices<span class="op">[</span><span class="dv">0</span><span class="op">]];</span></span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a>    <span class="dt">mat2x4</span> blended <span class="op">=</span> dq0 <span class="op">*</span> inBoneWeights<span class="op">[</span><span class="dv">0</span><span class="op">];</span></span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a>    <span class="kw">for</span> <span class="op">(</span><span class="dt">int</span> i <span class="op">=</span> <span class="dv">1</span><span class="op">;</span> i <span class="op">&lt;</span> <span class="dv">4</span><span class="op">;</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a>        <span class="dt">mat2x4</span> dqi <span class="op">=</span> bones<span class="op">[</span>inBoneIndices<span class="op">[</span>i<span class="op">]];</span></span>
+<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a>        <span class="dt">float</span> <span class="bu">sign</span> <span class="op">=</span> <span class="bu">dot</span><span class="op">(</span>dq0<span class="op">[</span><span class="dv">0</span><span class="op">],</span> dqi<span class="op">[</span><span class="dv">0</span><span class="op">])</span> <span class="op">&lt;</span> <span class="fl">0.0</span> <span class="op">?</span> <span class="op">-</span><span class="fl">1.0</span> <span class="op">:</span> <span class="fl">1.0</span><span class="op">;</span></span>
+<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a>        blended <span class="op">+=</span> dqi <span class="op">*</span> <span class="op">(</span>inBoneWeights<span class="op">[</span>i<span class="op">]</span> <span class="op">*</span> <span class="bu">sign</span><span class="op">);</span></span>
+<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb3-26"><a href="#cb3-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-27"><a href="#cb3-27" aria-hidden="true" tabindex="-1"></a>    <span class="co">// 2. Normalize dual quaternion</span></span>
+<span id="cb3-28"><a href="#cb3-28" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> invLen <span class="op">=</span> <span class="fl">1.0</span> <span class="op">/</span> <span class="bu">length</span><span class="op">(</span>blended<span class="op">[</span><span class="dv">0</span><span class="op">]);</span></span>
+<span id="cb3-29"><a href="#cb3-29" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> qr <span class="op">=</span> blended<span class="op">[</span><span class="dv">0</span><span class="op">]</span> <span class="op">*</span> invLen<span class="op">;</span></span>
+<span id="cb3-30"><a href="#cb3-30" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> qd <span class="op">=</span> blended<span class="op">[</span><span class="dv">1</span><span class="op">]</span> <span class="op">*</span> invLen<span class="op">;</span></span>
+<span id="cb3-31"><a href="#cb3-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-32"><a href="#cb3-32" aria-hidden="true" tabindex="-1"></a>    <span class="co">// 3. Transform vertex position</span></span>
+<span id="cb3-33"><a href="#cb3-33" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> position <span class="op">=</span> inPosition <span class="op">+</span> <span class="fl">2.0</span> <span class="op">*</span> <span class="bu">cross</span><span class="op">(</span>qr<span class="op">.</span><span class="fu">xyz</span><span class="op">,</span> <span class="bu">cross</span><span class="op">(</span>qr<span class="op">.</span><span class="fu">xyz</span><span class="op">,</span> inPosition<span class="op">)</span> <span class="op">+</span> qr<span class="op">.</span><span class="fu">w</span> <span class="op">*</span> inPosition<span class="op">);</span></span>
+<span id="cb3-34"><a href="#cb3-34" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> translation <span class="op">=</span> <span class="fl">2.0</span> <span class="op">*</span> <span class="op">(</span>qr<span class="op">.</span><span class="fu">w</span> <span class="op">*</span> qd<span class="op">.</span><span class="fu">xyz</span> <span class="op">-</span> qd<span class="op">.</span><span class="fu">w</span> <span class="op">*</span> qr<span class="op">.</span><span class="fu">xyz</span> <span class="op">+</span> <span class="bu">cross</span><span class="op">(</span>qr<span class="op">.</span><span class="fu">xyz</span><span class="op">,</span> qd<span class="op">.</span><span class="fu">xyz</span><span class="op">));</span></span>
+<span id="cb3-35"><a href="#cb3-35" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> skinnedPosition <span class="op">=</span> position <span class="op">+</span> translation<span class="op">;</span></span>
+<span id="cb3-36"><a href="#cb3-36" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-37"><a href="#cb3-37" aria-hidden="true" tabindex="-1"></a>    <span class="co">// 4. Transform vertex normal (pure rotation by real part)</span></span>
+<span id="cb3-38"><a href="#cb3-38" aria-hidden="true" tabindex="-1"></a>    fragNormal <span class="op">=</span> inNormal <span class="op">+</span> <span class="fl">2.0</span> <span class="op">*</span> <span class="bu">cross</span><span class="op">(</span>qr<span class="op">.</span><span class="fu">xyz</span><span class="op">,</span> <span class="bu">cross</span><span class="op">(</span>qr<span class="op">.</span><span class="fu">xyz</span><span class="op">,</span> inNormal<span class="op">)</span> <span class="op">+</span> qr<span class="op">.</span><span class="fu">w</span> <span class="op">*</span> inNormal<span class="op">);</span></span>
+<span id="cb3-39"><a href="#cb3-39" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-40"><a href="#cb3-40" aria-hidden="true" tabindex="-1"></a>    <span class="bu">gl_Position</span> <span class="op">=</span> uViewProjection <span class="op">*</span> <span class="dt">vec4</span><span class="op">(</span>skinnedPosition<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb3-41"><a href="#cb3-41" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h2 id="performance-and-precision-considerations">Performance and
+Precision Considerations</h2>
+<p>Dual quaternion skinning requires less uniform storage than matrix
+skinning (8 floats per bone instead of 16 for a <span
+class="math inline">\(4 \times 4\)</span> or 12 for an affine <span
+class="math inline">\(4 \times 3\)</span> matrix), substantially
+reducing GPU bandwidth and uniform buffer footprints. While the vertex
+shader executes slightly more algebraic operations to apply the
+transformation directly, the savings in memory bus traffic and the
+elimination of rotational collapse make DQS a standard solution for
+modern real-time skeletal pipelines.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

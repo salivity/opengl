@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fragment Shader Interlock in OpenGL Transparency - opengl</title>
+    <meta name="description" content="Fragment shader interlock resolves read-modify-write data races in OpenGL by providing a hardware-enforced critical section within fragment shaders, allowing concurrent invocations covering the exact same pixel coordinates to execute sequentially. In tech">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/fragment-shader-interlock-in-open-gl-transparency">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Fragment Shader Interlock in OpenGL Transparency - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/fragment-shader-interlock-in-open-gl-transparency" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Fragment shader interlock resolves read-modify-write data races in OpenGL by providing a hardware-enforced critical section within fragment shaders, allowing concurrent invocations covering the exact same pixel coordinates to execute sequentially. In tech" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="fragment-shader-interlock-in-opengl-transparency">Fragment
+Shader Interlock in OpenGL Transparency</h1>
+<p>Fragment shader interlock resolves read-modify-write data races in
+OpenGL by providing a hardware-enforced critical section within fragment
+shaders, allowing concurrent invocations covering the exact same pixel
+coordinates to execute sequentially. In techniques like
+Order-Independent Transparency (OIT), custom blending operations and
+per-pixel linked lists require reading existing framebuffer or buffer
+data, modifying it, and writing it back. Without synchronization,
+overlapping transparent fragments cause race conditions that corrupt
+data; fragment shader interlock serializes these accesses according to
+primitive submission order without requiring multi-pass rendering or
+costly atomic spinlocks.</p>
+<h3 id="the-read-modify-write-hazard-in-custom-transparency">The
+Read-Modify-Write Hazard in Custom Transparency</h3>
+<p>Standard OpenGL alpha blending relies on fixed-function hardware (the
+Raster Operations Pipeline, or ROP) to blend colors at a given pixel
+sequentially. However, advanced Order-Independent Transparency
+techniques—such as per-pixel linked lists or custom accumulation
+algorithms—bypass fixed-function blending to store fragment depths,
+colors, and coverage in arbitrary Shader Storage Buffer Objects (SSBOs)
+or images via read-modify-write (RMW) operations.</p>
+<p>In a standard modern GPU pipeline, thousands of fragment shader
+invocations execute in parallel across compute units. When multiple
+transparent primitives overlap on the screen, multiple fragment shader
+invocations target the exact same pixel coordinate <code>(x, y)</code>
+at the same time:</p>
+<ol type="1">
+<li><strong>Read:</strong> Invocations A and B both read the current
+head-pointer index of pixel <code>(x, y)</code> from a buffer.</li>
+<li><strong>Modify:</strong> Both prepare a new node pointing to that
+same read index.</li>
+<li><strong>Write:</strong> Both write their respective new node indices
+back into the head-pointer buffer.</li>
+</ol>
+<p>Because these operations occur simultaneously, one invocation
+overwrites the other, causing lost fragments, broken linked lists, and
+visual artifacts such as flickering or missing transparent surfaces.</p>
+<h3 id="how-fragment-shader-interlock-solves-the-race">How Fragment
+Shader Interlock Solves the Race</h3>
+<p>The <code>GL_ARB_fragment_shader_interlock</code> extension (and
+vendor predecessors like <code>GL_INTEL_fragment_shader_ordering</code>)
+introduces an explicit synchronization boundary directly into GLSL. It
+guarantees that for any specific screen-space pixel or sample, only one
+fragment shader invocation can be inside the critical section at any
+given time.</p>
+<p>The synchronization mechanism relies on specialized rasterizer
+hardware guarantees:</p>
+<ul>
+<li><strong>Declared Layout Qualifiers:</strong> The shader specifies
+the synchronization scope via layout qualifiers such as
+<code>layout(pixel_interlock_ordered) in;</code> or
+<code>layout(sample_interlock_ordered) in;</code>.</li>
+<li><strong>Critical Section Boundaries:</strong> Within the
+<code>main()</code> function, the developer places the RMW operations
+between <code>beginInvocationInterlockARB()</code> and
+<code>endInvocationInterlockARB()</code>.</li>
+<li><strong>Hardware-Enforced Serialization:</strong> When invocation B
+reaches <code>beginInvocationInterlockARB()</code> for pixel
+<code>(x, y)</code>, the GPU checks whether another invocation
+(invocation A) is currently within the critical section for that exact
+coordinate. If so, invocation B stalls until invocation A calls
+<code>endInvocationInterlockARB()</code>.</li>
+<li><strong>Order Preservation:</strong> The <code>_ordered</code>
+variants guarantee that fragments enter the critical section strictly in
+the order primitives were submitted via the OpenGL command stream,
+ensuring deterministic and visually correct transparency.</li>
+</ul>
+<h3 id="advantages-over-atomic-operations">Advantages Over Atomic
+Operations</h3>
+<p>Before fragment shader interlock, developers mitigated data races
+using atomic memory operations, such as <code>atomicExchange()</code> or
+<code>atomicCompSwap()</code>. While atomics can update single values
+like linked-list head pointers, they present notable limitations:</p>
+<ul>
+<li><strong>Limited Scope:</strong> Atomic operations only protect
+single 32-bit or 64-bit integer values, preventing complex multi-buffer
+updates or in-place sorting within the shader.</li>
+<li><strong>Lock Contention:</strong> Building complex data structures
+using atomic compare-and-swap loops creates memory contention, leading
+to warp divergence and GPU cache thrashing when many fragments cover the
+same pixel.</li>
+<li><strong>Loss of Ordering:</strong> Atomics resolve race conditions
+but do not inherently guarantee original submission order, which is
+necessary for sequential blend equations (like non-commutative
+Porter-Duff operators).</li>
+</ul>
+<p>Fragment shader interlock allows multi-instruction critical sections
+encompassing multiple reads, complex blending calculations, array
+manipulations, and buffer writes. By restricting serialization
+exclusively to fragments sharing identical screen coordinates,
+independent pixels continue to process in full parallel, delivering
+correct, artifact-free transparency with minimal performance
+overhead.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

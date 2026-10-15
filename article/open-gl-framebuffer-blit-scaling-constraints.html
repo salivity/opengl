@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Framebuffer Blit Scaling Constraints - opengl</title>
+    <meta name="description" content="In OpenGL, copying and resizing pixel regions between framebuffers is performed using the glBlitFramebuffer command. While this function provides an efficient way to transfer and scale image data, several strict constraints dictate when and how scaling ca">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-framebuffer-blit-scaling-constraints">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Framebuffer Blit Scaling Constraints - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-framebuffer-blit-scaling-constraints" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In OpenGL, copying and resizing pixel regions between framebuffers is performed using the glBlitFramebuffer command. While this function provides an efficient way to transfer and scale image data, several strict constraints dictate when and how scaling ca" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-framebuffer-blit-scaling-constraints">OpenGL Framebuffer
+Blit Scaling Constraints</h1>
+<p>In OpenGL, copying and resizing pixel regions between framebuffers is
+performed using the <code>glBlitFramebuffer</code> command. While this
+function provides an efficient way to transfer and scale image data,
+several strict constraints dictate when and how scaling can be
+performed. These limitations involve sample counts, supported filtering
+methods, buffer attachments, and pixel format types.</p>
+<h2 id="multisampling-restrictions">Multisampling Restrictions</h2>
+<p>The most rigid constraint on scaling involves multisample
+anti-aliasing (MSAA). If either the source framebuffer or the
+destination framebuffer has a sample count greater than zero
+(<code>GL_SAMPLES &gt; 0</code>):</p>
+<ul>
+<li><strong>No Scaling Permitted:</strong> The dimensions of the source
+rectangle must precisely match the dimensions of the destination
+rectangle. That is, <code>|srcX2 - srcX1|</code> must equal
+<code>|dstX2 - dstX1|</code>, and <code>|srcY2 - srcY1|</code> must
+equal <code>|dstY2 - dstY1|</code>.</li>
+<li><strong>Resolution Resolution:</strong> To scale a multisampled
+surface, you must first resolve the multisampled buffer to an
+intermediate single-sampled framebuffer without scaling, and
+subsequently blit and scale from that intermediate framebuffer to the
+final destination.</li>
+</ul>
+<p>Attempting to scale while either buffer is multisampled triggers a
+<code>GL_INVALID_OPERATION</code> error.</p>
+<h2 id="filtering-mode-limitations">Filtering Mode Limitations</h2>
+<p>When scaling pixel data, <code>glBlitFramebuffer</code> accepts
+either <code>GL_NEAREST</code> or <code>GL_LINEAR</code> as the
+interpolation filter parameter. Several restrictions apply to the choice
+of filter:</p>
+<ul>
+<li><strong>Depth and Stencil Buffers:</strong> Scaling depth or stencil
+data using <code>GL_LINEAR</code> is strictly prohibited. If
+<code>GL_DEPTH_BUFFER_BIT</code> or <code>GL_STENCIL_BUFFER_BIT</code>
+is present in the buffer mask, the filter must be
+<code>GL_NEAREST</code>. Passing <code>GL_LINEAR</code> generates a
+<code>GL_INVALID_OPERATION</code>.</li>
+<li><strong>Integer Formats:</strong> Color buffers backed by signed or
+unsigned integer internal formats (such as <code>GL_RGBA32UI</code> or
+<code>GL_R16I</code>) do not support linear interpolation. Blitting
+these formats requires <code>GL_NEAREST</code>.</li>
+<li><strong>Float and Normalized Formats:</strong> Standard normalized
+fixed-point and floating-point color formats support both
+<code>GL_NEAREST</code> and <code>GL_LINEAR</code> scaling.</li>
+</ul>
+<h2 id="attachment-and-format-constraints">Attachment and Format
+Constraints</h2>
+<p>The presence and compatibility of target attachments introduce
+additional rules:</p>
+<ul>
+<li><strong>Combined Blits:</strong> If scaling both a color buffer and
+a depth/stencil buffer in a single <code>glBlitFramebuffer</code> call,
+you are forced to use <code>GL_NEAREST</code> because depth/stencil
+cannot accept <code>GL_LINEAR</code>. To achieve bilinear filtering on
+color while copying depth, you must separate the operation into two
+distinct blit calls.</li>
+<li><strong>Format Conversion:</strong> While color attachments can
+often convert between compatible internal formats during a scale
+operation, depth and stencil formats generally require matching internal
+precision across the source and destination to ensure valid output.</li>
+</ul>
+<h2 id="coordinate-mapping-and-scissoring">Coordinate Mapping and
+Scissoring</h2>
+<ul>
+<li><strong>Image Flipping:</strong> OpenGL allows source and
+destination coordinates to be reversed (for example,
+<code>srcX1 &gt; srcX2</code>) to invert an axis while scaling. While
+permissible, standard boundary clipping applies to both axes.</li>
+<li><strong>Scissor Box Constraints:</strong> The scissor test applies
+to the destination framebuffer during a blit. If
+<code>GL_SCISSOR_TEST</code> is enabled, destination pixels outside the
+specified scissor rectangle are discarded, while pixels within the
+scissor box are scaled according to the full coordinate ratios specified
+in the function call.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

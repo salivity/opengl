@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerstner Wave Vertex Displacement in OpenGL - opengl</title>
+    <meta name="description" content="This article explains how Gerstner wave mathematics are evaluated to displace vertices within an OpenGL vertex shader to create realistic water surfaces. Unlike standard sine waves that only alter elevation, Gerstner waves displace vertices horizontally t">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/gerstner-wave-vertex-displacement-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Gerstner Wave Vertex Displacement in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/gerstner-wave-vertex-displacement-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how Gerstner wave mathematics are evaluated to displace vertices within an OpenGL vertex shader to create realistic water surfaces. Unlike standard sine waves that only alter elevation, Gerstner waves displace vertices horizontally t" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="gerstner-wave-vertex-displacement-in-opengl">Gerstner Wave
+Vertex Displacement in OpenGL</h1>
+<p>This article explains how Gerstner wave mathematics are evaluated to
+displace vertices within an OpenGL vertex shader to create realistic
+water surfaces. Unlike standard sine waves that only alter elevation,
+Gerstner waves displace vertices horizontally toward the wave crests
+while pushing them upward, forming characteristic sharp peaks and broad
+troughs. The following sections break down the wave equations, their
+accumulation across multiple wave components, analytical normal
+calculations, and practical implementation in the OpenGL Shading
+Language (GLSL).</p>
+<h3 id="mathematical-formulation-of-a-gerstner-wave">Mathematical
+Formulation of a Gerstner Wave</h3>
+<p>A simple sine wave displaces a vertex purely along the vertical axis
+(<span class="math inline">\(Y\)</span>). A Gerstner wave introduces
+horizontal displacement along the direction of wave travel (<span
+class="math inline">\(X\)</span> and <span
+class="math inline">\(Z\)</span>), creating trochoidal motion similar to
+real fluid dynamics.</p>
+<p>For a vertex at an initial horizontal position <span
+class="math inline">\(\mathbf{P}_0 = (x, z)\)</span>, a single Gerstner
+wave is defined by the following parameters:</p>
+<ul>
+<li><strong>Direction (<span
+class="math inline">\(\mathbf{D}\)</span>):</strong> A normalized 2D
+vector <span class="math inline">\((d_x, d_z)\)</span> indicating wave
+travel direction.</li>
+<li><strong>Amplitude (<span class="math inline">\(A\)</span>):</strong>
+Half the vertical distance between crest and trough.</li>
+<li><strong>Wavelength (<span
+class="math inline">\(L\)</span>):</strong> Distance between crests,
+from which the wave number <span class="math inline">\(k =
+\frac{2\pi}{L}\)</span> is derived.</li>
+<li><strong>Speed (<span class="math inline">\(S\)</span>):</strong> The
+phase speed, producing frequency <span class="math inline">\(\omega =
+\sqrt{g \cdot k}\)</span> (using gravity <span
+class="math inline">\(g\)</span>) or a simplified phase constant <span
+class="math inline">\(\phi = S \times k\)</span>.</li>
+<li><strong>Steepness (<span class="math inline">\(Q\)</span>):</strong>
+A factor controlling the sharpness of the crest. <span
+class="math inline">\(Q\)</span> must satisfy <span
+class="math inline">\(0 \le Q \le 1\)</span>; setting <span
+class="math inline">\(Q = 0\)</span> yields a standard sine wave, while
+<span class="math inline">\(Q = 1\)</span> generates the sharpest crest
+possible without self-intersection.</li>
+</ul>
+<p>The phase <span class="math inline">\(\theta\)</span> of the wave at
+time <span class="math inline">\(t\)</span> is calculated as: <span
+class="math display">\[\theta = k(\mathbf{D} \cdot \mathbf{P}_0) +
+\omega t\]</span></p>
+<p>The displacement applied to the vertex position <span
+class="math inline">\((x, y, z)\)</span> is:</p>
+<ul>
+<li><span class="math inline">\(P_x = x + Q \cdot A \cdot d_x \cdot
+\cos(\theta)\)</span></li>
+<li><span class="math inline">\(P_y = A \cdot \sin(\theta)\)</span></li>
+<li><span class="math inline">\(P_z = z + Q \cdot A \cdot d_z \cdot
+\cos(\theta)\)</span></li>
+</ul>
+<h3 id="accumulating-multiple-waves">Accumulating Multiple Waves</h3>
+<p>Realistic ocean rendering requires superimposing multiple waves of
+varying directions, wavelengths, and amplitudes. To prevent the surface
+from self-intersecting (looping over itself at crests), the sum of all
+steepness factors must not exceed 1:</p>
+<p><span class="math display">\[\sum_{i=1}^{N} Q_i \le 1 \quad
+\text{where} \quad Q_i = \frac{\bar{Q}}{k_i A_i N}\]</span></p>
+<p>Here, <span class="math inline">\(\bar{Q}\)</span> is an
+artist-controlled steepness parameter between 0 and 1, and <span
+class="math inline">\(N\)</span> is the total number of waves. The final
+displaced vertex position <span
+class="math inline">\(\mathbf{P}\)</span> is the base position plus the
+cumulative displacement:</p>
+<p><span class="math display">\[\mathbf{P} = \begin{pmatrix} x \\ 0 \\ z
+\end{pmatrix} + \sum_{i=1}^{N} \begin{pmatrix} Q_i A_i d_{i,x}
+\cos(\theta_i) \\ A_i \sin(\theta_i) \\ Q_i A_i d_{i,z} \cos(\theta_i)
+\end{pmatrix}\]</span></p>
+<h3 id="analytical-normal-and-tangent-calculation">Analytical Normal and
+Tangent Calculation</h3>
+<p>Lighting models (such as Blinn-Phong or PBR) require an accurate
+surface normal at each displaced vertex. While normals can be estimated
+through finite differences by sampling neighboring points, Gerstner
+waves allow for exact analytical computation using partial
+derivatives.</p>
+<p>The tangent (<span class="math inline">\(\mathbf{T}\)</span>) and
+bitangent (<span class="math inline">\(\mathbf{B}\)</span>) vectors are
+computed by differentiating the surface position <span
+class="math inline">\(\mathbf{P}\)</span> with respect to <span
+class="math inline">\(x\)</span> and <span
+class="math inline">\(z\)</span>:</p>
+<p><span class="math display">\[\mathbf{T} = \frac{\partial
+\mathbf{P}}{\partial x} = \begin{pmatrix} 1 - \sum Q_i d_{i,x}^2 k_i A_i
+\sin(\theta_i) \\ \sum d_{i,x} k_i A_i \cos(\theta_i) \\ -\sum Q_i
+d_{i,x} d_{i,z} k_i A_i \sin(\theta_i) \end{pmatrix}\]</span></p>
+<p><span class="math display">\[\mathbf{B} = \frac{\partial
+\mathbf{P}}{\partial z} = \begin{pmatrix} -\sum Q_i d_{i,x} d_{i,z} k_i
+A_i \sin(\theta_i) \\ \sum d_{i,z} k_i A_i \cos(\theta_i) \\ 1 - \sum
+Q_i d_{i,z}^2 k_i A_i \sin(\theta_i) \end{pmatrix}\]</span></p>
+<p>The surface normal vector <span
+class="math inline">\(\mathbf{N}\)</span> is the cross product <span
+class="math inline">\(\mathbf{B} \times \mathbf{T}\)</span>, which
+simplifies to:</p>
+<p><span class="math display">\[\mathbf{N} = \begin{pmatrix} -\sum
+d_{i,x} k_i A_i \cos(\theta_i) \\ 1 - \sum Q_i k_i A_i \sin(\theta_i) \\
+-\sum d_{i,z} k_i A_i \cos(\theta_i) \end{pmatrix}\]</span></p>
+<p>This vector is normalized in the shader before being passed to the
+fragment stage.</p>
+<h3 id="glsl-vertex-shader-implementation">GLSL Vertex Shader
+Implementation</h3>
+<p>The following GLSL code demonstrates the evaluation of Gerstner
+displacement and normals directly on a flat horizontal plane mesh:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 330 core</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span> <span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">in</span> <span class="dt">vec3</span> aPos<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">mat4</span> model<span class="op">;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">mat4</span> view<span class="op">;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">mat4</span> projection<span class="op">;</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">float</span> uTime<span class="op">;</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec3</span> vWorldPos<span class="op">;</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec3</span> vNormal<span class="op">;</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> GerstnerWave <span class="op">{</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec2</span> direction<span class="op">;</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> amplitude<span class="op">;</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> wavelength<span class="op">;</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> speed<span class="op">;</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> steepness<span class="op">;</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a><span class="dt">const</span> <span class="dt">int</span> NUM_WAVES <span class="op">=</span> <span class="dv">4</span><span class="op">;</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> GerstnerWave uWaves<span class="op">[</span>NUM_WAVES<span class="op">];</span></span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">evaluateGerstnerWave</span><span class="op">(</span>GerstnerWave wave<span class="op">,</span> <span class="dt">vec2</span> pos<span class="op">,</span> <span class="dt">float</span> time<span class="op">,</span> </span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>                           <span class="dt">inout</span> <span class="dt">vec3</span> displacement<span class="op">,</span> <span class="dt">inout</span> <span class="dt">vec3</span> normal<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> k <span class="op">=</span> <span class="fl">2.0</span> <span class="op">*</span> <span class="fl">3.14159265</span> <span class="op">/</span> wave<span class="op">.</span><span class="fu">wavelength</span><span class="op">;</span></span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> c <span class="op">=</span> <span class="bu">sqrt</span><span class="op">(</span><span class="fl">9.8</span> <span class="op">/</span> k<span class="op">);</span> <span class="co">// Dispersion relation</span></span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec2</span> d <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span>wave<span class="op">.</span><span class="fu">direction</span><span class="op">);</span></span>
+<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> f <span class="op">=</span> k <span class="op">*</span> <span class="op">(</span><span class="bu">dot</span><span class="op">(</span>d<span class="op">,</span> pos<span class="op">)</span> <span class="op">-</span> wave<span class="op">.</span><span class="fu">speed</span> <span class="op">*</span> time<span class="op">);</span></span>
+<span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> a <span class="op">=</span> wave<span class="op">.</span><span class="fu">amplitude</span><span class="op">;</span></span>
+<span id="cb1-31"><a href="#cb1-31" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> q <span class="op">=</span> wave<span class="op">.</span><span class="fu">steepness</span> <span class="op">/</span> <span class="op">(</span>k <span class="op">*</span> a <span class="op">*</span> <span class="dt">float</span><span class="op">(</span>NUM_WAVES<span class="op">));</span></span>
+<span id="cb1-32"><a href="#cb1-32" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-33"><a href="#cb1-33" aria-hidden="true" tabindex="-1"></a>    displacement<span class="op">.</span><span class="fu">x</span> <span class="op">+=</span> q <span class="op">*</span> a <span class="op">*</span> d<span class="op">.</span><span class="fu">x</span> <span class="op">*</span> <span class="bu">cos</span><span class="op">(</span>f<span class="op">);</span></span>
+<span id="cb1-34"><a href="#cb1-34" aria-hidden="true" tabindex="-1"></a>    displacement<span class="op">.</span><span class="fu">y</span> <span class="op">+=</span> a <span class="op">*</span> <span class="bu">sin</span><span class="op">(</span>f<span class="op">);</span></span>
+<span id="cb1-35"><a href="#cb1-35" aria-hidden="true" tabindex="-1"></a>    displacement<span class="op">.</span><span class="fu">z</span> <span class="op">+=</span> q <span class="op">*</span> a <span class="op">*</span> d<span class="op">.</span><span class="fu">y</span> <span class="op">*</span> <span class="bu">cos</span><span class="op">(</span>f<span class="op">);</span></span>
+<span id="cb1-36"><a href="#cb1-36" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-37"><a href="#cb1-37" aria-hidden="true" tabindex="-1"></a>    normal<span class="op">.</span><span class="fu">x</span> <span class="op">-=</span> d<span class="op">.</span><span class="fu">x</span> <span class="op">*</span> <span class="op">(</span>k <span class="op">*</span> a<span class="op">)</span> <span class="op">*</span> <span class="bu">cos</span><span class="op">(</span>f<span class="op">);</span></span>
+<span id="cb1-38"><a href="#cb1-38" aria-hidden="true" tabindex="-1"></a>    normal<span class="op">.</span><span class="fu">y</span> <span class="op">-=</span> q <span class="op">*</span> <span class="op">(</span>k <span class="op">*</span> a<span class="op">)</span> <span class="op">*</span> <span class="bu">sin</span><span class="op">(</span>f<span class="op">);</span></span>
+<span id="cb1-39"><a href="#cb1-39" aria-hidden="true" tabindex="-1"></a>    normal<span class="op">.</span><span class="fu">z</span> <span class="op">-=</span> d<span class="op">.</span><span class="fu">y</span> <span class="op">*</span> <span class="op">(</span>k <span class="op">*</span> a<span class="op">)</span> <span class="op">*</span> <span class="bu">cos</span><span class="op">(</span>f<span class="op">);</span></span>
+<span id="cb1-40"><a href="#cb1-40" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb1-41"><a href="#cb1-41" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-42"><a href="#cb1-42" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb1-43"><a href="#cb1-43" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> displacedPos <span class="op">=</span> aPos<span class="op">;</span></span>
+<span id="cb1-44"><a href="#cb1-44" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> normal <span class="op">=</span> <span class="dt">vec3</span><span class="op">(</span><span class="fl">0.0</span><span class="op">,</span> <span class="fl">1.0</span><span class="op">,</span> <span class="fl">0.0</span><span class="op">);</span></span>
+<span id="cb1-45"><a href="#cb1-45" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> displacement <span class="op">=</span> <span class="dt">vec3</span><span class="op">(</span><span class="fl">0.0</span><span class="op">);</span></span>
+<span id="cb1-46"><a href="#cb1-46" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-47"><a href="#cb1-47" aria-hidden="true" tabindex="-1"></a>    <span class="kw">for</span> <span class="op">(</span><span class="dt">int</span> i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> NUM_WAVES<span class="op">;</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-48"><a href="#cb1-48" aria-hidden="true" tabindex="-1"></a>        <span class="fu">evaluateGerstnerWave</span><span class="op">(</span>uWaves<span class="op">[</span>i<span class="op">],</span> aPos<span class="op">.</span><span class="fu">xz</span><span class="op">,</span> uTime<span class="op">,</span> displacement<span class="op">,</span> normal<span class="op">);</span></span>
+<span id="cb1-49"><a href="#cb1-49" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb1-50"><a href="#cb1-50" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-51"><a href="#cb1-51" aria-hidden="true" tabindex="-1"></a>    displacedPos <span class="op">+=</span> displacement<span class="op">;</span></span>
+<span id="cb1-52"><a href="#cb1-52" aria-hidden="true" tabindex="-1"></a>    normal <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span>normal<span class="op">);</span></span>
+<span id="cb1-53"><a href="#cb1-53" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-54"><a href="#cb1-54" aria-hidden="true" tabindex="-1"></a>    vWorldPos <span class="op">=</span> <span class="op">(</span>model <span class="op">*</span> <span class="dt">vec4</span><span class="op">(</span>displacedPos<span class="op">,</span> <span class="fl">1.0</span><span class="op">)).</span><span class="fu">xyz</span><span class="op">;</span></span>
+<span id="cb1-55"><a href="#cb1-55" aria-hidden="true" tabindex="-1"></a>    vNormal <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span><span class="dt">mat3</span><span class="op">(</span><span class="bu">transpose</span><span class="op">(</span><span class="bu">inverse</span><span class="op">(</span>model<span class="op">)))</span> <span class="op">*</span> normal<span class="op">);</span></span>
+<span id="cb1-56"><a href="#cb1-56" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb1-57"><a href="#cb1-57" aria-hidden="true" tabindex="-1"></a>    <span class="bu">gl_Position</span> <span class="op">=</span> projection <span class="op">*</span> view <span class="op">*</span> <span class="dt">vec4</span><span class="op">(</span>vWorldPos<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb1-58"><a href="#cb1-58" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="performance-considerations">Performance Considerations</h3>
+<p>Because displacement is computed entirely in the vertex stage,
+performance depends primarily on the geometric density of the water grid
+rather than fragment throughput. A high-density grid is required to
+capture the steepness of short-wavelength waves without vertex swimming
+or aliasing. Geometric clipmaps or Tessellation Evaluation Shaders (TES)
+are commonly paired with this technique to allocate vertex density
+closer to the camera where wave curvature is most visible.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

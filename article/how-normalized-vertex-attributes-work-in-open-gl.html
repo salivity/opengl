@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How Normalized Vertex Attributes Work in OpenGL - opengl</title>
+    <meta name="description" content="Normalized attribute decoding in OpenGL is the pipeline mechanism that automatically converts fixed-point integer data types stored in vertex buffer objects into floating-point vectors for use in vertex shaders. By configuring vertex attribute pointers wi">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-normalized-vertex-attributes-work-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How Normalized Vertex Attributes Work in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-normalized-vertex-attributes-work-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Normalized attribute decoding in OpenGL is the pipeline mechanism that automatically converts fixed-point integer data types stored in vertex buffer objects into floating-point vectors for use in vertex shaders. By configuring vertex attribute pointers wi" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-normalized-vertex-attributes-work-in-opengl">How Normalized
+Vertex Attributes Work in OpenGL</h1>
+<p>Normalized attribute decoding in OpenGL is the pipeline mechanism
+that automatically converts fixed-point integer data types stored in
+vertex buffer objects into floating-point vectors for use in vertex
+shaders. By configuring vertex attribute pointers with normalization
+enabled, developers can store compact representations of vectors—such as
+vertex normals, tangents, and colors—in 8-bit, 16-bit, or 32-bit
+integers, conserving memory bandwidth while enabling shaders to process
+these inputs as standard single-precision floating-point values.</p>
+<h3 id="the-normalization-flag">The Normalization Flag</h3>
+<p>The conversion process is activated when setting up vertex attribute
+arrays via <code>glVertexAttribPointer</code>. The function accepts a
+boolean parameter, <code>normalized</code>:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>glVertexAttribPointer<span class="op">(</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    GLuint index<span class="op">,</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    GLint size<span class="op">,</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    GLenum type<span class="op">,</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    GLboolean normalized<span class="op">,</span> <span class="co">// Must be GL_TRUE for normalized conversion</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    GLsizei stride<span class="op">,</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">const</span> <span class="dt">void</span> <span class="op">*</span>pointer</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="op">);</span></span></code></pre></div>
+<p>When set to <code>GL_FALSE</code>, integer types are cast directly to
+floating-point values (e.g., an integer value of <code>255</code>
+becomes <code>255.0f</code>). When set to <code>GL_TRUE</code>, the
+hardware input assembler executes a specific arithmetic mapping that
+scales the entire integer range into a standardized floating-point
+interval before the vertex shader executes.</p>
+<h3 id="unsigned-integer-mapping">Unsigned Integer Mapping</h3>
+<p>Unsigned integer types (<code>GL_UNSIGNED_BYTE</code>,
+<code>GL_UNSIGNED_SHORT</code>, <code>GL_UNSIGNED_INT</code>) are mapped
+linearly to the range <code>[0.0, 1.0]</code>.</p>
+<p>Given an unsigned integer with <span class="math inline">\(b\)</span>
+bits, the maximum representable value is <span class="math inline">\(2^b
+- 1\)</span>. The conversion formula applied by the hardware is:</p>
+<p><span class="math display">\[f = \frac{c}{2^b - 1}\]</span></p>
+<p>Where:</p>
+<ul>
+<li><span class="math inline">\(c\)</span> is the incoming unsigned
+integer component.</li>
+<li><span class="math inline">\(b\)</span> is the bit depth of the data
+type (8 for byte, 16 for short, 32 for int).</li>
+<li><span class="math inline">\(f\)</span> is the resulting
+floating-point value.</li>
+</ul>
+<p>For example, an 8-bit value of <code>0</code> converts to
+<code>0.0</code>, while <code>255</code> maps to
+<code>255 / 255 = 1.0</code>. A mid-point value like <code>128</code>
+resolves to <code>128 / 255 ≈ 0.50196</code>.</p>
+<h3 id="signed-integer-mapping">Signed Integer Mapping</h3>
+<p>Signed integer types (<code>GL_BYTE</code>, <code>GL_SHORT</code>,
+<code>GL_INT</code>) are mapped to the symmetric range
+<code>[-1.0, 1.0]</code>.</p>
+<p>Because two's complement representations have an asymmetric range
+(for an 8-bit signed integer, the range is <span
+class="math inline">\([-128, 127]\)</span>), OpenGL defines the
+conversion to ensure that the maximum positive value reaches exactly
+<code>1.0</code> and that negative values are symmetrically aligned.</p>
+<p>The modern OpenGL specification defines the mapping as:</p>
+<p><span class="math display">\[f = \max\left(\frac{c}{2^{b-1} - 1},
+-1.0\right)\]</span></p>
+<p>For an 8-bit signed byte (<span class="math inline">\(b = 8\)</span>,
+divisor is <span class="math inline">\(127\)</span>):</p>
+<ul>
+<li><span class="math inline">\(c = 127\)</span> maps to <span
+class="math inline">\(127 / 127 = 1.0\)</span>.</li>
+<li><span class="math inline">\(c = 0\)</span> maps to <span
+class="math inline">\(0 / 127 = 0.0\)</span>.</li>
+<li><span class="math inline">\(c = -127\)</span> maps to <span
+class="math inline">\(-127 / 127 = -1.0\)</span>.</li>
+<li><span class="math inline">\(c = -128\)</span> computes to <span
+class="math inline">\(-128 / 127 \approx -1.00787\)</span>, which is
+clamped by the <span class="math inline">\(\max\)</span> function to
+<span class="math inline">\(-1.0\)</span>.</li>
+</ul>
+<p>Both <span class="math inline">\(-128\)</span> and <span
+class="math inline">\(-127\)</span> evaluate to <span
+class="math inline">\(-1.0\)</span>, preventing asymmetric bias while
+preserving full precision across the rest of the dynamic range.</p>
+<h3 id="hardware-pipeline-execution">Hardware Pipeline Execution</h3>
+<p>This decoding step occurs inside the GPU's fixed-function vertex
+puller (or input assembler) stage, which sits directly between the
+Vertex Buffer Object (VBO) memory read and the programmable vertex
+shader core.</p>
+<ol type="1">
+<li><strong>Fetch:</strong> Raw bytes are retrieved from VRAM according
+to the stride and offset.</li>
+<li><strong>Decode:</strong> Dedicated fixed-function conversion
+circuits scale and clamp the values according to the specified
+<code>type</code> and <code>normalized</code> flags.</li>
+<li><strong>Dispatch:</strong> The resulting single-precision values are
+packed into the shader's input register (such as a <code>vec3</code> or
+<code>vec4</code>).</li>
+</ol>
+<p>Because this transformation is handled by dedicated hardware units
+during data fetching, it incurs zero runtime instruction overhead in the
+vertex shader itself.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

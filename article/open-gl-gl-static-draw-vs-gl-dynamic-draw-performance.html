@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL: GL_STATIC_DRAW vs GL_DYNAMIC_DRAW Performance - opengl</title>
+    <meta name="description" content="Choosing between GLSTATICDRAW and GLDYNAMICDRAW in OpenGL determines how the graphics driver allocates buffer memory and manages CPU-GPU synchronization, which directly impacts frame rates and draw call throughput. This article covers the fundamental dist">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-gl-static-draw-vs-gl-dynamic-draw-performance">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL: GL_STATIC_DRAW vs GL_DYNAMIC_DRAW Performance - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-gl-static-draw-vs-gl-dynamic-draw-performance" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Choosing between GLSTATICDRAW and GLDYNAMICDRAW in OpenGL determines how the graphics driver allocates buffer memory and manages CPU-GPU synchronization, which directly impacts frame rates and draw call throughput. This article covers the fundamental dist" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-gl_static_draw-vs-gl_dynamic_draw-performance">OpenGL:
+GL_STATIC_DRAW vs GL_DYNAMIC_DRAW Performance</h1>
+<p>Choosing between <code>GL_STATIC_DRAW</code> and
+<code>GL_DYNAMIC_DRAW</code> in OpenGL determines how the graphics
+driver allocates buffer memory and manages CPU-GPU synchronization,
+which directly impacts frame rates and draw call throughput. This
+article covers the fundamental distinctions between these two usage
+hints, how the driver handles memory placement for each, the specific
+performance penalties of misusing them, and modern alternatives for
+maximum throughput.</p>
+<h2 id="the-purpose-of-buffer-usage-hints">The Purpose of Buffer Usage
+Hints</h2>
+<p>When calling <code>glBufferData()</code>, the usage parameter (such
+as <code>GL_STATIC_DRAW</code> or <code>GL_DYNAMIC_DRAW</code>) acts as
+a heuristic hint to the OpenGL driver. The flag consists of two
+components:</p>
+<ol type="1">
+<li><strong>Frequency of access:</strong> <code>STATIC</code> (data is
+set once and rarely modified) versus <code>DYNAMIC</code> (data is
+respecified repeatedly).</li>
+<li><strong>Nature of access:</strong> <code>DRAW</code> (the
+application writes the data, and the GPU reads it for rendering).</li>
+</ol>
+<p>Because modern graphics drivers manage memory dynamically, these
+flags inform the driver where to place buffer storage physically—whether
+in high-speed, on-chip device VRAM, unified system memory, or AGP/GART
+aperture memory.</p>
+<h2 id="how-the-driver-handles-memory-placement">How the Driver Handles
+Memory Placement</h2>
+<h3 id="gl_static_draw">GL_STATIC_DRAW</h3>
+<ul>
+<li><strong>Target Memory:</strong> High-bandwidth, device-local
+VRAM.</li>
+<li><strong>Optimization Goal:</strong> Maximum read throughput for the
+GPU during draw calls.</li>
+<li><strong>CPU Access:</strong> CPU-to-GPU write performance is
+deprioritized. Modifying this buffer requires the driver to either
+perform a costly synchronization barrier or copy data across the PCIe
+bus via staging areas.</li>
+</ul>
+<h3 id="gl_dynamic_draw">GL_DYNAMIC_DRAW</h3>
+<ul>
+<li><strong>Target Memory:</strong> Host-visible VRAM, write-combined
+memory, or fast PCIe-accessible system RAM.</li>
+<li><strong>Optimization Goal:</strong> Low-latency CPU writes combined
+with consistent GPU read access.</li>
+<li><strong>CPU Access:</strong> Prioritizes frequent streaming updates
+via <code>glBufferSubData()</code> or <code>glMapBuffer()</code>,
+minimizing the overhead of moving data from the CPU to the GPU.</li>
+</ul>
+<h2 id="performance-implications-of-choosing-incorrectly">Performance
+Implications of Choosing Incorrectly</h2>
+<p>Selecting the wrong hint does not break rendering, but it introduces
+hidden performance bottlenecks depending on your workload:</p>
+<h3 id="misusing-gl_static_draw-on-frequently-updated-data">Misusing
+GL_STATIC_DRAW on Frequently Updated Data</h3>
+<p>If you update a <code>GL_STATIC_DRAW</code> buffer every frame:</p>
+<ul>
+<li><strong>Pipeline Stalls:</strong> If the GPU is currently reading
+the buffer to render a frame while the CPU attempts to write to it, the
+CPU thread must block until the GPU finishes, causing massive
+synchronization latency.</li>
+<li><strong>Driver Reallocation:</strong> Some drivers detect repeated
+updates to static memory and attempt to mitigate stalls by internally
+reallocating (orphaning) the buffer. This creates CPU driver overhead
+and memory fragmentation.</li>
+<li><strong>Bus Congestion:</strong> Transfers are treated as
+high-overhead one-off operations rather than an optimized continuous
+stream.</li>
+</ul>
+<h3 id="misusing-gl_dynamic_draw-on-static-geometry">Misusing
+GL_DYNAMIC_DRAW on Static Geometry</h3>
+<p>If you place unchanging mesh data (such as environment models) in a
+<code>GL_DYNAMIC_DRAW</code> buffer:</p>
+<ul>
+<li><strong>Reduced GPU Memory Bandwidth:</strong> To facilitate easy
+CPU writes, the driver might locate the buffer in memory with lower
+GPU-read bandwidth compared to pure local VRAM.</li>
+<li><strong>Draw Overhead:</strong> Shaders and vertex fetch hardware
+may experience higher latency when pulling vertex attributes across the
+bus rather than accessing fast local device memory, reducing overall
+fill rate and geometry throughput.</li>
+</ul>
+<h2 id="practical-guidelines">Practical Guidelines</h2>
+<ul>
+<li><strong>Use <code>GL_STATIC_DRAW</code> for:</strong> Static scene
+geometry, static UI layouts, pre-baked collision meshes, and environment
+models that are uploaded during loading screens and never modified
+again.</li>
+<li><strong>Use <code>GL_DYNAMIC_DRAW</code> for:</strong>
+CPU-calculated particle systems, dynamic procedural terrain, debug
+wireframe overlays, or text rendering engines where vertex counts and
+positions change every frame.</li>
+<li><strong>Modern Alternatives:</strong> In OpenGL 4.4 and higher,
+immutable storage via <code>glBufferStorage()</code> and persistent
+mapped buffers (<code>GL_MAP_PERSISTENT_BIT</code>) often outperform
+classic <code>GL_DYNAMIC_DRAW</code> by eliminating driver heuristic
+guesswork entirely and letting the developer manage ring buffers and
+fencing manually.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

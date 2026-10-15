@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Atomic Operations on Buffer Data Guarantees - opengl</title>
+    <meta name="description" content="This article examines the guarantees provided by modern OpenGL when performing atomic memory operations on raw buffer data, such as Shader Storage Buffer Objects (SSBOs) and Atomic Counter Buffers. It details the core mechanisms of hardware-level atomicit">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-atomic-operations-on-buffer-data-guarantees">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Atomic Operations on Buffer Data Guarantees - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-atomic-operations-on-buffer-data-guarantees" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article examines the guarantees provided by modern OpenGL when performing atomic memory operations on raw buffer data, such as Shader Storage Buffer Objects (SSBOs) and Atomic Counter Buffers. It details the core mechanisms of hardware-level atomicit" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-atomic-operations-on-buffer-data-guarantees">OpenGL
+Atomic Operations on Buffer Data Guarantees</h1>
+<p>This article examines the guarantees provided by modern OpenGL when
+performing atomic memory operations on raw buffer data, such as Shader
+Storage Buffer Objects (SSBOs) and Atomic Counter Buffers. It details
+the core mechanisms of hardware-level atomicity, memory visibility,
+ordering semantics, and alignment constraints that govern concurrent
+read-modify-write operations across parallel shader invocations.</p>
+<h3 id="hardware-atomicity">Hardware Atomicity</h3>
+<p>When executing atomic functions (such as <code>atomicAdd</code>,
+<code>atomicMin</code>, <code>atomicExchange</code>, or
+<code>atomicCompSwap</code>) in GLSL on buffer variables, OpenGL
+guarantees that the read-modify-write sequence is indivisible. If
+multiple shader invocations target the exact same 32-bit (or 64-bit,
+where supported) memory location concurrently, the hardware serializes
+these transactions. No invocation will read a partially updated state,
+and no updates will be silently dropped due to data races between
+concurrent atomic operations.</p>
+<h3 id="memory-coherency-and-qualifiers">Memory Coherency and
+Qualifiers</h3>
+<p>OpenGL employs a weakly ordered memory model. By default, shader
+invocations may cache memory reads and writes, meaning that updates made
+by one invocation are not automatically visible to others.</p>
+<p>To ensure correct access to raw buffer data:</p>
+<ul>
+<li><strong>The <code>coherent</code> Qualifier:</strong> Buffer
+variables subjected to atomic operations across multiple invocations
+should be declared with the <code>coherent</code> memory qualifier in
+GLSL. This instructs the compiler and hardware that the variable is
+shared across invocations and bypasses local caching mechanisms that
+would otherwise lead to stale data.</li>
+<li><strong>Non-Atomic Access Hazards:</strong> Atomicity guarantees
+apply strictly to concurrent operations where <em>all</em> participating
+invocations use atomic functions. If one invocation executes an atomic
+write while another performs a normal assignment or read to the same
+address, race conditions occur, and the behavior is undefined.</li>
+</ul>
+<h3 id="visibility-and-memory-barriers">Visibility and Memory
+Barriers</h3>
+<p>Atomicity does not imply global execution ordering or automatic
+cross-stage visibility. OpenGL provides two levels of barriers to
+guarantee visibility:</p>
+<ol type="1">
+<li><strong>Intra-Stage Barriers (GLSL):</strong> Within compute
+shaders, calling <code>memoryBarrierBuffer()</code> or
+<code>memoryBarrierShared()</code> guarantees that writes performed
+before the barrier are committed and visible to subsequent operations
+within the same workgroup (when paired with
+<code>barrier()</code>).</li>
+<li><strong>Inter-Stage Barriers (OpenGL API):</strong> Updates
+performed via atomic buffer operations are not automatically visible to
+subsequent pipeline stages or draw calls. The application must invoke
+<code>glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT)</code> (or the
+appropriate bitmask for the target resource) to guarantee that all
+atomic writes complete and are flushed before subsequent commands read
+the updated buffer data.</li>
+</ol>
+<h3 id="execution-ordering-guarantees">Execution Ordering
+Guarantees</h3>
+<p>While individual atomic operations are serialized, the <em>order of
+execution</em> among concurrent invocations is non-deterministic. OpenGL
+provides no guarantees regarding which invocation will execute its
+atomic operation first. If strict sequential ordering is required, the
+algorithm must implement custom synchronization structures, such as
+spinlocks or pass-based scheduling, using operations like
+<code>atomicCompSwap</code>.</p>
+<h3 id="data-alignment-and-type-restrictions">Data Alignment and Type
+Restrictions</h3>
+<p>OpenGL guarantees atomic behavior only on naturally aligned
+memory:</p>
+<ul>
+<li>Standard atomic operations are guaranteed on 32-bit signed and
+unsigned integers (<code>int</code>, <code>uint</code>).</li>
+<li>64-bit integer atomics are supported only when the
+<code>GL_ARB_gpu_shader_int64</code> or
+<code>GL_NV_shader_atomic_int64</code> extensions are present.</li>
+<li>The memory address accessed by an atomic function must be aligned to
+the size of the operand (e.g., 4-byte boundaries for 32-bit atomics).
+Performing atomic operations on unaligned data results in undefined
+behavior or hardware exceptions.</li>
+</ul>
+<h3 id="host-device-synchronization">Host-Device Synchronization</h3>
+<p>Modifications made to raw buffer data via GPU atomics are not
+coherent with CPU host memory by default. If the buffer is mapped into
+client memory, visibility requires proper synchronization through sync
+objects (<code>glFenceSync</code>, <code>glClientWaitSync</code>) and
+buffer mapping flags (such as <code>GL_MAP_COHERENT_BIT</code> or
+explicit flushes via <code>glFlushMappedBufferRange</code>).</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

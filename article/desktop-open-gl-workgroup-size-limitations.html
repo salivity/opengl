@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Desktop OpenGL Workgroup Size Limitations - opengl</title>
+    <meta name="description" content="When utilizing OpenGL compute shaders, local workgroup dimensions and total invocations are strictly governed by hardware-dependent limits exposed through the graphics driver. While the core OpenGL specification dictates minimum baseline requirements, phy">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/desktop-open-gl-workgroup-size-limitations">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Desktop OpenGL Workgroup Size Limitations - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/desktop-open-gl-workgroup-size-limitations" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="When utilizing OpenGL compute shaders, local workgroup dimensions and total invocations are strictly governed by hardware-dependent limits exposed through the graphics driver. While the core OpenGL specification dictates minimum baseline requirements, phy" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="desktop-opengl-workgroup-size-limitations">Desktop OpenGL
+Workgroup Size Limitations</h1>
+<p>When utilizing OpenGL compute shaders, local workgroup dimensions and
+total invocations are strictly governed by hardware-dependent limits
+exposed through the graphics driver. While the core OpenGL specification
+dictates minimum baseline requirements, physical graphics architectures
+and their corresponding desktop drivers—primarily from NVIDIA, AMD, and
+Intel—impose distinct constraints and performance implications.
+Understanding these limits is critical for ensuring cross-platform
+stability and preventing shader compilation or dispatch failures.</p>
+<h3 id="specification-baselines-vs-hardware-limits">Specification
+Baselines vs. Hardware Limits</h3>
+<p>The OpenGL specification defines the minimum guaranteed limits that
+any compliant desktop driver (OpenGL 4.3 and above) must support. These
+values represent the floor; hardware vendors may exceed them, but
+portable code cannot assume availability beyond these minimums without
+runtime queries:</p>
+<ul>
+<li><strong>Maximum Invocations
+(<code>GL_MAX_COMPUTE_WORK_GROUP_INVOCATIONS</code>):</strong> The
+specification requires a minimum of 1024. This represents the absolute
+limit of the product of your local workgroup dimensions (<span
+class="math inline">\(X \times Y \times Z\)</span>).</li>
+<li><strong>Maximum Workgroup Sizes
+(<code>GL_MAX_COMPUTE_WORK_GROUP_SIZE</code>):</strong> The
+specification minimums are 1024 for dimension <span
+class="math inline">\(X\)</span>, 1024 for dimension <span
+class="math inline">\(Y\)</span>, and 64 for dimension <span
+class="math inline">\(Z\)</span>.</li>
+<li><strong>Maximum Workgroup Count
+(<code>GL_MAX_COMPUTE_WORK_GROUP_COUNT</code>):</strong> The
+specification requires drivers to support at least 65,535 workgroups per
+dimension when calling <code>glDispatchCompute</code>.</li>
+</ul>
+<p>A common pitfall is assuming that because individual dimension limits
+are 1024, a workgroup layout such as
+<code>layout(local_size_x = 1024, local_size_y = 1024, local_size_z = 1)</code>
+is valid. This configuration fails because the total invocation count
+(<span class="math inline">\(1024 \times 1024 = 1,048,576\)</span>)
+vastly exceeds the maximum invocation limit of 1024.</p>
+<h3 id="vendor-specific-implementation-differences">Vendor-Specific
+Implementation Differences</h3>
+<p>While desktop drivers generally meet or exceed the OpenGL
+specification, their architectural implementations introduce distinct
+practical constraints:</p>
+<h4 id="nvidia">NVIDIA</h4>
+<ul>
+<li><strong>Dimension Limits:</strong> Typically matches the spec
+minimums: <span class="math inline">\(X = 1024\)</span>, <span
+class="math inline">\(Y = 1024\)</span>, <span class="math inline">\(Z =
+64\)</span>.</li>
+<li><strong>Total Invocations:</strong> Fixed at 1024 across modern
+GeForce and RTX workstation drivers.</li>
+<li><strong>Dispatch Count:</strong> Often allows dimensions far
+exceeding the 65,535 minimum for dimension <span
+class="math inline">\(X\)</span> (frequently up to <span
+class="math inline">\(2^{31} - 1\)</span>), while dimensions <span
+class="math inline">\(Y\)</span> and <span
+class="math inline">\(Z\)</span> remain capped at 65,535.</li>
+<li><strong>Execution Granularity:</strong> NVIDIA hardware executes
+threads in warps of 32. Declaring workgroup sizes that are not multiples
+of 32 leads to underutilized execution units (warp divergence and idle
+threads).</li>
+</ul>
+<h4 id="amd">AMD</h4>
+<ul>
+<li><strong>Dimension Limits:</strong> Most modern AMD drivers report
+sizes of <span class="math inline">\(X = 1024\)</span>, <span
+class="math inline">\(Y = 1024\)</span>, and either 64 or 1024 for <span
+class="math inline">\(Z\)</span>, depending on the architecture
+generation.</li>
+<li><strong>Total Invocations:</strong> Remains at 1024 across almost
+all desktop Radeon drivers.</li>
+<li><strong>Dispatch Count:</strong> Similar to NVIDIA, AMD drivers
+often support larger dispatch counts on <span
+class="math inline">\(X\)</span> (<span class="math inline">\(2^{31} -
+1\)</span>), while <span class="math inline">\(Y\)</span> and <span
+class="math inline">\(Z\)</span> often adhere to the 65,535 limit.</li>
+<li><strong>Execution Granularity:</strong> GCN and RDNA architectures
+utilize wavefronts of 64 or 32 threads. Aligning local workgroup sizes
+to multiples of 64 ensures full wave occupancy and avoids pipeline
+stalls across differing AMD driver revisions.</li>
+</ul>
+<h4 id="intel">Intel</h4>
+<ul>
+<li><strong>Dimension Limits:</strong> Intel integrated and discrete Arc
+graphics drivers typically report <span class="math inline">\(X =
+1024\)</span>, <span class="math inline">\(Y = 1024\)</span>, and <span
+class="math inline">\(Z = 64\)</span>.</li>
+<li><strong>Total Invocations:</strong> Consistent with the
+specification minimum of 1024.</li>
+<li><strong>Dispatch Count:</strong> Intel drivers generally adhere to
+65,535 across all three dimensions, though modern discrete Arc drivers
+allow higher bounds on the <span class="math inline">\(X\)</span>
+axis.</li>
+<li><strong>Execution Granularity:</strong> Intel execution units (EUs)
+process subgroups natively sized between 8, 16, or 32 threads depending
+on compilation heuristics and register pressure.</li>
+</ul>
+<h3 id="dynamic-workgroup-validation">Dynamic Workgroup Validation</h3>
+<p>To ensure code runs reliably across all desktop environments, limits
+must be validated dynamically at runtime using OpenGL queries rather
+than hardcoded assumptions:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Query maximum invocation limit (X * Y * Z)</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>GLint maxInvocations<span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>glGetIntegerv<span class="op">(</span>GL_MAX_COMPUTE_WORK_GROUP_INVOCATIONS<span class="op">,</span> <span class="op">&amp;</span>maxInvocations<span class="op">);</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="co">// Query maximum size per dimension</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>GLint maxSizes<span class="op">[</span><span class="dv">3</span><span class="op">];</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>glGetIntegeri_v<span class="op">(</span>GL_MAX_COMPUTE_WORK_GROUP_SIZE<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="op">&amp;</span>maxSizes<span class="op">[</span><span class="dv">0</span><span class="op">]);</span> <span class="co">// X</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>glGetIntegeri_v<span class="op">(</span>GL_MAX_COMPUTE_WORK_GROUP_SIZE<span class="op">,</span> <span class="dv">1</span><span class="op">,</span> <span class="op">&amp;</span>maxSizes<span class="op">[</span><span class="dv">1</span><span class="op">]);</span> <span class="co">// Y</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>glGetIntegeri_v<span class="op">(</span>GL_MAX_COMPUTE_WORK_GROUP_SIZE<span class="op">,</span> <span class="dv">2</span><span class="op">,</span> <span class="op">&amp;</span>maxSizes<span class="op">[</span><span class="dv">2</span><span class="op">]);</span> <span class="co">// Z</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="co">// Query maximum global dispatch counts</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>GLint maxCounts<span class="op">[</span><span class="dv">3</span><span class="op">];</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>glGetIntegeri_v<span class="op">(</span>GL_MAX_COMPUTE_WORK_GROUP_COUNT<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="op">&amp;</span>maxCounts<span class="op">[</span><span class="dv">0</span><span class="op">]);</span> <span class="co">// X</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>glGetIntegeri_v<span class="op">(</span>GL_MAX_COMPUTE_WORK_GROUP_COUNT<span class="op">,</span> <span class="dv">1</span><span class="op">,</span> <span class="op">&amp;</span>maxCounts<span class="op">[</span><span class="dv">1</span><span class="op">]);</span> <span class="co">// Y</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>glGetIntegeri_v<span class="op">(</span>GL_MAX_COMPUTE_WORK_GROUP_COUNT<span class="op">,</span> <span class="dv">2</span><span class="op">,</span> <span class="op">&amp;</span>maxCounts<span class="op">[</span><span class="dv">2</span><span class="op">]);</span> <span class="co">// Z</span></span></code></pre></div>
+<h3 id="shared-memory-constraints">Shared Memory Constraints</h3>
+<p>In addition to pure dimension counts, workgroup sizing is indirectly
+limited by shared memory
+(<code>GL_MAX_COMPUTE_SHARED_MEMORY_SIZE</code>). The OpenGL baseline
+guarantees 32 KB per workgroup, though modern desktop drivers from
+NVIDIA and AMD frequently support 48 KB, 64 KB, or more. If a shader
+utilizes significant shared memory, the driver may fail to dispatch
+large workgroups due to insufficient on-chip cache resources, even if
+the workgroup dimensions conform to the invocation limits.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

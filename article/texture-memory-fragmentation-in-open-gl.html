@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Texture Memory Fragmentation in OpenGL - opengl</title>
+    <meta name="description" content="During prolonged execution of OpenGL applications, dynamic allocation and destruction of textures create non-contiguous free memory regions across video RAM (VRAM), a process known as memory fragmentation. This article examines the architectural causes of">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/texture-memory-fragmentation-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Texture Memory Fragmentation in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/texture-memory-fragmentation-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="During prolonged execution of OpenGL applications, dynamic allocation and destruction of textures create non-contiguous free memory regions across video RAM (VRAM), a process known as memory fragmentation. This article examines the architectural causes of" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="texture-memory-fragmentation-in-opengl">Texture Memory
+Fragmentation in OpenGL</h1>
+<p>During prolonged execution of OpenGL applications, dynamic allocation
+and destruction of textures create non-contiguous free memory regions
+across video RAM (VRAM), a process known as memory fragmentation. This
+article examines the architectural causes of internal and external
+texture fragmentation in graphics memory, the role of GPU memory
+management units (MMUs) and driver allocators, the performance penalties
+associated with prolonged runtime, and modern strategies to mitigate
+VRAM depletion.</p>
+<h3 id="the-mechanics-of-opengl-memory-allocation">The Mechanics of
+OpenGL Memory Allocation</h3>
+<p>OpenGL abstracts low-level hardware memory management through its
+client-server architecture. When an application calls functions like
+<code>glTexImage2D</code>, the OpenGL driver requests memory from the
+GPU’s physical memory allocator. Unlike modern APIs like Vulkan or
+DirectX 12, where developers explicitly manage memory pools and offsets,
+legacy and core-profile OpenGL delegate allocation, placement, and
+eviction entirely to the proprietary graphics driver.</p>
+<p>Over extended execution cycles, applications frequently create,
+modify, and destroy textures of differing dimensions, formats, and
+mipmap levels. This continuous churn forces the driver’s memory manager
+to constantly divide and reassemble available VRAM blocks.</p>
+<h3 id="external-fragmentation-the-primary-breakdown">External
+Fragmentation: The Primary Breakdown</h3>
+<p>External fragmentation occurs when total free memory is theoretically
+sufficient to accommodate an allocation request, but no single
+contiguous block of physical memory is large enough to satisfy it.</p>
+<ol type="1">
+<li><strong>Varying Lifetimes and Sizes:</strong> A typical 3D
+application mixes static textures (environment maps, materials) with
+transient textures (render targets, dynamically generated UI elements,
+streaming video frames). When transient textures of varying sizes (e.g.,
+256x256 UI icons mixed with 4096x4096 shadow maps) are freed while
+adjacent long-lived textures remain pinned, the driver is left with
+scattered "holes" of free memory.</li>
+<li><strong>GPU Virtual Memory Limitations:</strong> Modern GPUs feature
+internal Memory Management Units (MMUs) with page tables capable of
+mapping non-contiguous physical pages into contiguous virtual address
+spaces. However, GPU MMU page sizes are often coarse (typically 64 KB or
+larger, compared to the standard 4 KB on x86 CPUs). Additionally,
+high-performance rendering requires physically contiguous or aligned
+memory to support hardware features like tiled/swizzled texture layouts
+and hardware-accelerated decompression. Consequently, virtual memory
+alone cannot fully eliminate external fragmentation.</li>
+</ol>
+<h3 id="internal-fragmentation-and-hardware-alignment">Internal
+Fragmentation and Hardware Alignment</h3>
+<p>Internal fragmentation occurs when allocated memory exceeds the
+actual memory requested by the texture payload. This arises from several
+hardware-enforced constraints:</p>
+<ul>
+<li><strong>Pitch and Stride Alignment:</strong> GPUs do not store
+texture rows contiguously in linear fashion. Hardware caches demand that
+row strides align to specific byte boundaries (e.g., 128 or 256 bytes)
+to maximize memory bus bandwidth.</li>
+<li><strong>Tiling and Swizzling:</strong> To accelerate 2D locality
+lookups during filtering, GPUs store texels in proprietary tiled
+patterns (such as Morton/Z-order curves). Textures whose dimensions do
+not match the tile block size (often 4x4 or 8x8 texels) must be padded
+with unaddressable memory.</li>
+<li><strong>Power-of-Two Driver Rounding:</strong> Some driver
+allocators use buddy allocation algorithms or slab allocators that round
+allocations up to the nearest power of two or fixed-size bucket,
+generating unused slack space inside the allocation.</li>
+</ul>
+<h3 id="the-problem-with-compaction-and-defragmentation">The Problem
+with Compaction and Defragmentation</h3>
+<p>In traditional system programming, memory managers periodically
+defragment heap space by copying allocated blocks together to form
+larger contiguous regions. In GPU memory, defragmentation is
+prohibitively expensive for several reasons:</p>
+<ul>
+<li><strong>Pipeline Stalls:</strong> Moving a texture in VRAM requires
+that all GPU draw calls, compute shaders, and blit operations currently
+referencing that memory be synchronized or halted.</li>
+<li><strong>Copy Bandwidth:</strong> Transferring multi-megabyte
+textures from one VRAM address to another consumes precious memory
+bandwidth, leading to severe frame rate drops (stuttering).</li>
+<li><strong>Reference Invalidation:</strong> Internal driver pointers
+and bindless texture handles become invalidated when physical backing
+stores move, necessitating complex driver-side tracking.</li>
+</ul>
+<p>Because real-time graphics cannot afford the latency of continuous
+defragmentation, drivers typically employ lazy or opportunistic garbage
+collection. As a result, fragmented spaces persist indefinitely unless
+an allocation completely fails.</p>
+<h3 id="consequences-of-sustained-fragmentation">Consequences of
+Sustained Fragmentation</h3>
+<p>As an OpenGL application runs for hours or days with unmanaged
+texture churn, the symptoms of fragmentation become acute:</p>
+<ul>
+<li><strong>Fallback to Host Memory (GART/UMA):</strong> When the driver
+cannot find contiguous VRAM, it may allocate the texture in system RAM
+via the Graphics Address Remap Table (GART). Sampling these textures
+forces reads across the high-latency PCIe bus, dropping rendering
+performance.</li>
+<li><strong>Aggressive Eviction Cycles:</strong> The driver begins
+paging existing textures out to system memory to free up adjacent
+blocks, triggering thrashing as textures are swapped in and out of VRAM
+frame-by-frame.</li>
+<li><strong>Out-of-Memory (OOM) Errors:</strong> The application may
+receive a <code>GL_OUT_OF_MEMORY</code> error during a texture creation
+call, even if system monitoring utilities report that 30% to 50% of
+overall VRAM remains technically free.</li>
+</ul>
+<h3 id="prevention-strategies">Prevention Strategies</h3>
+<p>Mitigating texture fragmentation in OpenGL requires bypassing
+driver-managed allocation heuristics:</p>
+<ul>
+<li><strong>Immutable Texture Storage:</strong> Replace
+<code>glTexImage2D</code> with <code>glTexStorage2D</code>. This
+guarantees the texture layout and mipmap chain are fully allocated
+upfront, preventing runtime reallocations.</li>
+<li><strong>Texture Arrays and Atlasing:</strong> Group identically
+sized textures into 2D Texture Arrays (<code>GL_TEXTURE_2D_ARRAY</code>)
+or combine multiple disparate assets into a single large texture atlas.
+This replaces millions of small, fragmented allocations with a single
+fixed-size block.</li>
+<li><strong>Custom VRAM Sub-Allocation Pools:</strong> Allocate large,
+persistent textures or pixel buffer objects (PBOs) at application
+startup and manage internal offsets manually within application logic
+rather than relying on driver-side creation and destruction cycles.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

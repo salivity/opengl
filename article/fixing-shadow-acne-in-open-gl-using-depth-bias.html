@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fixing Shadow Acne in OpenGL Using Depth Bias - opengl</title>
+    <meta name="description" content="Shadow acne is a common visual artifact in OpenGL shadow mapping characterized by false, striped self-shadowing patterns across illuminated surfaces. This article explains the underlying causes of shadow acne—primarily depth buffer quantization and geomet">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/fixing-shadow-acne-in-open-gl-using-depth-bias">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Fixing Shadow Acne in OpenGL Using Depth Bias - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/fixing-shadow-acne-in-open-gl-using-depth-bias" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Shadow acne is a common visual artifact in OpenGL shadow mapping characterized by false, striped self-shadowing patterns across illuminated surfaces. This article explains the underlying causes of shadow acne—primarily depth buffer quantization and geomet" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="fixing-shadow-acne-in-opengl-using-depth-bias">Fixing Shadow
+Acne in OpenGL Using Depth Bias</h1>
+<p>Shadow acne is a common visual artifact in OpenGL shadow mapping
+characterized by false, striped self-shadowing patterns across
+illuminated surfaces. This article explains the underlying causes of
+shadow acne—primarily depth buffer quantization and geometric
+discretization—and demonstrates how to effectively eliminate it using
+static, slope-scaled depth bias techniques and OpenGL's built-in polygon
+offset functionality.</p>
+<h2 id="what-causes-shadow-acne">What Causes Shadow Acne</h2>
+<p>Shadow mapping operates in two distinct passes. First, the scene is
+rendered from the light's perspective into an off-screen depth texture
+(the shadow map). Second, the scene is rendered from the camera's
+perspective, where each fragment's distance to the light is compared
+against the corresponding depth value stored in the shadow map. If the
+fragment is further from the light than the stored value, it is marked
+as in shadow.</p>
+<p>Shadow acne occurs primarily due to the resolution limits of the
+shadow map:</p>
+<ol type="1">
+<li><strong>Texel Discretization:</strong> The shadow map represents
+continuous 3D surfaces as discrete, flat texels. A single texel covers
+an area on a surface where the actual depth varies continuously. When
+the surface is sampled, roughly half of the fragments mapped to that
+texel have a depth slightly greater than the stored texel depth, while
+the other half have a depth slightly less. The fragments with a greater
+depth incorrectly register as occluded by the surface itself, creating
+alternating bands of light and dark pixels.</li>
+<li><strong>Surface Inclination:</strong> As the angle between the light
+direction and the surface normal increases (grazing angles), a single
+shadow map texel stretches across a significantly larger surface area.
+This magnifies the depth discrepancy between the flat texel and the
+sloped surface.</li>
+<li><strong>Floating-Point Precision:</strong> Limited precision in the
+depth buffer (e.g., standard 16-bit or 24-bit depth formats) introduces
+rounding errors during depth evaluation, causing fragments on flat
+planes to randomly fall behind the recorded depth value.</li>
+</ol>
+<h2 id="resolving-shadow-acne-with-depth-bias">Resolving Shadow Acne
+with Depth Bias</h2>
+<p>The standard solution to shadow acne is applying a depth bias (an
+artificial offset) to separate the surface from the sampled depth value
+during the shadow comparison.</p>
+<h3 id="1-constant-depth-bias">1. Constant Depth Bias</h3>
+<p>A constant bias subtracts a fixed value from the fragment's current
+depth before comparing it to the depth map:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">// GLSL fragment shader</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> bias <span class="op">=</span> <span class="fl">0.005</span><span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> shadow <span class="op">=</span> <span class="op">(</span>currentDepth <span class="op">-</span> bias<span class="op">)</span> <span class="op">&gt;</span> closestDepth <span class="op">?</span> <span class="fl">1.0</span> <span class="op">:</span> <span class="fl">0.0</span><span class="op">;</span></span></code></pre></div>
+<p>While simple, a fixed bias has limitations. If the bias is set too
+low, acne persists on surfaces angled away from the light. If the bias
+is set too high, it introduces "Peter Panning," an artifact where
+shadows detach from the objects casting them, making objects appear to
+float.</p>
+<h3 id="2-slope-scaled-depth-bias-in-shaders">2. Slope-Scaled Depth Bias
+in Shaders</h3>
+<p>To balance flat surfaces and steep angles, the bias can be scaled
+dynamically based on the angle between the surface normal and the light
+direction:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Calculate bias based on the angle between surface normal and light direction</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> bias <span class="op">=</span> <span class="bu">max</span><span class="op">(</span><span class="fl">0.05</span> <span class="op">*</span> <span class="op">(</span><span class="fl">1.0</span> <span class="op">-</span> <span class="bu">dot</span><span class="op">(</span>normal<span class="op">,</span> lightDir<span class="op">)),</span> <span class="fl">0.005</span><span class="op">);</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> shadow <span class="op">=</span> <span class="op">(</span>currentDepth <span class="op">-</span> bias<span class="op">)</span> <span class="op">&gt;</span> closestDepth <span class="op">?</span> <span class="fl">1.0</span> <span class="op">:</span> <span class="fl">0.0</span><span class="op">;</span></span></code></pre></div>
+<p>When the surface is perpendicular to the light
+(<code>dot(normal, lightDir)</code> approaches 1), a small minimum bias
+is applied, preventing Peter Panning. When the light strikes at a
+grazing angle (<code>dot</code> approaches 0), the bias scales up to
+account for the larger depth variance across individual texels.</p>
+<h3 id="3-hardware-depth-bias-glpolygonoffset">3. Hardware Depth Bias
+(<code>glPolygonOffset</code>)</h3>
+<p>OpenGL provides a hardware-accelerated method to offset depth values
+directly during the shadow map generation pass via
+<code>glPolygonOffset</code>. This technique shifts the depth values
+written to the shadow map rather than adjusting calculations in the
+fragment shader.</p>
+<p>Before rendering the shadow map pass:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>glEnable<span class="op">(</span>GL_POLYGON_OFFSET_FILL<span class="op">);</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>glPolygonOffset<span class="op">(</span>factor<span class="op">,</span> units<span class="op">);</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="co">// Render scene from light source...</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>glDisable<span class="op">(</span>GL_POLYGON_OFFSET_FILL<span class="op">);</span></span></code></pre></div>
+<ul>
+<li><code>factor</code> scales the maximum depth slope of the polygon.
+Polygons at steeper angles to the light receive a larger offset. Typical
+values range between 1.0 and 4.0.</li>
+<li><code>units</code> scales the minimum resolvable depth difference,
+providing a constant offset. Typical values range between 1.0 and
+4.0.</li>
+</ul>
+<p>Using <code>glPolygonOffset</code> ensures the depth map natively
+contains biased values, offloading slope calculations to the GPU
+rasterizer and keeping the lighting shader simpler.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

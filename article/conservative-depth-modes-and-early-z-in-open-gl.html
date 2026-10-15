@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conservative Depth Modes and Early-Z in OpenGL - opengl</title>
+    <meta name="description" content="This article explains how conservative depth output modes resolve a major GPU rendering bottleneck in OpenGL. By default, modifying depth inside a fragment shader forces the graphics pipeline to disable early depth testing (Early-Z), resulting in wasted f">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/conservative-depth-modes-and-early-z-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Conservative Depth Modes and Early-Z in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/conservative-depth-modes-and-early-z-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how conservative depth output modes resolve a major GPU rendering bottleneck in OpenGL. By default, modifying depth inside a fragment shader forces the graphics pipeline to disable early depth testing (Early-Z), resulting in wasted f" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="conservative-depth-modes-and-early-z-in-opengl">Conservative
+Depth Modes and Early-Z in OpenGL</h1>
+<p>This article explains how conservative depth output modes resolve a
+major GPU rendering bottleneck in OpenGL. By default, modifying depth
+inside a fragment shader forces the graphics pipeline to disable early
+depth testing (Early-Z), resulting in wasted fragment processing.
+Conservative depth declarations provide the driver and hardware with
+specific guarantees about fragment depth modifications, allowing the GPU
+to maintain early depth culling and preserve rendering performance.</p>
+<h3 id="the-problem-early-z-and-custom-fragment-depth">The Problem:
+Early-Z and Custom Fragment Depth</h3>
+<p>Modern GPUs optimize rendering throughput via Early-Z testing, where
+the depth test is evaluated before the fragment shader executes. If an
+incoming fragment is determined to be occluded by previously rendered
+geometry, the GPU discards it immediately. This avoids running complex,
+performance-heavy fragment shading operations on invisible pixels.</p>
+<p>However, if a fragment shader writes to the built-in variable
+<code>gl_FragDepth</code> (common in techniques like depth-peeling,
+displacement mapping, or impostor rendering), the GPU cannot determine
+the fragment's final depth value ahead of time. Consequently, the
+hardware is forced to disable Early-Z, execute the fragment shader in
+its entirety, and only then evaluate the depth test. In
+fill-rate-limited scenes with high overdraw, this causes significant
+performance degradation.</p>
+<h3 id="what-are-conservative-depth-output-modes">What Are Conservative
+Depth Output Modes?</h3>
+<p>Introduced in the <code>ARB_conservative_depth</code> extension and
+integrated into core OpenGL 4.2, conservative depth allows developers to
+declare how the custom depth generated by the fragment shader relates to
+the fixed-function interpolated depth (<code>gl_FragCoord.z</code>).</p>
+<p>Instead of treating <code>gl_FragDepth</code> as an unpredictable
+arbitrary value, the shader specifies constraints via layout qualifiers.
+These guarantees allow the GPU's fixed-function units to perform
+conservative depth tests—specifically against coarse rejection
+mechanisms like Hierarchical-Z (Hi-Z)—before the fragment shader
+runs.</p>
+<h3 id="glsl-conservative-depth-qualifiers">GLSL Conservative Depth
+Qualifiers</h3>
+<p>To enable conservative depth, the layout qualifier is applied to the
+depth output redeclaration at the top of the fragment shader:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span> <span class="op">(</span>depth_<span class="op">&lt;</span>qualifier<span class="op">&gt;)</span> <span class="dt">out</span> <span class="dt">float</span> <span class="bu">gl_FragDepth</span><span class="op">;</span></span></code></pre></div>
+<p>The available qualifiers are:</p>
+<ul>
+<li><strong><code>depth_any</code></strong>: The default behavior. Depth
+can change in any direction. Early-Z culling is fully disabled.</li>
+<li><strong><code>depth_greater</code></strong>: Guarantees the written
+depth will always be greater than or equal to
+<code>gl_FragCoord.z</code>
+(<code>gl_FragDepth &gt;= gl_FragCoord.z</code>).</li>
+<li><strong><code>depth_less</code></strong>: Guarantees the written
+depth will always be less than or equal to <code>gl_FragCoord.z</code>
+(<code>gl_FragDepth &lt;= gl_FragCoord.z</code>).</li>
+<li><strong><code>depth_unchanged</code></strong>: Guarantees that if
+<code>gl_FragDepth</code> is written, its value will be identical to
+<code>gl_FragCoord.z</code>.</li>
+</ul>
+<h3 id="how-conservative-depth-preserves-early-z">How Conservative Depth
+Preserves Early-Z</h3>
+<p>Conservative depth preserves culling efficiency by enabling
+directional pruning based on the active depth comparison function
+(<code>glDepthFunc</code>).</p>
+<p>Consider a standard depth test setup using <code>GL_LESS</code>
+(where objects closer to the camera pass):</p>
+<ol type="1">
+<li><strong>With <code>layout (depth_greater)</code></strong>: The
+shader guarantees that the final depth will only be pushed further away
+from the camera compared to the triangle's interpolated surface. If the
+hardware-interpolated depth <code>gl_FragCoord.z</code> is already
+behind the value stored in the depth buffer, the final depth is
+guaranteed to fail the <code>GL_LESS</code> test as well. The GPU can
+safely discard the fragment prior to running the fragment shader.</li>
+<li><strong>With <code>layout (depth_less)</code></strong>: The final
+depth is guaranteed to move closer to the camera. While early rejection
+is not possible under <code>GL_LESS</code> (a fragment that currently
+fails might move forward and pass), this mode enables early rejection if
+the depth function is configured to <code>GL_GREATER</code>.</li>
+</ol>
+<p>By matching the appropriate qualifier with the scene's depth test
+direction, the hardware's coarse-grained culling structures reject fully
+occluded fragments prior to shader execution, recovering much of the
+performance lost when writing custom depth values.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

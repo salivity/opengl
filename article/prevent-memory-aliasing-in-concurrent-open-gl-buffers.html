@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prevent Memory Aliasing in Concurrent OpenGL Buffers - opengl</title>
+    <meta name="description" content="Concurrent reading and writing to the same OpenGL buffer often leads to memory aliasing bugs, data hazards, and undefined visual artifacts. In modern graphics pipelines—particularly those utilizing Shader Storage Buffer Objects (SSBOs) and compute shaders">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/prevent-memory-aliasing-in-concurrent-open-gl-buffers">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Prevent Memory Aliasing in Concurrent OpenGL Buffers - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/prevent-memory-aliasing-in-concurrent-open-gl-buffers" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Concurrent reading and writing to the same OpenGL buffer often leads to memory aliasing bugs, data hazards, and undefined visual artifacts. In modern graphics pipelines—particularly those utilizing Shader Storage Buffer Objects (SSBOs) and compute shaders" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="prevent-memory-aliasing-in-concurrent-opengl-buffers">Prevent
+Memory Aliasing in Concurrent OpenGL Buffers</h1>
+<p>Concurrent reading and writing to the same OpenGL buffer often leads
+to memory aliasing bugs, data hazards, and undefined visual artifacts.
+In modern graphics pipelines—particularly those utilizing Shader Storage
+Buffer Objects (SSBOs) and compute shaders—developers prevent these
+hazards by establishing strict execution ordering, enforcing memory
+visibility, applying GLSL qualifiers, and employing architectural
+techniques like ping-pong buffering.</p>
+<h3
+id="1-enforcing-execution-and-memory-ordering-with-glmemorybarrier">1.
+Enforcing Execution and Memory Ordering with
+<code>glMemoryBarrier</code></h3>
+<p>OpenGL operations are loosely ordered by default to maximize hardware
+throughput. When one dispatch writes to a buffer and a subsequent
+dispatch reads from it, an explicit memory barrier must be placed
+between the commands on the host API:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>glDispatchCompute<span class="op">(</span>numGroupsX<span class="op">,</span> numGroupsY<span class="op">,</span> numGroupsZ<span class="op">);</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>glMemoryBarrier<span class="op">(</span>GL_SHADER_STORAGE_BARRIER_BIT<span class="op">);</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>glDispatchCompute<span class="op">(</span>numGroupsX<span class="op">,</span> numGroupsY<span class="op">,</span> numGroupsZ<span class="op">);</span></span></code></pre></div>
+<p>The <code>glMemoryBarrier</code> call ensures that all memory writes
+issued before the barrier are completed and visible to commands issued
+after the barrier. Common barrier flags include:</p>
+<ul>
+<li><code>GL_SHADER_STORAGE_BARRIER_BIT</code>: Ensures writes from
+SSBOs are flushed and visible to subsequent shader read operations.</li>
+<li><code>GL_BUFFER_UPDATE_BARRIER_BIT</code>: Protects against hazards
+where buffers modified via <code>glBufferSubData</code> are read by
+shaders.</li>
+<li><code>GL_FRAMEBUFFER_BARRIER_BIT</code>: Synchronizes texture and
+renderbuffer writes with upcoming reads.</li>
+</ul>
+<h3 id="2-intra-shader-synchronization">2. Intra-Shader
+Synchronization</h3>
+<p>When multiple shader invocations within the same work group access
+the same memory location, API-level barriers are insufficient.
+Developers use GLSL-level synchronization functions:</p>
+<ul>
+<li><code>memoryBarrierBuffer()</code>: Enforces memory ordering for
+SSBO accesses within the invocation.</li>
+<li><code>groupMemoryBarrier()</code>: Orders all memory writes (shared
+variables, images, and buffers) across the work group.</li>
+<li><code>barrier()</code>: Acts as an execution barrier, suspending
+invocation execution until all invocations in the work group have
+reached that point.</li>
+</ul>
+<p>These are commonly paired inside compute loops:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>data<span class="op">[</span><span class="dt">index</span><span class="op">]</span> <span class="op">=</span> <span class="fu">computeValue</span><span class="op">();</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="bu">memoryBarrierBuffer</span><span class="op">();</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="bu">barrier</span><span class="op">();</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="dt">vec4</span> updated <span class="op">=</span> data<span class="op">[</span>neighborIndex<span class="op">];</span></span></code></pre></div>
+<h3 id="3-glsl-memory-qualifiers">3. GLSL Memory Qualifiers</h3>
+<p>The GLSL compiler aggressively optimizes memory accesses by caching
+values in registers or reordering instructions. Developers use type
+qualifiers to control how the GPU accesses memory:</p>
+<ul>
+<li><code>coherent</code>: Forces memory accesses to bypass local
+caches, ensuring reads and writes are visible to other invocations on
+the chip. Without <code>coherent</code>, a read may return stale data
+stored in a compute unit's L1 cache.</li>
+<li><code>restrict</code>: Informs the compiler that the pointer or
+buffer is not aliased by any other variable in the shader. Developers
+avoid using <code>restrict</code> on buffers that are read and written
+under overlapping indices, as this allows the compiler to make invalid
+reordering assumptions.</li>
+<li><code>volatile</code>: Prevents the compiler from caching the
+variable in registers or optimizing away repetitive reads and
+writes.</li>
+</ul>
+<h3 id="4-cpu-gpu-synchronization-with-sync-objects">4. CPU-GPU
+Synchronization with Sync Objects</h3>
+<p>If the CPU is writing or reading the buffer while the GPU executes,
+developers utilize sync fences to prevent race conditions:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>GLsync fence <span class="op">=</span> glFenceSync<span class="op">(</span>GL_SYNC_GPU_COMMANDS_COMPLETE<span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="co">// Later, verify completion before mapping or modifying:</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>GLenum result <span class="op">=</span> glClientWaitSync<span class="op">(</span>fence<span class="op">,</span> GL_SYNC_FLUSH_COMMANDS_BIT<span class="op">,</span> timeoutNanoseconds<span class="op">);</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>glDeleteSync<span class="op">(</span>fence<span class="op">);</span></span></code></pre></div>
+<p>Using fences prevents the CPU from mapping and overwriting a buffer
+segment that the GPU is currently reading, eliminating asynchronous
+CPU-GPU aliasing without stalling the entire pipeline with
+<code>glFinish()</code>.</p>
+<h3 id="5-ping-pong-buffering-double-buffering">5. Ping-Pong Buffering
+(Double Buffering)</h3>
+<p>For algorithms requiring iterative read-write cycles—such as cellular
+automata, particle simulations, or image blurring—the most robust way to
+eliminate read-after-write (RAW) and write-after-read (WAR) hazards is
+double buffering.</p>
+<p>Developers bind two identical buffers: Buffer A as read-only and
+Buffer B as write-only. After the compute pass completes, the bindings
+are swapped for the next iteration. This architectural approach avoids
+atomic contention, removes the need for intra-pass execution barriers,
+and completely eliminates concurrent memory aliasing.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HDR Tone Mapping and Exposure in OpenGL Compute Shaders - opengl</title>
+    <meta name="description" content="High-Dynamic-Range (HDR) rendering enables scenes to represent a vast spectrum of light intensities, but standard displays require this range to be compressed through a process called tone mapping. This article explains the core principles of HDR tone map">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/hdr-tone-mapping-and-exposure-in-open-gl-compute-shaders">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="HDR Tone Mapping and Exposure in OpenGL Compute Shaders - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/hdr-tone-mapping-and-exposure-in-open-gl-compute-shaders" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="High-Dynamic-Range (HDR) rendering enables scenes to represent a vast spectrum of light intensities, but standard displays require this range to be compressed through a process called tone mapping. This article explains the core principles of HDR tone map" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="hdr-tone-mapping-and-exposure-in-opengl-compute-shaders">HDR
+Tone Mapping and Exposure in OpenGL Compute Shaders</h1>
+<p>High-Dynamic-Range (HDR) rendering enables scenes to represent a vast
+spectrum of light intensities, but standard displays require this range
+to be compressed through a process called tone mapping. This article
+explains the core principles of HDR tone mapping and details how OpenGL
+compute shaders calculate scene luminance dynamically to automate camera
+exposure.</p>
+<h2 id="understanding-high-dynamic-range-tone-mapping">Understanding
+High-Dynamic-Range Tone Mapping</h2>
+<p>In standard real-time rendering, color channels are typically clamped
+between <code>0.0</code> and <code>1.0</code>. Real-world lighting,
+however, is unbounded: the sun can be millions of times brighter than a
+fluorescent bulb. HDR rendering preserves these physically accurate
+light ratios by storing colors in floating-point framebuffers (such as
+<code>GL_RGBA16F</code> or <code>GL_RGBA32F</code>).</p>
+<p>Tone mapping is the mathematical transformation that compresses this
+high dynamic range of luminance into the low dynamic range (LDR)
+supported by standard monitors, preventing high-intensity regions from
+blowing out to flat white while preserving contrast in dark shadows.
+Common tone mapping algorithms include:</p>
+<ul>
+<li><strong>Reinhard:</strong> A simple curve expressed as <span
+class="math inline">\(C_{out} = \frac{C_{in}}{1 + C_{in}}\)</span>,
+which gently rolls off highlights.</li>
+<li><strong>ACES (Academy Color Encoding System):</strong> An
+industry-standard S-curve that provides filmic contrast with rich blacks
+and natural highlight desaturation.</li>
+<li><strong>Uncharted 2 (Hable):</strong> A versatile curve providing
+independent controls for shoulder, linear, and toe transitions.</li>
+</ul>
+<h2 id="the-role-of-auto-exposure">The Role of Auto-Exposure</h2>
+<p>To map colors accurately, tone mapping operators rely on an exposure
+factor (<span class="math inline">\(E\)</span>). The incoming color is
+scaled before compression:</p>
+<p><span class="math display">\[C_{exposed} = C_{in} \cdot
+E\]</span></p>
+<p>In real life, human eyes and cameras adjust exposure based on the
+overall brightness of the environment. If a player walks into a dark
+cave, the visual system adapts to reveal shadow details; exiting into
+midday sunlight causes the view to briefly saturate before stopping
+down. To simulate this, the rendering engine must calculate the average
+scene luminance across all rendered pixels.</p>
+<p>Because human perception of brightness is non-linear, the geometric
+mean (logarithmic average) is preferred over a standard arithmetic mean.
+This prevents a few intensely bright pixels, such as light sources, from
+skewing the entire scene's exposure:</p>
+<p><span class="math display">\[L_{avg} = \exp\left( \frac{1}{N}
+\sum_{x,y} \ln(L(x,y) + \epsilon) \right)\]</span></p>
+<p>where <span class="math inline">\(L(x,y)\)</span> is the luminance of
+a pixel (<span class="math inline">\(0.2126R + 0.7152G +
+0.0722B\)</span>), and <span class="math inline">\(\epsilon\)</span>
+prevents taking the logarithm of zero.</p>
+<h2 id="calculating-exposure-using-opengl-compute-shaders">Calculating
+Exposure Using OpenGL Compute Shaders</h2>
+<p>Computing the average luminance on the CPU requires reading back the
+entire framebuffer, which stalls the GPU pipeline and drastically
+degrades performance. OpenGL compute shaders solve this by performing
+parallel reductions directly in VRAM.</p>
+<p>There are two primary methods for calculating luminance on the
+GPU:</p>
+<h3 id="1-parallel-reduction-via-shared-memory">1. Parallel Reduction
+via Shared Memory</h3>
+<p>This approach divides the input HDR texture among thread groups
+(e.g., <span class="math inline">\(16 \times 16\)</span> threads per
+workgroup). Each workgroup:</p>
+<ol type="1">
+<li>Samples pixel colors and converts them to log-luminance.</li>
+<li>Stores values in workgroup shared memory
+(<code>shared float localLuminance[...]</code>).</li>
+<li>Executes a tree-based reduction with <code>barrier()</code>
+synchronization to sum the values.</li>
+<li>Writes the partial sum of each workgroup to a secondary buffer or
+texture.</li>
+</ol>
+<p>Consecutive compute passes reduce the intermediate values until a
+single scalar value remains, representing the average log-luminance of
+the frame.</p>
+<h3 id="2-luminance-histograms-the-modern-standard">2. Luminance
+Histograms (The Modern Standard)</h3>
+<p>Modern rendering pipelines often use a luminance histogram
+approach:</p>
+<ol type="1">
+<li><strong>Histogram Generation:</strong> A compute shader bins the
+log-luminance of every pixel into a 64- or 256-bin histogram using
+atomic operations (<code>atomicAdd</code>) in shared memory, which is
+then merged into a global Shader Storage Buffer Object (SSBO).</li>
+<li><strong>Weighted Average:</strong> A second, single-workgroup
+compute shader reads the histogram, clips extreme high/low outlier bins
+(reducing flicker from specular highlights), and computes the weighted
+average of the remaining bins.</li>
+</ol>
+<h3 id="temporal-adaptation-and-tone-map-output">Temporal Adaptation and
+Tone Map Output</h3>
+<p>Once the current frame's average luminance is calculated, it must not
+instantly change the exposure, as that produces jarring, flickering
+frames. The compute shader smoothly interpolates the current luminance
+with the previous frame's luminance stored in a persistent SSBO:</p>
+<p><span class="math display">\[L_{adapted} = L_{previous} +
+(L_{current} - L_{previous}) \cdot (1.0 - \exp(-\Delta t \cdot
+\tau))\]</span></p>
+<p>Here, <span class="math inline">\(\Delta t\)</span> is the delta
+time, and <span class="math inline">\(\tau\)</span> controls the speed
+of eye adaptation.</p>
+<p>The final adapted luminance is converted to a target exposure value
+using key values or camera calibration equations:</p>
+<p><span class="math display">\[\text{Exposure} =
+\frac{\text{Key}}{L_{adapted}}\]</span></p>
+<p>This exposure value is passed as a uniform to the final full-screen
+post-processing shader, which multiplies the HDR buffer colors by the
+exposure value and applies the chosen tone mapping curve before
+rendering to the backbuffer.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/opengl'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>
