@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reversed Floating-Point Depth in OpenGL - opengl</title>
+    <meta name="description" content="This article explains how implementing a reversed floating-point depth buffer significantly mitigates depth precision issues, such as z-fighting, in OpenGL rendering. By inverting the conventional depth mapping so that the near plane corresponds to 1.0 an">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/reversed-floating-point-depth-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Reversed Floating-Point Depth in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/reversed-floating-point-depth-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how implementing a reversed floating-point depth buffer significantly mitigates depth precision issues, such as z-fighting, in OpenGL rendering. By inverting the conventional depth mapping so that the near plane corresponds to 1.0 an" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="reversed-floating-point-depth-in-opengl">Reversed Floating-Point
+Depth in OpenGL</h1>
+<p>This article explains how implementing a reversed floating-point
+depth buffer significantly mitigates depth precision issues, such as
+z-fighting, in OpenGL rendering. By inverting the conventional depth
+mapping so that the near plane corresponds to 1.0 and the far plane
+corresponds to 0.0, the non-linear distribution of perspective
+projection complements the non-linear distribution of IEEE 754
+floating-point numbers. The following sections break down the
+mathematics behind standard depth distribution, explain floating-point
+precision characteristics, and detail why reversing the range yields an
+optimal depth distribution across expansive view distances.</p>
+<h3 id="the-problem-with-traditional-depth-buffers">The Problem with
+Traditional Depth Buffers</h3>
+<p>In a conventional OpenGL pipeline, the perspective projection maps
+view-space depth (<span class="math inline">\(z\)</span>) non-linearly
+to normalized device coordinates (NDC). The relationship between
+view-space depth and normalized depth is reciprocal (<span
+class="math inline">\(1/z\)</span>). Because of this <span
+class="math inline">\(1/z\)</span> mapping, the vast majority of depth
+values are clustered tightly near the near clipping plane. For example,
+in a standard setup where the near plane is at 0.1 and the far plane is
+at 1000.0, more than half of the entire depth buffer's available values
+are consumed within the first few units from the camera.</p>
+<p>When distant objects share a narrow fraction of the remaining depth
+range, the buffer lacks the resolution to distinguish which surface is
+in front, leading to severe visual artifacts known as z-fighting.</p>
+<h3 id="the-distribution-of-floating-point-precision">The Distribution
+of Floating-Point Precision</h3>
+<p>IEEE 754 floating-point formats (such as 32-bit
+<code>GL_DEPTH_COMPONENT32F</code>) do not distribute precision evenly
+along the number line. Precision is determined by an exponent and a
+mantissa. As numbers approach zero, the exponent decreases, meaning the
+absolute distance between representable values (the step size) becomes
+substantially smaller.</p>
+<p>Consequently, a 32-bit float has vastly more precision between 0.0
+and 0.1 than it does between 0.9 and 1.0. In fact, half of all
+representable positive floating-point values fall between 0.0 and 1.0,
+with an overwhelming concentration centered around 0.0.</p>
+<h3 id="the-conflict-in-standard-mapping">The Conflict in Standard
+Mapping</h3>
+<p>When a standard perspective projection maps the near plane to 0.0 and
+the far plane to 1.0:</p>
+<ol type="1">
+<li><strong>Perspective divide</strong> clusters depth values close to
+1.0 for most of the scene's visible distance.</li>
+<li><strong>Floating-point representation</strong> places its maximum
+precision near 0.0 and its coarsest precision near 1.0.</li>
+</ol>
+<p>These two behaviors work against each other. The projection pushes
+distant geometry into the region of the depth buffer (near 1.0) where
+floating-point representation has the least precision, compounding
+numerical error and severely limiting maximum draw distances.</p>
+<h3 id="how-reversed-floating-point-depth-solves-the-issue">How Reversed
+Floating-Point Depth Solves the Issue</h3>
+<p>Reversed-Z mapping addresses this mismatch by mapping the near plane
+to 1.0 and the far plane to 0.0.</p>
+<p>When the far plane maps to 0.0, the non-linearity of the perspective
+divide and the non-linearity of the floating-point format cancel each
+other out. As geometry recedes into the distance, perspective projection
+packs the depth values closer to 0.0. However, because floating-point
+precision increases exponentially as values approach 0.0, the buffer
+gains higher numerical resolution exactly where the projection
+compresses the depth values.</p>
+<p>The result is a nearly uniform distribution of precision across the
+entire depth range. This enables virtual scenes to extend the far plane
+to extreme distances—or even to infinity—without suffering from
+z-fighting on distant objects.</p>
+<h3 id="implementation-requirements-in-opengl">Implementation
+Requirements in OpenGL</h3>
+<p>Achieving reversed floating-point depth in modern OpenGL requires
+four primary adjustments:</p>
+<ol type="1">
+<li><strong>Floating-Point Buffer:</strong> Allocate the depth texture
+or renderbuffer using a format such as
+<code>GL_DEPTH_COMPONENT32F</code>.</li>
+<li><strong>Clip Control:</strong> Call
+<code>glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE)</code> (available in
+OpenGL 4.5 or via <code>ARB_clip_control</code>) to remap the default
+clip-space Z range from <span class="math inline">\([-1, 1]\)</span> to
+<span class="math inline">\([0, 1]\)</span>.</li>
+<li><strong>Projection Matrix:</strong> Alter the projection matrix
+calculations so that the near plane projects to <span
+class="math inline">\(Z_{ndc} = 1.0\)</span> and the far plane projects
+to <span class="math inline">\(Z_{ndc} = 0.0\)</span>.</li>
+<li><strong>Depth Test and Clear Value:</strong> Set the clear value to
+0.0 using <code>glClearDepth(0.0f)</code> and change the depth test
+function to <code>glDepthFunc(GL_GEQUAL)</code> or
+<code>glDepthFunc(GL_GREATER)</code>.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/reversed-floating-point-depth-in-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

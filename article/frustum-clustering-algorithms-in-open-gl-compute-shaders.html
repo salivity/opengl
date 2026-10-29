@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Frustum Clustering Algorithms in OpenGL Compute Shaders - opengl</title>
+    <meta name="description" content="This article explores the primary compute shader algorithms used to subdivide a camera view frustum into clustered 3D bins in modern OpenGL. Clustered shading eliminates the depth-discontinuity performance penalties found in traditional 2D tiled rendering">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/frustum-clustering-algorithms-in-open-gl-compute-shaders">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Frustum Clustering Algorithms in OpenGL Compute Shaders - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/frustum-clustering-algorithms-in-open-gl-compute-shaders" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explores the primary compute shader algorithms used to subdivide a camera view frustum into clustered 3D bins in modern OpenGL. Clustered shading eliminates the depth-discontinuity performance penalties found in traditional 2D tiled rendering" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="frustum-clustering-algorithms-in-opengl-compute-shaders">Frustum
+Clustering Algorithms in OpenGL Compute Shaders</h1>
+<p>This article explores the primary compute shader algorithms used to
+subdivide a camera view frustum into clustered 3D bins in modern OpenGL.
+Clustered shading eliminates the depth-discontinuity performance
+penalties found in traditional 2D tiled rendering by organizing the view
+volume into a 3D grid of view-space or screen-space bounding volumes.
+Below, we examine the mathematics and implementation strategies behind
+grid subdivision, logarithmic depth slicing, view-space Axis-Aligned
+Bounding Box (AABB) construction, and light assignment using Shader
+Storage Buffer Objects (SSBOs).</p>
+<hr />
+<h3 id="1-view-frustum-grid-parameterization">1. View Frustum Grid
+Parameterization</h3>
+<p>Clustered shading discretizes the view frustum into a
+three-dimensional grid defined by <span class="math inline">\(S_x \times
+S_y \times S_z\)</span> cells:</p>
+<ul>
+<li><strong><span class="math inline">\(X\)</span> and <span
+class="math inline">\(Y\)</span> Dimensions:</strong> The viewport is
+divided into equal-sized rectangular tiles, typically <span
+class="math inline">\(16 \times 16\)</span> or <span
+class="math inline">\(32 \times 32\)</span> pixels.</li>
+<li><strong><span class="math inline">\(Z\)</span> Dimension:</strong>
+View depth is subdivided into discrete depth slices.</li>
+</ul>
+<p>Because perspective projection causes objects farther away to project
+to smaller screen footprints, linear depth distribution produces
+clusters that are too small near the camera and unnecessarily huge in
+the distance. Consequently, standard implementations employ exponential
+(logarithmic) depth distribution.</p>
+<h3 id="2-logarithmic-depth-slicing-algorithm">2. Logarithmic Depth
+Slicing Algorithm</h3>
+<p>To allocate resolution proportional to perceptual scale and
+view-space perspective compression, the <span
+class="math inline">\(Z\)</span> bounds for each slice index <span
+class="math inline">\(k \in [0, S_z - 1]\)</span> are computed
+exponentially:</p>
+<p><span class="math display">\[Z_{\text{slice}}(k) = Z_{\text{near}}
+\cdot \left( \frac{Z_{\text{far}}}{Z_{\text{near}}}
+\right)^{\frac{k}{S_z}}\]</span></p>
+<p>In an OpenGL compute shader, determining the slice index <span
+class="math inline">\(k\)</span> for an arbitrary view-space depth <span
+class="math inline">\(z\)</span> uses the inverse formulation:</p>
+<p><span class="math display">\[k = \left\lfloor \frac{\log(|z| /
+Z_{\text{near}})}{\log(Z_{\text{far}} / Z_{\text{near}})} \cdot S_z
+\right\rfloor\]</span></p>
+<p>This ensures near-plane clusters maintain tight bounding volumes to
+tightly enclose nearby point and spot lights, while far clusters
+encompass broader areas where light density is generally lower.</p>
+<h3 id="3-screen-space-unprojection-and-aabb-generation">3. Screen-Space
+Unprojection and AABB Generation</h3>
+<p>The most widely adopted algorithm for building cluster volumes
+generates an Axis-Aligned Bounding Box (AABB) for each cluster in view
+space. This compute pass executes only when camera projection parameters
+change.</p>
+<h4 id="step-by-step-algorithm">Step-by-Step Algorithm:</h4>
+<ol type="1">
+<li><p><strong>Invocation Mapping:</strong><br />
+Launch a compute shader with work groups sized to cover <span
+class="math inline">\(S_x \times S_y \times S_z\)</span> total
+clusters.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span>local_size_x <span class="op">=</span> <span class="dv">1</span><span class="op">,</span> local_size_y <span class="op">=</span> <span class="dv">1</span><span class="op">,</span> local_size_z <span class="op">=</span> <span class="dv">1</span><span class="op">)</span> <span class="dt">in</span><span class="op">;</span></span></code></pre></div></li>
+<li><p><strong>Compute Normalized Device Coordinates
+(NDC):</strong><br />
+Convert the discrete cluster coordinate <span class="math inline">\((x,
+y)\)</span> into NDC bounds <span class="math inline">\([-1,
+1]\)</span>:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="dt">vec4</span> minNDC <span class="op">=</span> <span class="dt">vec4</span><span class="op">(</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    <span class="op">(</span><span class="dt">float</span><span class="op">(</span><span class="bu">gl_WorkGroupID</span><span class="op">.</span><span class="fu">x</span><span class="op">)</span> <span class="op">/</span> <span class="dt">float</span><span class="op">(</span>gridDim<span class="op">.</span><span class="fu">x</span><span class="op">))</span> <span class="op">*</span> <span class="fl">2.0</span> <span class="op">-</span> <span class="fl">1.0</span><span class="op">,</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="op">(</span><span class="dt">float</span><span class="op">(</span><span class="bu">gl_WorkGroupID</span><span class="op">.</span><span class="fu">y</span><span class="op">)</span> <span class="op">/</span> <span class="dt">float</span><span class="op">(</span>gridDim<span class="op">.</span><span class="fu">y</span><span class="op">))</span> <span class="op">*</span> <span class="fl">2.0</span> <span class="op">-</span> <span class="fl">1.0</span><span class="op">,</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">-</span><span class="fl">1.0</span><span class="op">,</span> </span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    <span class="fl">1.0</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="op">);</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="dt">vec4</span> maxNDC <span class="op">=</span> <span class="dt">vec4</span><span class="op">(</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    <span class="op">(</span><span class="dt">float</span><span class="op">(</span><span class="bu">gl_WorkGroupID</span><span class="op">.</span><span class="fu">x</span> <span class="op">+</span> <span class="dv">1</span><span class="op">)</span> <span class="op">/</span> <span class="dt">float</span><span class="op">(</span>gridDim<span class="op">.</span><span class="fu">x</span><span class="op">))</span> <span class="op">*</span> <span class="fl">2.0</span> <span class="op">-</span> <span class="fl">1.0</span><span class="op">,</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    <span class="op">(</span><span class="dt">float</span><span class="op">(</span><span class="bu">gl_WorkGroupID</span><span class="op">.</span><span class="fu">y</span> <span class="op">+</span> <span class="dv">1</span><span class="op">)</span> <span class="op">/</span> <span class="dt">float</span><span class="op">(</span>gridDim<span class="op">.</span><span class="fu">y</span><span class="op">))</span> <span class="op">*</span> <span class="fl">2.0</span> <span class="op">-</span> <span class="fl">1.0</span><span class="op">,</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    <span class="op">-</span><span class="fl">1.0</span><span class="op">,</span> </span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>    <span class="fl">1.0</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a><span class="op">);</span></span></code></pre></div></li>
+<li><p><strong>Unproject to View-Space Rays:</strong><br />
+Transform the NDC points using the inverse projection matrix
+(<code>inverse(projectionMatrix)</code>) and divide by the <span
+class="math inline">\(w\)</span>-component to derive directional vectors
+from the camera origin through each tile corner.</p></li>
+<li><p><strong>Intersect with Slice Depth Planes:</strong><br />
+Multiply the view-space rays by the calculated <span
+class="math inline">\(Z_{\text{slice}}(k)\)</span> and <span
+class="math inline">\(Z_{\text{slice}}(k + 1)\)</span> to obtain the 8
+world- or view-space corner vertices of the cluster frustum.</p></li>
+<li><p><strong>Derive View-Space AABB:</strong><br />
+Compute the component-wise minimum and maximum vectors among the 8
+calculated corners:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> minAABB <span class="op">=</span> <span class="bu">min</span><span class="op">(</span>corner<span class="op">[</span><span class="dv">0</span><span class="op">],</span> <span class="bu">min</span><span class="op">(</span>corner<span class="op">[</span><span class="dv">1</span><span class="op">],</span> <span class="op">...));</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> maxAABB <span class="op">=</span> <span class="bu">max</span><span class="op">(</span>corner<span class="op">[</span><span class="dv">0</span><span class="op">],</span> <span class="bu">max</span><span class="op">(</span>corner<span class="op">[</span><span class="dv">1</span><span class="op">],</span> <span class="op">...));</span></span></code></pre></div></li>
+<li><p><strong>Write to Buffer:</strong><br />
+Store <code>minAABB</code> and <code>maxAABB</code> into a continuous
+<code>std430</code> layout SSBO:</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> VolumeAABB <span class="op">{</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> minPoint<span class="op">;</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> maxPoint<span class="op">;</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">std430</span><span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">1</span><span class="op">)</span> <span class="kw">buffer</span> ClusterAABBBuffer <span class="op">{</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    VolumeAABB clusters<span class="op">[];</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div></li>
+</ol>
+<hr />
+<h3 id="4-alternative-approaches-frustum-plane-representation">4.
+Alternative Approaches: Frustum Plane Representation</h3>
+<p>While AABB representation is fast for intersection tests, it
+introduces empty volume padding around diagonal frustum corners,
+resulting in false positives during light culling.</p>
+<p>An alternative algorithm computes the <strong>6 bounding
+planes</strong> of the cluster frustum directly:</p>
+<ul>
+<li><strong>Near and Far Planes:</strong> Constant view-space planes
+<span class="math inline">\(z = -Z_{\text{slice}}(k)\)</span> and <span
+class="math inline">\(z = -Z_{\text{slice}}(k+1)\)</span>.</li>
+<li><strong>Side Planes (Left, Right, Top, Bottom):</strong> Constructed
+by taking the cross product of the vectors from the camera origin to
+adjacent tile corners.</li>
+</ul>
+<p>Each cluster stores 6 normalized <code>vec4</code> plane equations
+<span class="math inline">\((a, b, c, d)\)</span>. During light culling,
+a light sphere defined by center <span class="math inline">\(C\)</span>
+and radius <span class="math inline">\(R\)</span> intersects the cluster
+if:</p>
+<p><span class="math display">\[a \cdot C_x + b \cdot C_y + c \cdot C_z
++ d \geq -R\]</span></p>
+<p>for all 6 planes. This completely eliminates empty-corner
+conservatism at the cost of higher memory bandwidth and increased
+arithmetic overhead per intersection test.</p>
+<hr />
+<h3 id="5-cluster-light-culling-pass">5. Cluster Light Culling Pass</h3>
+<p>Once clusters are defined, a second compute shader assigns light
+indices to each cluster:</p>
+<ol type="1">
+<li><p><strong>Work Distribution:</strong> One thread or thread group
+per cluster reads the corresponding AABB from the SSBO.</p></li>
+<li><p><strong>Sphere-AABB Intersection:</strong> The thread iterates
+over scene lights and evaluates the squared distance from the sphere
+center to the cluster AABB:</p>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> sqDist <span class="op">=</span> <span class="fl">0.0</span><span class="op">;</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="kw">for</span> <span class="op">(</span><span class="dt">int</span> i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> <span class="dv">3</span><span class="op">;</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> v <span class="op">=</span> lightPos<span class="op">[</span>i<span class="op">];</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> <span class="op">(</span>v <span class="op">&lt;</span> minAABB<span class="op">[</span>i<span class="op">])</span> sqDist <span class="op">+=</span> <span class="op">(</span>minAABB<span class="op">[</span>i<span class="op">]</span> <span class="op">-</span> v<span class="op">)</span> <span class="op">*</span> <span class="op">(</span>minAABB<span class="op">[</span>i<span class="op">]</span> <span class="op">-</span> v<span class="op">);</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> <span class="op">(</span>v <span class="op">&gt;</span> maxAABB<span class="op">[</span>i<span class="op">])</span> sqDist <span class="op">+=</span> <span class="op">(</span>v <span class="op">-</span> maxAABB<span class="op">[</span>i<span class="op">])</span> <span class="op">*</span> <span class="op">(</span>v <span class="op">-</span> maxAABB<span class="op">[</span>i<span class="op">]);</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="dt">bool</span> visible <span class="op">=</span> sqDist <span class="op">&lt;=</span> <span class="op">(</span>radius <span class="op">*</span> radius<span class="op">);</span></span></code></pre></div></li>
+<li><p><strong>Atomic Index Writing:</strong> Visible light indices are
+written to a global light-index list using atomic counters
+(<code>atomicAdd</code>), and an offset/count pair is stored in an index
+grid buffer for subsequent shading passes.</p></li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/frustum-clustering-algorithms-in-open-gl-compute-shaders';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

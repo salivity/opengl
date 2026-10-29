@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visualize Vector Fields in OpenGL Geometry Shaders - opengl</title>
+    <meta name="description" content="Dynamic vector field visualization in modern graphics pipelines can be implemented efficiently by leveraging OpenGL geometry shaders to dynamically displace point primitives into directional indicators. By passing a static grid of points to the graphics p">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/visualize-vector-fields-in-open-gl-geometry-shaders">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Visualize Vector Fields in OpenGL Geometry Shaders - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/visualize-vector-fields-in-open-gl-geometry-shaders" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Dynamic vector field visualization in modern graphics pipelines can be implemented efficiently by leveraging OpenGL geometry shaders to dynamically displace point primitives into directional indicators. By passing a static grid of points to the graphics p" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="visualize-vector-fields-in-opengl-geometry-shaders">Visualize
+Vector Fields in OpenGL Geometry Shaders</h1>
+<p>Dynamic vector field visualization in modern graphics pipelines can
+be implemented efficiently by leveraging OpenGL geometry shaders to
+dynamically displace point primitives into directional indicators. By
+passing a static grid of points to the graphics pipeline and calculating
+field vectors directly on the GPU, applications avoid expensive
+CPU-to-GPU data transfers and can render real-time phenomena such as
+fluid flow, wind simulations, and magnetic fields at high frame
+rates.</p>
+<h3 id="pipeline-architecture">Pipeline Architecture</h3>
+<p>Visualizing vector fields using geometry shaders relies on a
+specialized processing pipeline:</p>
+<ol type="1">
+<li><strong>Vertex Buffer Object (VBO):</strong> A static grid or random
+distribution of 3D coordinate points is stored in GPU memory. Each point
+acts as an anchor or origin for a vector marker.</li>
+<li><strong>Vertex Shader:</strong> Acts primarily as a pass-through
+stage, transforming the anchor points into world or view space without
+altering their topology.</li>
+<li><strong>Geometry Shader:</strong> Takes single points as input
+(<code>layout(points) in</code>) and generates geometric primitives,
+such as lines or arrows
+(<code>layout(line_strip, max_vertices = 2) out</code>), based on vector
+math.</li>
+<li><strong>Fragment Shader:</strong> Colors the generated primitives
+according to properties like velocity magnitude, orientation, or
+pressure.</li>
+</ol>
+<h3 id="geometry-shader-implementation">Geometry Shader
+Implementation</h3>
+<p>The geometry shader samples or analytically computes the vector value
+at each input point, calculates the displaced endpoint, and emits a line
+primitive.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 330 core</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">points</span><span class="op">)</span> <span class="dt">in</span><span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">line_strip</span><span class="op">,</span> <span class="dt">max_vertices</span> <span class="op">=</span> <span class="dv">2</span><span class="op">)</span> <span class="dt">out</span><span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">mat4</span> u_Projection<span class="op">;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">mat4</span> u_View<span class="op">;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">float</span> u_Time<span class="op">;</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">float</span> u_VectorScale<span class="op">;</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">sampler3D</span> u_VectorFieldTexture<span class="op">;</span> <span class="co">// Optional: for sampled data</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">float</span> v_Magnitude<span class="op">;</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="co">// Analytical vector field calculation (e.g., rotational flow)</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> <span class="fu">evaluateField</span><span class="op">(</span><span class="dt">vec3</span> pos<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> <span class="dt">vec3</span><span class="op">(-</span>pos<span class="op">.</span><span class="fu">z</span><span class="op">,</span> <span class="bu">sin</span><span class="op">(</span>pos<span class="op">.</span><span class="fu">x</span> <span class="op">+</span> u_Time<span class="op">),</span> pos<span class="op">.</span><span class="fu">x</span><span class="op">);</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> origin <span class="op">=</span> <span class="va">gl_in</span><span class="op">[</span><span class="dv">0</span><span class="op">].</span><span class="fu">gl_Position</span><span class="op">;</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Sample or compute the vector at this point</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> vector <span class="op">=</span> <span class="fu">evaluateField</span><span class="op">(</span>origin<span class="op">.</span><span class="fu">xyz</span><span class="op">);</span></span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> magnitude <span class="op">=</span> <span class="bu">length</span><span class="op">(</span>vector<span class="op">);</span></span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a>    v_Magnitude <span class="op">=</span> magnitude<span class="op">;</span></span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Displace the endpoint along the vector direction</span></span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> target <span class="op">=</span> origin <span class="op">+</span> <span class="dt">vec4</span><span class="op">(</span>vector <span class="op">*</span> u_VectorScale<span class="op">,</span> <span class="fl">0.0</span><span class="op">);</span></span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Emit the base vertex</span></span>
+<span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a>    <span class="bu">gl_Position</span> <span class="op">=</span> u_Projection <span class="op">*</span> u_View <span class="op">*</span> origin<span class="op">;</span></span>
+<span id="cb1-31"><a href="#cb1-31" aria-hidden="true" tabindex="-1"></a>    <span class="bu">EmitVertex</span><span class="op">();</span></span>
+<span id="cb1-32"><a href="#cb1-32" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-33"><a href="#cb1-33" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Emit the displaced vertex</span></span>
+<span id="cb1-34"><a href="#cb1-34" aria-hidden="true" tabindex="-1"></a>    <span class="bu">gl_Position</span> <span class="op">=</span> u_Projection <span class="op">*</span> u_View <span class="op">*</span> target<span class="op">;</span></span>
+<span id="cb1-35"><a href="#cb1-35" aria-hidden="true" tabindex="-1"></a>    <span class="bu">EmitVertex</span><span class="op">();</span></span>
+<span id="cb1-36"><a href="#cb1-36" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-37"><a href="#cb1-37" aria-hidden="true" tabindex="-1"></a>    <span class="bu">EndPrimitive</span><span class="op">();</span></span>
+<span id="cb1-38"><a href="#cb1-38" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="dynamic-techniques">Dynamic Techniques</h3>
+<h4 id="1-time-dependent-advection">1. Time-Dependent Advection</h4>
+<p>Instead of drawing static arrows, the vector field can animate
+particles tracing streamlines. By incorporating the uniform
+<code>u_Time</code> with a modulo operation, the geometry shader can
+offset the root position along the field path, creating moving streaks
+or continuous flow traces without modifying the vertex buffer.</p>
+<h4 id="2-arrowheads-and-directional-markers">2. Arrowheads and
+Directional Markers</h4>
+<p>To construct traditional vector arrows, increase the geometry
+shader's <code>max_vertices</code> allocation. After emitting the main
+trunk line, calculate perpendicular vectors using cross products
+relative to the camera view vector, then emit two additional line
+segments forming a chevron at the target point.</p>
+<h4 id="3-color-mapping-by-velocity">3. Color Mapping by Velocity</h4>
+<p>The geometry shader can compute the vector's length and pass this
+scalar value as an output variable to the fragment shader. The fragment
+shader then maps this value to a color ramp (such as a gradient from
+blue to red) to visually communicate flow velocity or potential energy
+alongside directional data.</p>
+<h3 id="performance-considerations">Performance Considerations</h3>
+<p>While geometry shaders provide a simple, dynamic mechanism for point
+displacement, their output throughput is constrained by the
+<code>max_vertices</code> declaration. To maintain optimal rendering
+performance:</p>
+<ul>
+<li>Keep the emitted vertex count per point minimal; simple two-vertex
+line strips provide the highest throughput.</li>
+<li>For dense volumetric grids, consider culling points where the vector
+magnitude falls below a given epsilon before calling
+<code>EmitVertex()</code>.</li>
+<li>If rendering millions of persistent streamlines rather than simple
+vectors, compute shaders combined with instanced indirect rendering may
+serve as a more scalable alternative.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/visualize-vector-fields-in-open-gl-geometry-shaders';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

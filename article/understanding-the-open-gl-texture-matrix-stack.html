@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Understanding the OpenGL Texture Matrix Stack - opengl</title>
+    <meta name="description" content="In older versions of OpenGL that relied on the fixed-function pipeline, the texture matrix stack was a specialized hardware mechanism designed to transform texture coordinates automatically prior to texture sampling. This article explains the architectura">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/understanding-the-open-gl-texture-matrix-stack">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Understanding the OpenGL Texture Matrix Stack - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/understanding-the-open-gl-texture-matrix-stack" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In older versions of OpenGL that relied on the fixed-function pipeline, the texture matrix stack was a specialized hardware mechanism designed to transform texture coordinates automatically prior to texture sampling. This article explains the architectura" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="understanding-the-opengl-texture-matrix-stack">Understanding the
+OpenGL Texture Matrix Stack</h1>
+<p>In older versions of OpenGL that relied on the fixed-function
+pipeline, the texture matrix stack was a specialized hardware mechanism
+designed to transform texture coordinates automatically prior to texture
+sampling. This article explains the architectural role of the texture
+matrix stack, its primary use cases—such as texture animation,
+projective mapping, and coordinate scaling—and why modern programmable
+shaders eventually rendered it obsolete.</p>
+<h3 id="core-function-of-the-texture-matrix">Core Function of the
+Texture Matrix</h3>
+<p>In fixed-function OpenGL (prior to OpenGL 3.0 and the deprecation of
+non-programmable pipelines), geometry was processed through dedicated
+matrix pipelines. Alongside <code>GL_MODELVIEW</code> and
+<code>GL_PROJECTION</code>, developers could target the texture pipeline
+by calling <code>glMatrixMode(GL_TEXTURE)</code>.</p>
+<p>The texture matrix was a standard <span class="math inline">\(4
+\times 4\)</span> transformation matrix applied to the incoming texture
+coordinates <span class="math inline">\((s, t, r, q)\)</span>. Instead
+of requiring the CPU to recompute and re-upload modified texture
+coordinates for every vertex each frame, the GPU multiplied the static
+coordinates by the current texture matrix:</p>
+<p><span class="math display">\[\begin{bmatrix} s&#39; \\ t&#39; \\
+r&#39; \\ q&#39; \end{bmatrix} = \mathbf{M}_{\text{texture}} \cdot
+\begin{bmatrix} s \\ t \\ r \\ q \end{bmatrix}\]</span></p>
+<h3 id="the-role-of-the-stack">The Role of the "Stack"</h3>
+<p>Like the modelview matrix, the texture matrix was implemented as a
+stack manipulated with <code>glPushMatrix()</code> and
+<code>glPopMatrix()</code>. The stack architecture allowed developers to
+apply hierarchical transformations.</p>
+<p>A base coordinate frame could be pushed, modified for a specific
+sub-element or rendering pass, and then popped back to restore the
+previous state. This eliminated the need to manually compute cumulative
+inverse transformations on the CPU.</p>
+<h3 id="common-use-cases">Common Use Cases</h3>
+<p>The texture matrix stack solved several distinct graphical challenges
+in early 3D rendering:</p>
+<ul>
+<li><strong>UV Animation and Scrolling:</strong> Moving elements such as
+running water, conveyor belts, or sliding clouds were achieved by
+applying a translation matrix (<code>glTranslatef</code>) to the texture
+coordinates over time while leaving vertex data static.</li>
+<li><strong>Dynamic Scaling and Tiling:</strong> By using
+<code>glScalef</code>, developers could dynamically alter texture
+repetition or zoom in and out of a texture map without modifying vertex
+buffers.</li>
+<li><strong>Projective Texturing:</strong> The texture matrix could
+transform vertices from eye space directly into texture space. When
+combined with homogeneous coordinates (<span
+class="math inline">\(q\)</span>), it enabled effects like slide
+projectors, dynamic spotlights, and early shadow mapping
+techniques.</li>
+<li><strong>Reflection and Environment Mapping:</strong> When using
+automatic texture coordinate generation (<code>glTexGen</code>), the
+texture matrix was frequently used to rotate reflection coordinates into
+the correct camera or world orientation.</li>
+<li><strong>Multi-Texturing Variations:</strong> With the introduction
+of multi-texturing, each texture unit possessed its own independent
+texture matrix stack (accessed via <code>glActiveTexture</code>),
+allowing different layers of a surface to animate, scale, or project
+independently.</li>
+</ul>
+<h3 id="deprecation-and-modern-replacement">Deprecation and Modern
+Replacement</h3>
+<p>The texture matrix stack was deprecated in OpenGL 3.0 and removed
+from the core profile in OpenGL 3.1. With the introduction of the OpenGL
+Shading Language (GLSL), the rigid fixed-function pipeline was replaced
+by programmable vertex and fragment shaders.</p>
+<p>In modern rendering, developers pass arbitrary matrices as uniform
+variables directly to shaders. Transforming texture coordinates is now
+handled via explicit mathematical expressions inside vertex or fragment
+shaders, providing infinite flexibility without the constraints of a
+hardcoded hardware matrix stack.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/understanding-the-open-gl-texture-matrix-stack';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

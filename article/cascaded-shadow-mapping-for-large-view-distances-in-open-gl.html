@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cascaded Shadow Mapping for Large View Distances in OpenGL - opengl</title>
+    <meta name="description" content="Cascaded Shadow Mapping (CSM) resolves the problem of perspective aliasing across expansive open-world scenes by dividing the camera&#39;s viewing frustum into multiple depth partitions, allocating an independent shadow map to each segment. In standard shadow">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/cascaded-shadow-mapping-for-large-view-distances-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Cascaded Shadow Mapping for Large View Distances in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/cascaded-shadow-mapping-for-large-view-distances-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Cascaded Shadow Mapping (CSM) resolves the problem of perspective aliasing across expansive open-world scenes by dividing the camera&#39;s viewing frustum into multiple depth partitions, allocating an independent shadow map to each segment. In standard shadow" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="cascaded-shadow-mapping-for-large-view-distances-in-opengl">Cascaded
+Shadow Mapping for Large View Distances in OpenGL</h1>
+<p>Cascaded Shadow Mapping (CSM) resolves the problem of perspective
+aliasing across expansive open-world scenes by dividing the camera's
+viewing frustum into multiple depth partitions, allocating an
+independent shadow map to each segment. In standard shadow mapping, a
+single depth texture stretched over a vast rendering distance causes
+severe pixelation near the viewer and wasted resolution in the distance.
+By scaling the light-space orthographic projection to tightly fit each
+depth slice, CSM distributes texels proportional to human visual
+perception, ensuring crisp, high-resolution shadows near the camera
+while gracefully scaling across far-off terrain in OpenGL.</p>
+<h3 id="frustum-partitioning">Frustum Partitioning</h3>
+<p>The primary mechanism behind CSM is slicing the player camera's view
+frustum along the Z-axis into separate sub-frustums, or "cascades"
+(typically 3 to 5). Because perspective projection causes objects close
+to the camera to occupy significantly more screen space than distant
+objects, depth partitions are calculated non-linearly using a hybrid
+logarithmic and practical split scheme:</p>
+<p><span class="math display">\[\text{Split}_i = \lambda \cdot n \cdot
+\left(\frac{f}{n}\right)^{\frac{i}{m}} + (1 - \lambda) \cdot \left(n +
+\frac{i}{m}(f - n)\right)\]</span></p>
+<p>Where <span class="math inline">\(n\)</span> and <span
+class="math inline">\(f\)</span> are the camera near and far planes,
+<span class="math inline">\(m\)</span> is the total number of cascades,
+<span class="math inline">\(i\)</span> is the current cascade index, and
+<span class="math inline">\(\lambda\)</span> is a balancing factor. This
+formula ensures that the near planes receive tighter, more concentrated
+slices, while distant planes span significantly larger volumes.</p>
+<h3 id="fitting-light-space-projections">Fitting Light-Space
+Projections</h3>
+<p>For each camera sub-frustum, an optimal light-space bounding box must
+be determined:</p>
+<ol type="1">
+<li><strong>Frustum Corner Extraction:</strong> Transform the eight
+corners of each sub-frustum slice from clip space back into world space
+using the inverse view-projection matrix of the camera.</li>
+<li><strong>Light-Space Transformation:</strong> Transform these
+world-space corners into the directional light's coordinate space using
+the light’s view matrix.</li>
+<li><strong>Axis-Aligned Bounding Box (AABB):</strong> Calculate the
+minimum and maximum coordinates (<span class="math inline">\(X, Y,
+Z\)</span>) enclosing the transformed corners.</li>
+<li><strong>Orthographic Projection:</strong> Construct an orthographic
+projection matrix for each cascade using these tight bounds.</li>
+</ol>
+<p>Because the nearest cascade encloses a relatively small volume of 3D
+space, its shadow map achieves high texel density per world unit.
+Successive cascades cover progressively larger areas, lowering
+world-space texel density where distant objects naturally occupy fewer
+screen pixels, matching the perspective projection of the player's
+eye.</p>
+<h3 id="texel-stabilization-and-flickering-reduction">Texel
+Stabilization and Flickering Reduction</h3>
+<p>As the player moves, the calculated bounding boxes can shift by
+sub-texel increments, resulting in shimmering or crawling shadow edges.
+To maintain stable shadow edges across frames, the light-space bounding
+box must be snapped to increments of the shadow map's texel size:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> worldUnitsPerTexel <span class="op">=</span> <span class="op">(</span>maxX <span class="op">-</span> minX<span class="op">)</span> <span class="op">/</span> shadowMapResolution<span class="op">;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>minX <span class="op">=</span> <span class="bu">std::</span>floor<span class="op">(</span>minX <span class="op">/</span> worldUnitsPerTexel<span class="op">)</span> <span class="op">*</span> worldUnitsPerTexel<span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>maxX <span class="op">=</span> <span class="bu">std::</span>floor<span class="op">(</span>maxX <span class="op">/</span> worldUnitsPerTexel<span class="op">)</span> <span class="op">*</span> worldUnitsPerTexel<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>minY <span class="op">=</span> <span class="bu">std::</span>floor<span class="op">(</span>minY <span class="op">/</span> worldUnitsPerTexel<span class="op">)</span> <span class="op">*</span> worldUnitsPerTexel<span class="op">;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>maxY <span class="op">=</span> <span class="bu">std::</span>floor<span class="op">(</span>maxY <span class="op">/</span> worldUnitsPerTexel<span class="op">)</span> <span class="op">*</span> worldUnitsPerTexel<span class="op">;</span></span></code></pre></div>
+<h3 id="opengl-implementation-details">OpenGL Implementation
+Details</h3>
+<p>Efficient CSM rendering in modern OpenGL leverages specific rendering
+primitives and memory structures:</p>
+<ul>
+<li><strong>2D Texture Arrays
+(<code>GL_TEXTURE_2D_ARRAY</code>):</strong> Rather than creating
+individual textures for each cascade, an array texture is allocated.
+This allows all cascades to share the same texture unit, avoiding state
+changes and texture binds during the main lighting pass.</li>
+<li><strong>Uniform Buffer Objects (UBOs):</strong> The light-space
+view-projection matrices and split distances for all cascades are passed
+to shaders via a shared UBO, providing uniform access during geometry
+evaluation.</li>
+<li><strong>Layered Rendering via Geometry Shaders:</strong> During the
+depth-pass, developers can render the scene's geometry once and use a
+Geometry Shader with <code>gl_Layer</code> to duplicate primitives into
+their respective cascade layers, or perform multiple instanced draws to
+minimize CPU draw-call overhead.</li>
+</ul>
+<h3 id="fragment-shader-sampling-and-cascade-selection">Fragment Shader
+Sampling and Cascade Selection</h3>
+<p>During the final shading pass, the fragment shader determines which
+cascade to sample based on the fragment’s view-space depth (<span
+class="math inline">\(z\)</span> coordinate):</p>
+<ol type="1">
+<li>Compare the fragment's linear view-space depth against the cascade
+split distances.</li>
+<li>Identify the appropriate cascade index <span
+class="math inline">\(i\)</span>.</li>
+<li>Transform the world position using the corresponding cascade
+light-space matrix.</li>
+<li>Perform standard Percentage Closer Filtering (PCF) using
+<code>sampler2DArrayShadow</code>.</li>
+</ol>
+<p>To eliminate hard, visible boundaries between adjacent cascades where
+texel densities differ, a blend region is established. Fragments located
+within the transition zone sample both the current and adjacent
+cascades, linearly interpolating the resulting shadow factors to ensure
+a seamless visual continuum across the entire view distance.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/cascaded-shadow-mapping-for-large-view-distances-in-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

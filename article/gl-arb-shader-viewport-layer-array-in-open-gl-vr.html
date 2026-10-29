@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GL_ARB_shader_viewport_layer_array in OpenGL VR - opengl</title>
+    <meta name="description" content="This article provides an overview of the GLARBshaderviewportlayerarray extension and its critical role in optimizing Virtual Reality (VR) rendering pipelines in OpenGL. It explains the performance bottlenecks inherent to stereoscopic rendering, how this e">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/gl-arb-shader-viewport-layer-array-in-open-gl-vr">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="GL_ARB_shader_viewport_layer_array in OpenGL VR - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/gl-arb-shader-viewport-layer-array-in-open-gl-vr" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article provides an overview of the GLARBshaderviewportlayerarray extension and its critical role in optimizing Virtual Reality (VR) rendering pipelines in OpenGL. It explains the performance bottlenecks inherent to stereoscopic rendering, how this e" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="gl_arb_shader_viewport_layer_array-in-opengl-vr">GL_ARB_shader_viewport_layer_array
+in OpenGL VR</h1>
+<p>This article provides an overview of the
+<code>GL_ARB_shader_viewport_layer_array</code> extension and its
+critical role in optimizing Virtual Reality (VR) rendering pipelines in
+OpenGL. It explains the performance bottlenecks inherent to stereoscopic
+rendering, how this extension addresses those challenges by allowing
+pre-rasterization stages to set target layers and viewports directly,
+and the technical implementation that enables high-performance
+single-pass stereo rendering.</p>
+<h3 id="the-vr-rendering-challenge">The VR Rendering Challenge</h3>
+<p>Virtual Reality applications must render a scene twice per frame—once
+for each eye—from slightly offset camera positions. Traditionally,
+developers handled this via one of two methods:</p>
+<ol type="1">
+<li><strong>Dual-Pass Rendering:</strong> Submitting the scene geometry
+twice using separate draw calls for each eye. This approach doubles the
+CPU overhead, increases API state changes, and stresses the graphics
+driver.</li>
+<li><strong>Geometry Shader Duplication:</strong> Using a single draw
+call and employing a Geometry Shader (GS) to duplicate primitives across
+multiple render target layers. While this reduces CPU draw calls,
+Geometry Shaders are notoriously slow on modern GPU architectures,
+causing significant vertex pipeline bottlenecks, memory bandwidth
+saturation, and latency spikes.</li>
+</ol>
+<p>Because VR requires sustained high framerates (typically 90 Hz or
+higher) and ultra-low latency to prevent motion sickness, both
+traditional approaches present major performance liabilities.</p>
+<h3 id="the-role-of-gl_arb_shader_viewport_layer_array">The Role of
+GL_ARB_shader_viewport_layer_array</h3>
+<p>The <code>GL_ARB_shader_viewport_layer_array</code> extension
+resolves this dilemma by decoupling the selection of the render target
+layer (<code>gl_Layer</code>) and viewport
+(<code>gl_ViewportIndex</code>) from the Geometry Shader stage.</p>
+<p>Under core OpenGL specifications prior to this functionality, writing
+to <code>gl_Layer</code> and <code>gl_ViewportIndex</code> was strictly
+restricted to Geometry Shaders.
+<code>GL_ARB_shader_viewport_layer_array</code> extends these built-in
+output variables to earlier programmable stages, specifically:</p>
+<ul>
+<li><strong>Vertex Shaders</strong></li>
+<li><strong>Tessellation Control Shaders</strong></li>
+<li><strong>Tessellation Evaluation Shaders</strong></li>
+</ul>
+<p>By exposing these outputs to the Vertex Shader, the GPU can route
+transformed primitives directly to a specific layer of a 2D Texture
+Array or a distinct viewport index without ever instantiating a Geometry
+Shader.</p>
+<h3 id="implementation-in-modern-vr-pipelines">Implementation in Modern
+VR Pipelines</h3>
+<p>In a modern OpenGL VR pipeline, this extension enables efficient
+<strong>Single-Pass Instanced Stereo Rendering</strong>:</p>
+<ol type="1">
+<li><p><strong>Target Allocation:</strong> The framebuffer is configured
+with a 2D Texture Array where Layer 0 represents the left eye and Layer
+1 represents the right eye (or a double-wide texture using two separate
+viewports).</p></li>
+<li><p><strong>Instanced Draw Calls:</strong> Each mesh is drawn with an
+instance count multiplied by two
+(<code>instance_count * 2</code>).</p></li>
+<li><p><strong>Vertex Shader Routing:</strong> Within the Vertex Shader,
+the eye index is determined using the built-in
+<code>gl_InstanceID</code>:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#extension GL_ARB_shader_viewport_layer_array : require</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> eyeIndex <span class="op">=</span> <span class="bu">gl_InstanceID</span> <span class="op">&amp;</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="bu">gl_Layer</span> <span class="op">=</span> eyeIndex<span class="op">;</span> <span class="co">// Routes directly to the corresponding eye&#39;s layer</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="bu">gl_Position</span> <span class="op">=</span> eyeProjectionMatrices<span class="op">[</span>eyeIndex<span class="op">]</span> <span class="op">*</span> eyeViewMatrices<span class="op">[</span>eyeIndex<span class="op">]</span> <span class="op">*</span> modelMatrix <span class="op">*</span> <span class="dt">vec4</span><span class="op">(</span>position<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span></code></pre></div></li>
+<li><p><strong>Rasterization:</strong> The fixed-function rasterizer
+immediately directs the generated primitives to the specified target
+layer or viewport, utilizing the hardware's fast-path
+rasterization.</p></li>
+</ol>
+<h3 id="performance-advantages">Performance Advantages</h3>
+<p>The primary benefits of integrating
+<code>GL_ARB_shader_viewport_layer_array</code> into an OpenGL VR engine
+include:</p>
+<ul>
+<li><strong>Elimination of Geometry Shader Overhead:</strong>
+Eliminating the Geometry Shader circumvents pipeline stalls and avoids
+the memory expansion penalties associated with primitive
+amplification.</li>
+<li><strong>Reduced CPU Draw Overhead:</strong> The CPU only needs to
+process and dispatch scene objects once per frame rather than twice,
+cutting draw call processing by up to 50%.</li>
+<li><strong>Improved Cache Coherency:</strong> Vertex data, texture
+state, and uniform buffers are accessed concurrently for both views,
+maximizing L1/L2 GPU cache reuse.</li>
+<li><strong>Deterministic Latency:</strong> The streamlined graphics
+pipeline minimizes render time variability, helping VR applications
+consistently meet strict v-sync display deadlines.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/gl-arb-shader-viewport-layer-array-in-open-gl-vr';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

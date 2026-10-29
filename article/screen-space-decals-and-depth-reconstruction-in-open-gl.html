@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Screen-Space Decals and Depth Reconstruction in OpenGL - opengl</title>
+    <meta name="description" content="Screen-space decal projection is a rendering technique used to project localized details—such as bullet holes, footprints, blood splatters, or road markings—onto arbitrary scene geometry without modifying the underlying meshes. Instead of clipping and gen">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/screen-space-decals-and-depth-reconstruction-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Screen-Space Decals and Depth Reconstruction in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/screen-space-decals-and-depth-reconstruction-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Screen-space decal projection is a rendering technique used to project localized details—such as bullet holes, footprints, blood splatters, or road markings—onto arbitrary scene geometry without modifying the underlying meshes. Instead of clipping and gen" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="screen-space-decals-and-depth-reconstruction-in-opengl">Screen-Space
+Decals and Depth Reconstruction in OpenGL</h1>
+<p>Screen-space decal projection is a rendering technique used to
+project localized details—such as bullet holes, footprints, blood
+splatters, or road markings—onto arbitrary scene geometry without
+modifying the underlying meshes. Instead of clipping and generating
+static decal geometry on the CPU, this method renders a geometric proxy
+(typically a bounding box) and samples the existing scene depth. By
+unprojecting the depth buffer in OpenGL, the fragment shader
+reconstructs the precise world-space position of underlying geometry,
+transforms that position into decal-relative space, and maps texture
+coordinates across uneven surfaces efficiently.</p>
+<h3 id="the-concept-of-screen-space-decals">The Concept of Screen-Space
+Decals</h3>
+<p>Traditional decals require cutting and creating custom polygonal
+geometry that conforms to the target surfaces, a process that is
+CPU-intensive and fails on complex or dynamic meshes. Screen-space
+decals eliminate geometry processing entirely by deferring the
+projection to the fragment stage.</p>
+<p>A simple 3D proxy volume, usually a unit cube, is positioned and
+scaled in the world where the decal should appear. When this volume is
+rendered, its fragments cover the area of the screen where the decal
+might interact with the scene. The fragment shader then queries what is
+physically located inside that volume by reading the pre-rendered scene
+depth.</p>
+<h3 id="depth-buffer-reconstruction-in-opengl">Depth Buffer
+Reconstruction in OpenGL</h3>
+<p>To apply a texture to the underlying surface, the GPU must know the
+exact 3D coordinates of the geometry existing underneath the decal box's
+rasterized pixels. This is achieved through depth reconstruction:</p>
+<ol type="1">
+<li><strong>Screen-to-NDC Conversion:</strong> The fragment shader
+accesses the screen-space coordinates via <code>gl_FragCoord.xy</code>
+and divides them by the viewport resolution to generate a normalized UV
+coordinate <code>(u, v) \in [0, 1]</code>.</li>
+<li><strong>Depth Retrieval:</strong> The hardware depth buffer is
+sampled at <code>(u, v)</code> using a depth texture
+(<code>sampler2D</code>). In OpenGL, the sampled depth value <span
+class="math inline">\(z_{win}\)</span> sits in the range <span
+class="math inline">\([0, 1]\)</span>.</li>
+<li><strong>Normalized Device Coordinates (NDC):</strong> The
+coordinates are mapped to the standard OpenGL <span
+class="math inline">\([-1, 1]\)</span> NDC space: <span
+class="math display">\[x_{ndc} = u \times 2.0 - 1.0\]</span> <span
+class="math display">\[y_{ndc} = v \times 2.0 - 1.0\]</span> <span
+class="math display">\[z_{ndc} = z_{win} \times 2.0 - 1.0\]</span></li>
+<li><strong>Unprojecting via the Inverse Matrix:</strong> The NDC vector
+<span class="math inline">\((x_{ndc}, y_{ndc}, z_{ndc}, 1.0)\)</span> is
+multiplied by the inverse of the camera’s View-Projection matrix: <span
+class="math display">\[\mathbf{P}_{clip} = (\mathbf{V} \cdot
+\mathbf{P})^{-1} \times \mathbf{P}_{ndc}\]</span></li>
+<li><strong>Perspective Division:</strong> Dividing the resulting vector
+by its <span class="math inline">\(w\)</span>-component produces the
+exact world-space position: <span
+class="math display">\[\mathbf{P}_{world} = \mathbf{P}_{clip}.xyz /
+\mathbf{P}_{clip}.w\]</span></li>
+</ol>
+<h3 id="mapping-to-decal-space-and-clamping">Mapping to Decal Space and
+Clamping</h3>
+<p>Once the world-space position <span
+class="math inline">\(\mathbf{P}_{world}\)</span> is obtained, it is
+converted into the local coordinate space of the decal proxy by
+multiplying it by the inverse of the decal's model matrix:</p>
+<p><span class="math display">\[\mathbf{P}_{local} =
+\mathbf{M}_{decal}^{-1} \times \mathbf{P}_{world}\]</span></p>
+<p>If the decal proxy is a unit cube spanning <span
+class="math inline">\([-0.5, 0.5]\)</span> on all axes:</p>
+<ul>
+<li>The shader checks if <span
+class="math inline">\(\mathbf{P}_{local}\)</span> falls outside the
+range <span class="math inline">\([-0.5, 0.5]\)</span>. If any component
+exceeds these bounds, the fragment is discarded using the
+<code>discard</code> keyword, ensuring the decal does not bleed outside
+its designated volume.</li>
+<li>If the position is valid, two of the local coordinates (for
+instance, the <span class="math inline">\(X\)</span> and <span
+class="math inline">\(Z\)</span> or <span
+class="math inline">\(X\)</span> and <span
+class="math inline">\(Y\)</span> coordinates, depending on projection
+orientation) are shifted from <span class="math inline">\([-0.5,
+0.5]\)</span> to <span class="math inline">\([0, 1]\)</span> by adding
+<span class="math inline">\(0.5\)</span>.</li>
+<li>These mapped values serve as standard UV coordinates to sample the
+decal's diffuse, normal, and roughness textures.</li>
+</ul>
+<h3 id="surface-normal-clipping-and-blending">Surface Normal Clipping
+and Blending</h3>
+<p>Projecting textures straight through a 3D box can cause severe
+texture stretching on surfaces that are parallel to the direction of
+projection. In a deferred rendering pipeline, the fragment shader reads
+the surface normal from the G-buffer; in a forward pipeline, the surface
+normal can be approximated using screen-space derivatives
+(<code>dFdx</code> and <code>dFdy</code> on the reconstructed world
+position).</p>
+<p>By calculating the dot product between the surface normal and the
+decal's forward projection vector, the shader can detect steep angles
+and blend the decal's opacity to zero, preventing visual distortion
+across steep slopes and perpendicular walls.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/screen-space-decals-and-depth-reconstruction-in-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

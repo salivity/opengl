@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>glDrawElements vs glDrawArrays Performance in OpenGL - opengl</title>
+    <meta name="description" content="In OpenGL, geometry can be submitted to the GPU using flat arrays with glDrawArrays or indexed arrays with glDrawElements. This article compares the performance characteristics of both approaches, examining memory bandwidth, vertex cache utilization, inde">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/gl-draw-elements-vs-gl-draw-arrays-performance-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="glDrawElements vs glDrawArrays Performance in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/gl-draw-elements-vs-gl-draw-arrays-performance-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In OpenGL, geometry can be submitted to the GPU using flat arrays with glDrawArrays or indexed arrays with glDrawElements. This article compares the performance characteristics of both approaches, examining memory bandwidth, vertex cache utilization, inde" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="gldrawelements-vs-gldrawarrays-performance-in-opengl">glDrawElements
+vs glDrawArrays Performance in OpenGL</h1>
+<p>In OpenGL, geometry can be submitted to the GPU using flat arrays
+with <code>glDrawArrays</code> or indexed arrays with
+<code>glDrawElements</code>. This article compares the performance
+characteristics of both approaches, examining memory bandwidth, vertex
+cache utilization, index-fetch overhead, and real-world scenarios to
+help you determine the optimal rendering strategy for your graphics
+pipeline.</p>
+<h3 id="memory-footprint-and-bus-bandwidth">Memory Footprint and Bus
+Bandwidth</h3>
+<p>The primary architectural difference lies in how vertex data is
+stored and transferred. With <code>glDrawArrays</code>, vertices must be
+stored sequentially for every primitive. In a standard triangle mesh,
+adjacent triangles share edges and vertices; flat arrays force you to
+duplicate this data. For example, a simple cube requires 36 vertices (6
+faces × 2 triangles × 3 vertices) when drawn flat, compared to 8 unique
+vertices and 36 indices when indexed.</p>
+<p>Because modern vertex formats often contain positions, normals,
+tangents, and multiple texture coordinates—frequently exceeding 32 to 64
+bytes per vertex—duplicating vertices severely inflates buffer sizes.
+<code>glDrawElements</code> introduces an index buffer containing
+lightweight integers (typically 16-bit <code>GL_UNSIGNED_SHORT</code> or
+32-bit <code>GL_UNSIGNED_INT</code>). Storing small index values
+consumes substantially less VRAM and reduces memory bandwidth pressure
+during transfers from system memory to the GPU.</p>
+<h3 id="post-transform-vertex-cache">Post-Transform Vertex Cache</h3>
+<p>The most critical performance advantage of
+<code>glDrawElements</code> is its interaction with the GPU’s
+Post-Transform Vertex Cache (often referred to as the Post-Transform
+Cache or Parameter Cache).</p>
+<p>When a GPU processes geometry via <code>glDrawElements</code>:</p>
+<ol type="1">
+<li>It reads the index of the vertex.</li>
+<li>It checks a small hardware FIFO or LRU cache to see if that specific
+index was recently processed by the vertex shader.</li>
+<li>If a cache hit occurs, the vertex shader stage is skipped entirely,
+and the cached transformed attributes are passed directly to primitive
+assembly and rasterization.</li>
+<li>If a cache miss occurs, the vertex shader executes, and the result
+is stored in the cache.</li>
+</ol>
+<p>With <code>glDrawArrays</code>, the GPU evaluates each vertex
+independently because it cannot safely assume that two identical vertex
+attribute sets represent the same logical point. Consequently, every
+vertex shader invocation runs unconditionally. In typical connected
+meshes with an average valence of 6 triangles per vertex, an optimized
+index buffer can reduce vertex shader invocations by a factor of two or
+three.</p>
+<h3 id="index-fetch-overhead-and-indirection">Index Fetch Overhead and
+Indirection</h3>
+<p>While <code>glDrawElements</code> is generally superior for complex
+geometry, it introduces an extra level of indirection. The GPU must
+fetch the index from the Element Array Buffer before it can address and
+fetch the corresponding vertex attributes.</p>
+<p>This indirection cost becomes measurable when vertices cannot be
+shared:</p>
+<ul>
+<li><strong>Unique Vertex Attributes:</strong> When rendering
+flat-shaded low-poly meshes where each face has distinct surface
+normals, or models with separate texture coordinates at every boundary
+seam, vertices cannot be shared across adjacent triangles.</li>
+<li><strong>Point Clouds and Line Strips:</strong> Rendering independent
+points or non-indexed line segments yields no index reuse.</li>
+<li><strong>Procedural Billboards / Particles:</strong> When geometry is
+generated procedurally in shaders or through instancing without shared
+corner data.</li>
+</ul>
+<p>If vertex sharing does not exist, using <code>glDrawElements</code>
+requires additional memory reads for the index buffer without providing
+any post-transform cache hits, causing <code>glDrawArrays</code> to be
+faster and simpler.</p>
+<h3 id="optimizing-for-gldrawelements">Optimizing for
+glDrawElements</h3>
+<p>To maximize the performance benefits of indexed rendering, index
+order should not be arbitrary. Mesh processing tools (such as Tom
+Forsyth’s Linear-Speed Vertex Cache Optimization algorithm or
+NV-TriStrip) reorder indices to maximize spatial locality. Reordering
+ensures that triangles sharing vertices are processed closely together
+in time, maximizing post-transform cache hit rates and minimizing
+pipeline stalls.</p>
+<h3 id="summary-of-usage">Summary of Usage</h3>
+<ul>
+<li><strong>Use <code>glDrawElements</code></strong> for standard 3D
+static and rigged meshes, terrain meshes, and any connected geometry
+where vertices are shared among multiple primitives.</li>
+<li><strong>Use <code>glDrawArrays</code></strong> for non-indexed
+primitives such as particle point clouds, full-screen quads, UI elements
+with entirely unique per-vertex data, and data streams generated
+dynamically on the CPU where index calculation adds unnecessary
+overhead.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/gl-draw-elements-vs-gl-draw-arrays-performance-in-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

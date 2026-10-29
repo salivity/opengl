@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Capturing OpenGL Pipeline Statistics with Queries - opengl</title>
+    <meta name="description" content="Capturing GPU pipeline statistics is essential for diagnosing bottlenecks, verifying culling behavior, and optimizing rendering workloads in advanced OpenGL profiles. This article details how developers can leverage OpenGL query objects—primarily provided">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/capturing-open-gl-pipeline-statistics-with-queries">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Capturing OpenGL Pipeline Statistics with Queries - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/capturing-open-gl-pipeline-statistics-with-queries" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Capturing GPU pipeline statistics is essential for diagnosing bottlenecks, verifying culling behavior, and optimizing rendering workloads in advanced OpenGL profiles. This article details how developers can leverage OpenGL query objects—primarily provided" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="capturing-opengl-pipeline-statistics-with-queries">Capturing
+OpenGL Pipeline Statistics with Queries</h1>
+<p>Capturing GPU pipeline statistics is essential for diagnosing
+bottlenecks, verifying culling behavior, and optimizing rendering
+workloads in advanced OpenGL profiles. This article details how
+developers can leverage OpenGL query objects—primarily provided via the
+<code>GL_ARB_pipeline_statistics_query</code> extension in core
+profiles—to measure stages across the rendering pipeline, from vertex
+assembly and shader invocations to clipping and rasterization, alongside
+code patterns to avoid performance stalls.</p>
+<h3 id="understanding-pipeline-statistics-targets">Understanding
+Pipeline Statistics Targets</h3>
+<p>OpenGL provides counters for specific stages of the graphics and
+compute pipelines through dedicated query targets. When activated, these
+targets increment counters dynamically as primitives and invocations
+flow through the hardware:</p>
+<ul>
+<li><strong>Vertex Assembly &amp; Shading:</strong>
+<code>GL_VERTICES_SUBMITTED_ARB</code>,
+<code>GL_PRIMITIVES_SUBMITTED_ARB</code>, and
+<code>GL_VERTEX_SHADER_INVOCATIONS_ARB</code>.</li>
+<li><strong>Tessellation:</strong>
+<code>GL_TESS_CONTROL_SHADER_PATCHES_ARB</code> and
+<code>GL_TESS_EVALUATION_SHADER_INVOCATIONS_ARB</code>.</li>
+<li><strong>Geometry Processing:</strong>
+<code>GL_GEOMETRY_SHADER_INVOCATIONS_ARB</code> and
+<code>GL_GEOMETRY_SHADER_PRIMITIVES_EMITTED_ARB</code>.</li>
+<li><strong>Clipping:</strong>
+<code>GL_CLIPPING_INPUT_PRIMITIVES_ARB</code> and
+<code>GL_CLIPPING_OUTPUT_PRIMITIVES_ARB</code>.</li>
+<li><strong>Rasterization &amp; Compute:</strong>
+<code>GL_FRAGMENT_SHADER_INVOCATIONS_ARB</code> and
+<code>GL_COMPUTE_SHADER_INVOCATIONS_ARB</code>.</li>
+</ul>
+<h3 id="step-by-step-implementation">Step-by-Step Implementation</h3>
+<p>Capturing these counters follows the standard OpenGL asynchronous
+query lifecycle: creation, demarcation, and retrieval.</p>
+<h4 id="1-generating-query-objects">1. Generating Query Objects</h4>
+<p>Allocate OpenGL query IDs using <code>glGenQueries</code> (or
+<code>glCreateQueries</code> in Direct State Access / OpenGL 4.5+):</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>GLuint queryID<span class="op">;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>glGenQueries<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="op">&amp;</span>queryID<span class="op">);</span></span></code></pre></div>
+<h4 id="2-demarcating-the-workload">2. Demarcating the Workload</h4>
+<p>Wrap the target draw or dispatch calls between
+<code>glBeginQuery</code> and <code>glEndQuery</code>. Only one query
+object can be active per target at a time:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Begin monitoring fragment shader invocations</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>glBeginQuery<span class="op">(</span>GL_FRAGMENT_SHADER_INVOCATIONS_ARB<span class="op">,</span> queryID<span class="op">);</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="co">// Issue rendering commands</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>glDrawElements<span class="op">(</span>GL_TRIANGLES<span class="op">,</span> indexCount<span class="op">,</span> GL_UNSIGNED_INT<span class="op">,</span> <span class="kw">nullptr</span><span class="op">);</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="co">// End monitoring</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>glEndQuery<span class="op">(</span>GL_FRAGMENT_SHADER_INVOCATIONS_ARB<span class="op">);</span></span></code></pre></div>
+<h4 id="3-retrieving-counter-data">3. Retrieving Counter Data</h4>
+<p>Query results are processed asynchronously by the GPU. Retrieving
+results immediately blocks CPU execution until the GPU completes all
+preceding commands. To prevent stalls, query availability before
+reading:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>GLint available <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>glGetQueryObjectiv<span class="op">(</span>queryID<span class="op">,</span> GL_QUERY_RESULT_AVAILABLE<span class="op">,</span> <span class="op">&amp;</span>available<span class="op">);</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="op">(</span>available<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    GLuint64 invocations <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    glGetQueryObjectui64v<span class="op">(</span>queryID<span class="op">,</span> GL_QUERY_RESULT<span class="op">,</span> <span class="op">&amp;</span>invocations<span class="op">);</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Process or log the statistics</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>Using <code>glGetQueryObjectui64v</code> prevents 32-bit counter
+overflow, which can occur rapidly with high-density geometry or
+fragment-heavy passes.</p>
+<h3 id="best-practices-for-advanced-profiles">Best Practices for
+Advanced Profiles</h3>
+<ul>
+<li><strong>Implement Query Ring Buffering:</strong> Do not block for
+results on the same frame they are submitted. Maintain a ring buffer of
+query objects spanning two or three frames. Read frame <span
+class="math inline">\(N - 2\)</span> while recording frame <span
+class="math inline">\(N\)</span> to keep the CPU and GPU fully
+decoupled.</li>
+<li><strong>Scope Specific Render Passes:</strong> Measure fine-grained
+sub-passes (e.g., depth pre-pass, shadow casters, or G-buffer
+generation) with individual query pairs to isolate pipeline stalls.</li>
+<li><strong>Check Feature Support:</strong> Verify that
+<code>GL_ARB_pipeline_statistics_query</code> is supported before
+binding targets, either via <code>glfwExtensionSupported</code> or
+<code>glewIsSupported</code>, particularly on platforms targeting lower
+core specifications.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/capturing-open-gl-pipeline-statistics-with-queries';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

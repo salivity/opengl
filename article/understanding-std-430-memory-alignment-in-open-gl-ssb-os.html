@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Understanding std430 Memory Alignment in OpenGL SSBOs - opengl</title>
+    <meta name="description" content="The std430 standard layout is an interface block packing rule designed exclusively for Shader Storage Buffer Objects (SSBOs) in OpenGL 4.3 and above. Unlike the older std140 layout used for Uniform Buffer Objects (UBOs), std430 significantly relaxes array">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/understanding-std-430-memory-alignment-in-open-gl-ssb-os">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Understanding std430 Memory Alignment in OpenGL SSBOs - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/understanding-std-430-memory-alignment-in-open-gl-ssb-os" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The std430 standard layout is an interface block packing rule designed exclusively for Shader Storage Buffer Objects (SSBOs) in OpenGL 4.3 and above. Unlike the older std140 layout used for Uniform Buffer Objects (UBOs), std430 significantly relaxes array" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="understanding-std430-memory-alignment-in-opengl-ssbos">Understanding
+std430 Memory Alignment in OpenGL SSBOs</h1>
+<p>The <code>std430</code> standard layout is an interface block packing
+rule designed exclusively for Shader Storage Buffer Objects (SSBOs) in
+OpenGL 4.3 and above. Unlike the older <code>std140</code> layout used
+for Uniform Buffer Objects (UBOs), <code>std430</code> significantly
+relaxes array and structure alignment constraints, eliminating arbitrary
+16-byte padding on basic types. This article breaks down how
+<code>std430</code> differs from <code>std140</code>, how it handles
+scalar and vector arrays, and how it allows GPU buffer layouts to
+closely match standard C/C++ memory structures.</p>
+<h3 id="the-limitation-of-std140">The Limitation of std140</h3>
+<p>Under the legacy <code>std140</code> layout, arrays of any
+type—regardless of whether they are composed of single floats, integers,
+or vectors—are forced to align each element to the size of a
+<code>vec4</code> (16 bytes). For example, an array defined as
+<code>float data[4]</code> in <code>std140</code> occupies 64 bytes in
+GPU memory because every 4-byte <code>float</code> is padded to 16
+bytes.</p>
+<p>This behavior forces developers to manually add artificial padding to
+CPU-side structs or write custom data serialization logic before copying
+data into buffers, leading to memory waste and reduced memory bandwidth
+efficiency.</p>
+<h3 id="how-std430-relaxes-alignment-rules">How std430 Relaxes Alignment
+Rules</h3>
+<p>The <code>std430</code> layout removes the mandatory 16-byte roundup
+for arrays of primitives and nested structures. Instead, the alignment
+and stride of an array match the base alignment of the array's
+underlying data type.</p>
+<h4 id="1-arrays-of-scalars">1. Arrays of Scalars</h4>
+<p>Under <code>std430</code>, arrays of scalar types (such as
+<code>float</code>, <code>int</code>, <code>uint</code>, and
+<code>double</code>) have a stride equal to the scalar's natural
+size:</p>
+<ul>
+<li><code>float[]</code> or <code>int[]</code>: Stride is 4 bytes
+(previously 16 bytes in <code>std140</code>).</li>
+<li><code>double[]</code>: Stride is 8 bytes (previously 16 bytes in
+<code>std140</code>).</li>
+</ul>
+<p>An array of four 32-bit floats (<code>float data[4]</code>) in
+<code>std430</code> takes up exactly 16 contiguous bytes, perfectly
+matching a native <code>float[4]</code> in C or C++.</p>
+<h4 id="2-arrays-of-vectors">2. Arrays of Vectors</h4>
+<p>Vectors adhere to their natural alignment rather than being promoted
+to 16 bytes:</p>
+<ul>
+<li><code>vec2</code> (two 32-bit floats): Base alignment and stride are
+8 bytes. In <code>std140</code>, an array of <code>vec2</code> had a
+16-byte stride. In <code>std430</code>, it packs sequentially every 8
+bytes.</li>
+<li><code>vec4</code> (four 32-bit floats): Base alignment and stride
+remain 16 bytes in both layouts.</li>
+</ul>
+<p><em>Note on <code>vec3</code>:</em> A <code>vec3</code> still has a
+base alignment of 16 bytes in both <code>std140</code> and
+<code>std430</code>. Because its size is 12 bytes, hardware
+implementations round its alignment up to the nearest power of two (16
+bytes). An array of <code>vec3</code> will still have a 16-byte stride
+in <code>std430</code>.</p>
+<h4 id="3-struct-alignments-and-array-strides">3. Struct Alignments and
+Array Strides</h4>
+<p>In <code>std140</code>, the size of a struct inside an array is
+always rounded up to a multiple of 16 bytes.</p>
+<p>In <code>std430</code>, the alignment and array stride of a struct
+are determined strictly by its largest member. If a struct consists
+solely of <code>float</code> or <code>vec2</code> elements, its total
+stride in an array is rounded up only to a multiple of the largest
+member (e.g., 4 or 8 bytes), rather than 16 bytes.</p>
+<h3 id="direct-cpu-to-gpu-interoperability">Direct CPU-to-GPU
+Interoperability</h3>
+<p>Because <code>std430</code> eliminates artificial padding for scalars
+and <code>vec2</code> elements, developers can directly map C and C++
+structs to SSBOs using standard <code>memcpy</code> or mapped buffers
+(<code>glMapBufferRange</code>), provided <code>vec3</code> types are
+avoided or explicitly padded.</p>
+<p>By reducing buffer footprints and removing unnecessary padding,
+<code>std430</code> increases cache utilization, minimizes bandwidth
+consumption across the PCIe bus, and simplifies CPU-side buffer
+management for complex compute shader workloads.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/understanding-std-430-memory-alignment-in-open-gl-ssb-os';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

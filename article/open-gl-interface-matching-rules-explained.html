@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Interface Matching Rules Explained - opengl</title>
+    <meta name="description" content="OpenGL relies on strict interface matching rules to pass data seamlessly and reliably between consecutive pipeline stages, such as from a vertex shader to a fragment shader. These rules govern how output variables from an upstream stage connect to input v">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-interface-matching-rules-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Interface Matching Rules Explained - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-interface-matching-rules-explained" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="OpenGL relies on strict interface matching rules to pass data seamlessly and reliably between consecutive pipeline stages, such as from a vertex shader to a fragment shader. These rules govern how output variables from an upstream stage connect to input v" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-interface-matching-rules-explained">OpenGL Interface
+Matching Rules Explained</h1>
+<p>OpenGL relies on strict interface matching rules to pass data
+seamlessly and reliably between consecutive pipeline stages, such as
+from a vertex shader to a fragment shader. These rules govern how output
+variables from an upstream stage connect to input variables of a
+downstream stage, validating properties like data types, interpolation
+qualifiers, and storage locations. By enforcing these checks either
+during monolithic program linking or pipeline object binding, OpenGL
+prevents memory misalignments, type mismatches, and undefined rendering
+behavior across disparate shader stages.</p>
+<h3 id="name-and-type-matching">Name and Type Matching</h3>
+<p>In traditional monolithic programs (created via
+<code>glLinkProgram</code>), variables are matched primarily by
+identifier and type. An output variable declared in an earlier stage
+must have an identical name and fully compatible type in the subsequent
+stage.</p>
+<p>For a match to be valid:</p>
+<ul>
+<li><strong>Type Equivalence:</strong> The base data types must match
+exactly (e.g., an <code>out vec3</code> must feed into an
+<code>in vec3</code>). A mismatch, such as connecting a
+<code>float</code> to an <code>int</code>, causes a link-time
+error.</li>
+<li><strong>Array Sizing:</strong> If an array is passed between stages
+without an explicit size in the downstream stage, the compiler and
+linker require that dimensions either match explicitly or conform to
+stage-specific built-in sizing requirements (such as in tessellation or
+geometry shaders).</li>
+</ul>
+<h3 id="explicit-location-assignment">Explicit Location Assignment</h3>
+<p>Modern OpenGL (version 3.3 and later, standard with
+<code>GL_ARB_separate_shader_objects</code>) allows developers to bypass
+name matching by explicitly binding interface locations using layout
+qualifiers:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Upstream Shader (e.g., Vertex)</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">out</span> <span class="dt">vec3</span> normal<span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="co">// Downstream Shader (e.g., Fragment)</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">in</span> <span class="dt">vec3</span> surfaceNormal<span class="op">;</span></span></code></pre></div>
+<p>When explicit <code>location</code> qualifiers are declared:</p>
+<ul>
+<li><strong>Location Priority:</strong> The linker matches variables
+based purely on their numeric slot index rather than their identifiers.
+Variable names can differ entirely between stages without causing
+errors.</li>
+<li><strong>Component-Level Packing:</strong> Using
+<code>layout(location = X, component = Y)</code>, OpenGL allows multiple
+smaller variables (like two <code>float</code> values) to share a single
+4-component vector location, provided their components do not overlap
+and their types conform to layout constraints.</li>
+</ul>
+<h3 id="interpolation-and-auxiliary-qualifiers">Interpolation and
+Auxiliary Qualifiers</h3>
+<p>Interface matching extends beyond data types to how values are
+interpolated across primitives:</p>
+<ul>
+<li><strong>Interpolation Qualifiers:</strong> Both the producer and
+consumer must declare identical interpolation qualifiers—such as
+<code>smooth</code> (perspective-correct, default), <code>flat</code>
+(no interpolation), or <code>noperspective</code> (linear in screen
+space). A conflict between a <code>flat out</code> and a
+<code>smooth in</code> will cause link failure.</li>
+<li><strong>Auxiliary Qualifiers:</strong> Qualifiers like
+<code>centroid</code> or <code>sample</code> (used in multisample
+anti-aliasing) must also be consistent across the interface to ensure
+that hardware sampling points align during rasterization.</li>
+</ul>
+<h3 id="uniform-and-interface-blocks">Uniform and Interface Blocks</h3>
+<p>When grouping variables inside uniform or shader storage blocks,
+interface matching is evaluated at the block level:</p>
+<ul>
+<li><strong>Block Names vs. Instance Names:</strong> In matched
+interfaces, the <em>block name</em> must match between stages, whereas
+the internal <em>instance name</em> can differ.</li>
+<li><strong>Member Layout:</strong> Every member within the block must
+match in order, identifier, and type, unless standard layout qualifiers
+(such as <code>std140</code> or <code>std430</code>) are used along with
+identical explicit offsets.</li>
+</ul>
+<h3 id="monolithic-vs-separate-shader-pipeline-validation">Monolithic
+vs. Separate Shader Pipeline Validation</h3>
+<p>The mechanism and timing of interface rule enforcement depend on how
+shader programs are constructed:</p>
+<ul>
+<li><strong>Monolithic Programs:</strong> All stages are compiled and
+linked into a single program object via <code>glLinkProgram</code>. The
+OpenGL linker performs complete static interface analysis. Any interface
+discrepancy produces an immediate link error accessible via
+<code>glGetProgramInfoLog</code>.</li>
+<li><strong>Separate Shader Objects (SSOs):</strong> Stages exist in
+independent program objects and are assembled into a pipeline using
+<code>glBindProgramPipeline</code>. Because linking occurs
+independently, interface matching is resolved dynamically at runtime
+using explicit location assignments. If variables do not match at
+pipeline execution time, the pipeline state becomes invalid, which can
+lead to silent rendering artifacts or hardware-dependent undefined
+values. Explicit locations are virtually mandatory when using SSOs to
+guarantee interface consistency.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/open-gl-interface-matching-rules-explained';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

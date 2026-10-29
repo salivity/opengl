@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>What is FXAA and How to Implement It in OpenGL - opengl</title>
+    <meta name="description" content="Fast Approximate Anti-Aliasing (FXAA) is a popular screen-space post-processing technique designed to smooth jagged edges (aliasing) with minimal performance overhead. This article explains the core principles of FXAA, contrasts it with traditional geomet">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/what-is-fxaa-and-how-to-implement-it-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="What is FXAA and How to Implement It in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/what-is-fxaa-and-how-to-implement-it-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Fast Approximate Anti-Aliasing (FXAA) is a popular screen-space post-processing technique designed to smooth jagged edges (aliasing) with minimal performance overhead. This article explains the core principles of FXAA, contrasts it with traditional geomet" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="what-is-fxaa-and-how-to-implement-it-in-opengl">What is FXAA and
+How to Implement It in OpenGL</h1>
+<p>Fast Approximate Anti-Aliasing (FXAA) is a popular screen-space
+post-processing technique designed to smooth jagged edges (aliasing)
+with minimal performance overhead. This article explains the core
+principles of FXAA, contrasts it with traditional geometry-based
+anti-aliasing methods, and details the step-by-step logic required to
+construct an FXAA pass using modern OpenGL Shading Language (GLSL).</p>
+<h2 id="understanding-fast-approximate-anti-aliasing-fxaa">Understanding
+Fast Approximate Anti-Aliasing (FXAA)</h2>
+<p>Developed by Timothy Lottes at NVIDIA, FXAA targets the visual
+artifacts known as "jaggies" directly on the rendered 2D frame. Unlike
+traditional Multi-Sample Anti-Aliasing (MSAA) or Super-Sample
+Anti-Aliasing (SSAA), which rely on capturing multiple sub-pixel
+geometric samples during rasterization, FXAA is purely an image-space
+algorithm.</p>
+<p>Because it operates on the final color buffer as a post-processing
+pass, FXAA offers several distinct advantages:</p>
+<ul>
+<li><strong>High Performance:</strong> It requires only one
+full-resolution color buffer, minimizing memory bandwidth and GPU
+execution time.</li>
+<li><strong>Compatibility with Deferred Rendering:</strong> Traditional
+MSAA struggles with deferred rendering pipelines due to the separation
+of geometry and lighting passes. FXAA processes the final composited
+image, making it fully compatible with any shading pipeline.</li>
+<li><strong>Alpha-Tested Geometry Smoothing:</strong> FXAA can smooth
+edges inside textures, such as foliage or chain-link fences, which
+geometry-based MSAA inherently misses.</li>
+</ul>
+<p>The primary trade-off of FXAA is a slight reduction in overall image
+sharpness, as it acts as a selective blur over high-contrast
+transitions.</p>
+<hr />
+<h2 id="the-fxaa-pipeline">The FXAA Pipeline</h2>
+<p>The FXAA algorithm identifies contrast boundaries where aliasing
+occurs and blurs across those boundaries based on local gradient
+direction and edge distance. The process breaks down into five
+stages:</p>
+<ol type="1">
+<li><strong>Luminance Calculation:</strong> Convert local RGB values to
+perceptual brightness (luminance) to detect contrast visually.</li>
+<li><strong>Local Contrast Check:</strong> Sample surrounding pixels to
+determine if the local contrast exceeds a sensitivity threshold. If
+contrast is low, the pixel is skipped to preserve performance.</li>
+<li><strong>Edge Direction Detection:</strong> Evaluate horizontal and
+vertical gradients to determine whether the edge runs primarily
+horizontally or vertically.</li>
+<li><strong>Edge Boundary Traversal:</strong> Walk along the detected
+edge in both directions to find where the contrast boundary ends.</li>
+<li><strong>Sub-pixel Offset &amp; Resampling:</strong> Compute an
+interpolation offset based on the pixel's distance to the nearest edge
+endpoint, then sample the texture using bilinear filtering at the offset
+coordinate.</li>
+</ol>
+<hr />
+<h2 id="constructing-fxaa-in-an-opengl-fragment-shader">Constructing
+FXAA in an OpenGL Fragment Shader</h2>
+<p>In OpenGL, FXAA is executed via a full-screen quad fragment shader.
+The input is the rendered scene texture, and the output is the
+anti-aliased frame.</p>
+<h3 id="1-luminance-calculation">1. Luminance Calculation</h3>
+<p>Human vision is more sensitive to green than red or blue. The shader
+uses a dot product to calculate perceived luminance:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 330 core</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="dt">in</span> <span class="dt">vec2</span> TexCoords<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec4</span> FragColor<span class="op">;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">sampler2D</span> screenTexture<span class="op">;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">vec2</span> inverseScreenSize<span class="op">;</span> <span class="co">// vec2(1.0 / width, 1.0 / height)</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="co">// RGB to Luminance conversion</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> <span class="fu">rgb2luma</span><span class="op">(</span><span class="dt">vec3</span> rgb<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> <span class="bu">dot</span><span class="op">(</span>rgb<span class="op">,</span> <span class="dt">vec3</span><span class="op">(</span><span class="fl">0.299</span><span class="op">,</span> <span class="fl">0.587</span><span class="op">,</span> <span class="fl">0.114</span><span class="op">));</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="2-early-exit-via-contrast-threshold">2. Early Exit via Contrast
+Threshold</h3>
+<p>To conserve GPU resources, compute the luminance of the center pixel
+and its four direct orthogonal neighbors (North, South, East, West). If
+the difference between the minimum and maximum luminance is lower than a
+dynamic threshold, anti-aliasing is skipped:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#define EDGE_THRESHOLD_MIN 0.0312 // Trims computation in dark areas</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="pp">#define EDGE_THRESHOLD_MAX 0.125  // Minimum local contrast to apply FXAA</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> colorCenter <span class="op">=</span> <span class="bu">texture</span><span class="op">(</span>screenTexture<span class="op">,</span> TexCoords<span class="op">).</span><span class="fu">rgb</span><span class="op">;</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> lumaCenter <span class="op">=</span> <span class="fu">rgb2luma</span><span class="op">(</span>colorCenter<span class="op">);</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> lumaDown  <span class="op">=</span> <span class="fu">rgb2luma</span><span class="op">(</span><span class="bu">textureOffset</span><span class="op">(</span>screenTexture<span class="op">,</span> TexCoords<span class="op">,</span> <span class="dt">ivec2</span><span class="op">(</span><span class="dv">0</span><span class="op">,</span> <span class="op">-</span><span class="dv">1</span><span class="op">)).</span><span class="fu">rgb</span><span class="op">);</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> lumaUp    <span class="op">=</span> <span class="fu">rgb2luma</span><span class="op">(</span><span class="bu">textureOffset</span><span class="op">(</span>screenTexture<span class="op">,</span> TexCoords<span class="op">,</span> <span class="dt">ivec2</span><span class="op">(</span><span class="dv">0</span><span class="op">,</span>  <span class="dv">1</span><span class="op">)).</span><span class="fu">rgb</span><span class="op">);</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> lumaLeft  <span class="op">=</span> <span class="fu">rgb2luma</span><span class="op">(</span><span class="bu">textureOffset</span><span class="op">(</span>screenTexture<span class="op">,</span> TexCoords<span class="op">,</span> <span class="dt">ivec2</span><span class="op">(-</span><span class="dv">1</span><span class="op">,</span> <span class="dv">0</span><span class="op">)).</span><span class="fu">rgb</span><span class="op">);</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> lumaRight <span class="op">=</span> <span class="fu">rgb2luma</span><span class="op">(</span><span class="bu">textureOffset</span><span class="op">(</span>screenTexture<span class="op">,</span> TexCoords<span class="op">,</span> <span class="dt">ivec2</span><span class="op">(</span> <span class="dv">1</span><span class="op">,</span> <span class="dv">0</span><span class="op">)).</span><span class="fu">rgb</span><span class="op">);</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> lumaMin <span class="op">=</span> <span class="bu">min</span><span class="op">(</span>lumaCenter<span class="op">,</span> <span class="bu">min</span><span class="op">(</span><span class="bu">min</span><span class="op">(</span>lumaDown<span class="op">,</span> lumaUp<span class="op">),</span> <span class="bu">min</span><span class="op">(</span>lumaLeft<span class="op">,</span> lumaRight<span class="op">)));</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> lumaMax <span class="op">=</span> <span class="bu">max</span><span class="op">(</span>lumaCenter<span class="op">,</span> <span class="bu">max</span><span class="op">(</span><span class="bu">max</span><span class="op">(</span>lumaDown<span class="op">,</span> lumaUp<span class="op">),</span> <span class="bu">max</span><span class="op">(</span>lumaLeft<span class="op">,</span> lumaRight<span class="op">)));</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> lumaRange <span class="op">=</span> lumaMax <span class="op">-</span> lumaMin<span class="op">;</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> <span class="op">(</span>lumaRange <span class="op">&lt;</span> <span class="bu">max</span><span class="op">(</span>EDGE_THRESHOLD_MIN<span class="op">,</span> lumaMax <span class="op">*</span> EDGE_THRESHOLD_MAX<span class="op">))</span> <span class="op">{</span></span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>        FragColor <span class="op">=</span> <span class="dt">vec4</span><span class="op">(</span>colorCenter<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>        <span class="kw">return</span><span class="op">;</span></span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span></code></pre></div>
+<h3 id="3-estimating-edge-orientation">3. Estimating Edge
+Orientation</h3>
+<p>Include the diagonal corner pixels (North-West, North-East,
+South-West, South-East) to determine whether the edge is horizontal or
+vertical:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> lumaDownLeft  <span class="op">=</span> <span class="fu">rgb2luma</span><span class="op">(</span><span class="bu">textureOffset</span><span class="op">(</span>screenTexture<span class="op">,</span> TexCoords<span class="op">,</span> <span class="dt">ivec2</span><span class="op">(-</span><span class="dv">1</span><span class="op">,</span> <span class="op">-</span><span class="dv">1</span><span class="op">)).</span><span class="fu">rgb</span><span class="op">);</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> lumaUpRight   <span class="op">=</span> <span class="fu">rgb2luma</span><span class="op">(</span><span class="bu">textureOffset</span><span class="op">(</span>screenTexture<span class="op">,</span> TexCoords<span class="op">,</span> <span class="dt">ivec2</span><span class="op">(</span> <span class="dv">1</span><span class="op">,</span>  <span class="dv">1</span><span class="op">)).</span><span class="fu">rgb</span><span class="op">);</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> lumaUpLeft    <span class="op">=</span> <span class="fu">rgb2luma</span><span class="op">(</span><span class="bu">textureOffset</span><span class="op">(</span>screenTexture<span class="op">,</span> TexCoords<span class="op">,</span> <span class="dt">ivec2</span><span class="op">(-</span><span class="dv">1</span><span class="op">,</span>  <span class="dv">1</span><span class="op">)).</span><span class="fu">rgb</span><span class="op">);</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> lumaDownRight <span class="op">=</span> <span class="fu">rgb2luma</span><span class="op">(</span><span class="bu">textureOffset</span><span class="op">(</span>screenTexture<span class="op">,</span> TexCoords<span class="op">,</span> <span class="dt">ivec2</span><span class="op">(</span> <span class="dv">1</span><span class="op">,</span> <span class="op">-</span><span class="dv">1</span><span class="op">)).</span><span class="fu">rgb</span><span class="op">);</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Combine orthogonal and diagonal variations</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> edgeHorizontal <span class="op">=</span> <span class="bu">abs</span><span class="op">(-</span><span class="fl">2.0</span> <span class="op">*</span> lumaLeft <span class="op">+</span> lumaDownLeft <span class="op">+</span> lumaUpLeft<span class="op">)</span> <span class="op">+</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>                           <span class="bu">abs</span><span class="op">(-</span><span class="fl">2.0</span> <span class="op">*</span> lumaCenter <span class="op">+</span> lumaDown <span class="op">+</span> lumaUp<span class="op">)</span> <span class="op">*</span> <span class="fl">2.0</span> <span class="op">+</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>                           <span class="bu">abs</span><span class="op">(-</span><span class="fl">2.0</span> <span class="op">*</span> lumaRight <span class="op">+</span> lumaDownRight <span class="op">+</span> lumaUpRight<span class="op">);</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> edgeVertical   <span class="op">=</span> <span class="bu">abs</span><span class="op">(-</span><span class="fl">2.0</span> <span class="op">*</span> lumaUp <span class="op">+</span> lumaUpLeft <span class="op">+</span> lumaUpRight<span class="op">)</span> <span class="op">+</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>                           <span class="bu">abs</span><span class="op">(-</span><span class="fl">2.0</span> <span class="op">*</span> lumaCenter <span class="op">+</span> lumaLeft <span class="op">+</span> lumaRight<span class="op">)</span> <span class="op">*</span> <span class="fl">2.0</span> <span class="op">+</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>                           <span class="bu">abs</span><span class="op">(-</span><span class="fl">2.0</span> <span class="op">*</span> lumaDown <span class="op">+</span> lumaDownLeft <span class="op">+</span> lumaDownRight<span class="op">);</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>    <span class="dt">bool</span> isHorizontal <span class="op">=</span> <span class="op">(</span>edgeHorizontal <span class="op">&gt;=</span> edgeVertical<span class="op">);</span></span></code></pre></div>
+<h3 id="4-edge-traversal-and-gradient-sampling">4. Edge Traversal and
+Gradient Sampling</h3>
+<p>Identify the side of the edge with the highest gradient. Then, step
+along the edge perpendicular to that gradient to locate the end of the
+boundary:</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Determine the step direction perpendicular to the edge</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> stepLength <span class="op">=</span> isHorizontal <span class="op">?</span> inverseScreenSize<span class="op">.</span><span class="fu">y</span> <span class="op">:</span> inverseScreenSize<span class="op">.</span><span class="fu">x</span><span class="op">;</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> luma1 <span class="op">=</span> isHorizontal <span class="op">?</span> lumaDown <span class="op">:</span> lumaLeft<span class="op">;</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> luma2 <span class="op">=</span> isHorizontal <span class="op">?</span> lumaUp <span class="op">:</span> lumaRight<span class="op">;</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> gradient1 <span class="op">=</span> luma1 <span class="op">-</span> lumaCenter<span class="op">;</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> gradient2 <span class="op">=</span> luma2 <span class="op">-</span> lumaCenter<span class="op">;</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">bool</span> is1Steeper <span class="op">=</span> <span class="bu">abs</span><span class="op">(</span>gradient1<span class="op">)</span> <span class="op">&gt;=</span> <span class="bu">abs</span><span class="op">(</span>gradient2<span class="op">);</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> gradientScaled <span class="op">=</span> <span class="fl">0.25</span> <span class="op">*</span> <span class="bu">max</span><span class="op">(</span><span class="bu">abs</span><span class="op">(</span>gradient1<span class="op">),</span> <span class="bu">abs</span><span class="op">(</span>gradient2<span class="op">));</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Shift coordinates halfway toward the adjacent pixel with the steepest gradient</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec2</span> currentUv <span class="op">=</span> TexCoords<span class="op">;</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> <span class="op">(</span>isHorizontal<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>        currentUv<span class="op">.</span><span class="fu">y</span> <span class="op">+=</span> <span class="op">(</span>is1Steeper <span class="op">?</span> <span class="op">-</span>stepLength <span class="op">:</span> stepLength<span class="op">)</span> <span class="op">*</span> <span class="fl">0.5</span><span class="op">;</span></span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span> <span class="kw">else</span> <span class="op">{</span></span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>        currentUv<span class="op">.</span><span class="fu">x</span> <span class="op">+=</span> <span class="op">(</span>is1Steeper <span class="op">?</span> <span class="op">-</span>stepLength <span class="op">:</span> stepLength<span class="op">)</span> <span class="op">*</span> <span class="fl">0.5</span><span class="op">;</span></span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Step vector along the edge boundary</span></span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec2</span> stepOffset <span class="op">=</span> isHorizontal <span class="op">?</span> <span class="dt">vec2</span><span class="op">(</span>inverseScreenSize<span class="op">.</span><span class="fu">x</span><span class="op">,</span> <span class="fl">0.0</span><span class="op">)</span> <span class="op">:</span> <span class="dt">vec2</span><span class="op">(</span><span class="fl">0.0</span><span class="op">,</span> inverseScreenSize<span class="op">.</span><span class="fu">y</span><span class="op">);</span></span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec2</span> uvPos <span class="op">=</span> currentUv <span class="op">+</span> stepOffset<span class="op">;</span></span>
+<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec2</span> uvNeg <span class="op">=</span> currentUv <span class="op">-</span> stepOffset<span class="op">;</span></span>
+<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> lumaEndPos <span class="op">=</span> <span class="fu">rgb2luma</span><span class="op">(</span><span class="bu">texture</span><span class="op">(</span>screenTexture<span class="op">,</span> uvPos<span class="op">).</span><span class="fu">rgb</span><span class="op">);</span></span>
+<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> lumaEndNeg <span class="op">=</span> <span class="fu">rgb2luma</span><span class="op">(</span><span class="bu">texture</span><span class="op">(</span>screenTexture<span class="op">,</span> uvNeg<span class="op">).</span><span class="fu">rgb</span><span class="op">);</span></span>
+<span id="cb4-28"><a href="#cb4-28" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb4-29"><a href="#cb4-29" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Search for edge ends</span></span>
+<span id="cb4-30"><a href="#cb4-30" aria-hidden="true" tabindex="-1"></a>    <span class="dt">bool</span> reachedPos <span class="op">=</span> <span class="bu">abs</span><span class="op">(</span>lumaEndPos <span class="op">-</span> lumaCenter<span class="op">)</span> <span class="op">&gt;=</span> gradientScaled<span class="op">;</span></span>
+<span id="cb4-31"><a href="#cb4-31" aria-hidden="true" tabindex="-1"></a>    <span class="dt">bool</span> reachedNeg <span class="op">=</span> <span class="bu">abs</span><span class="op">(</span>lumaEndNeg <span class="op">-</span> lumaCenter<span class="op">)</span> <span class="op">&gt;=</span> gradientScaled<span class="op">;</span></span>
+<span id="cb4-32"><a href="#cb4-32" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-33"><a href="#cb4-33" aria-hidden="true" tabindex="-1"></a>    <span class="pp">#define ITERATIONS 12</span></span>
+<span id="cb4-34"><a href="#cb4-34" aria-hidden="true" tabindex="-1"></a>    <span class="kw">for</span> <span class="op">(</span><span class="dt">int</span> i <span class="op">=</span> <span class="dv">2</span><span class="op">;</span> i <span class="op">&lt;</span> ITERATIONS<span class="op">;</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-35"><a href="#cb4-35" aria-hidden="true" tabindex="-1"></a>        <span class="kw">if</span> <span class="op">(!</span>reachedPos<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-36"><a href="#cb4-36" aria-hidden="true" tabindex="-1"></a>            uvPos <span class="op">+=</span> stepOffset<span class="op">;</span></span>
+<span id="cb4-37"><a href="#cb4-37" aria-hidden="true" tabindex="-1"></a>            lumaEndPos <span class="op">=</span> <span class="fu">rgb2luma</span><span class="op">(</span><span class="bu">texture</span><span class="op">(</span>screenTexture<span class="op">,</span> uvPos<span class="op">).</span><span class="fu">rgb</span><span class="op">);</span></span>
+<span id="cb4-38"><a href="#cb4-38" aria-hidden="true" tabindex="-1"></a>            reachedPos <span class="op">=</span> <span class="bu">abs</span><span class="op">(</span>lumaEndPos <span class="op">-</span> lumaCenter<span class="op">)</span> <span class="op">&gt;=</span> gradientScaled<span class="op">;</span></span>
+<span id="cb4-39"><a href="#cb4-39" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb4-40"><a href="#cb4-40" aria-hidden="true" tabindex="-1"></a>        <span class="kw">if</span> <span class="op">(!</span>reachedNeg<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-41"><a href="#cb4-41" aria-hidden="true" tabindex="-1"></a>            uvNeg <span class="op">-=</span> stepOffset<span class="op">;</span></span>
+<span id="cb4-42"><a href="#cb4-42" aria-hidden="true" tabindex="-1"></a>            lumaEndNeg <span class="op">=</span> <span class="fu">rgb2luma</span><span class="op">(</span><span class="bu">texture</span><span class="op">(</span>screenTexture<span class="op">,</span> uvNeg<span class="op">).</span><span class="fu">rgb</span><span class="op">);</span></span>
+<span id="cb4-43"><a href="#cb4-43" aria-hidden="true" tabindex="-1"></a>            reachedNeg <span class="op">=</span> <span class="bu">abs</span><span class="op">(</span>lumaEndNeg <span class="op">-</span> lumaCenter<span class="op">)</span> <span class="op">&gt;=</span> gradientScaled<span class="op">;</span></span>
+<span id="cb4-44"><a href="#cb4-44" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb4-45"><a href="#cb4-45" aria-hidden="true" tabindex="-1"></a>        <span class="kw">if</span> <span class="op">(</span>reachedPos <span class="op">&amp;&amp;</span> reachedNeg<span class="op">)</span> <span class="kw">break</span><span class="op">;</span></span>
+<span id="cb4-46"><a href="#cb4-46" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span></code></pre></div>
+<h3 id="5-sub-pixel-offset-calculation-and-final-sampling">5. Sub-pixel
+Offset Calculation and Final Sampling</h3>
+<p>Calculate the distance to both ends of the edge. The final texture
+offset is computed as a proportion of the distance to the closest
+boundary, blending the edge:</p>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> dstPos <span class="op">=</span> isHorizontal <span class="op">?</span> <span class="op">(</span>uvPos<span class="op">.</span><span class="fu">x</span> <span class="op">-</span> TexCoords<span class="op">.</span><span class="fu">x</span><span class="op">)</span> <span class="op">:</span> <span class="op">(</span>uvPos<span class="op">.</span><span class="fu">y</span> <span class="op">-</span> TexCoords<span class="op">.</span><span class="fu">y</span><span class="op">);</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> dstNeg <span class="op">=</span> isHorizontal <span class="op">?</span> <span class="op">(</span>TexCoords<span class="op">.</span><span class="fu">x</span> <span class="op">-</span> uvNeg<span class="op">.</span><span class="fu">x</span><span class="op">)</span> <span class="op">:</span> <span class="op">(</span>TexCoords<span class="op">.</span><span class="fu">y</span> <span class="op">-</span> uvNeg<span class="op">.</span><span class="fu">y</span><span class="op">);</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">bool</span> isPosCloser <span class="op">=</span> dstPos <span class="op">&lt;</span> dstNeg<span class="op">;</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> dstCloser <span class="op">=</span> <span class="bu">min</span><span class="op">(</span>dstPos<span class="op">,</span> dstNeg<span class="op">);</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> edgeLength <span class="op">=</span> dstPos <span class="op">+</span> dstNeg<span class="op">;</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Sub-pixel offset applied in the direction of the steep gradient</span></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> pixelOffset <span class="op">=</span> <span class="op">-</span>dstCloser <span class="op">/</span> edgeLength <span class="op">+</span> <span class="fl">0.5</span><span class="op">;</span></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec2</span> finalUv <span class="op">=</span> TexCoords<span class="op">;</span></span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> <span class="op">(</span>isHorizontal<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>        finalUv<span class="op">.</span><span class="fu">y</span> <span class="op">+=</span> pixelOffset <span class="op">*</span> <span class="op">(</span>is1Steeper <span class="op">?</span> <span class="op">-</span>stepLength <span class="op">:</span> stepLength<span class="op">);</span></span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span> <span class="kw">else</span> <span class="op">{</span></span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>        finalUv<span class="op">.</span><span class="fu">x</span> <span class="op">+=</span> pixelOffset <span class="op">*</span> <span class="op">(</span>is1Steeper <span class="op">?</span> <span class="op">-</span>stepLength <span class="op">:</span> stepLength<span class="op">);</span></span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Bilinear hardware filtering produces the smoothed result</span></span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a>    FragColor <span class="op">=</span> <span class="dt">vec4</span><span class="op">(</span><span class="bu">texture</span><span class="op">(</span>screenTexture<span class="op">,</span> finalUv<span class="op">).</span><span class="fu">rgb</span><span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>By leveraging hardware-accelerated bilinear texture sampling during
+the final read, this shader blends adjacent pixels along the detected
+geometric discontinuity, producing a smooth anti-aliased output at very
+low computational cost.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/what-is-fxaa-and-how-to-implement-it-in-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

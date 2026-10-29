@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Double Precision in OpenGL Vertex Shaders - opengl</title>
+    <meta name="description" content="Integrating double-precision floating-point types into an OpenGL vertex shader resolves rendering artifacts like precision jitter in large-scale virtual environments, but it introduces severe hardware bottlenecks. Developers must weigh critical performanc">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/double-precision-in-open-gl-vertex-shaders">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Double Precision in OpenGL Vertex Shaders - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/double-precision-in-open-gl-vertex-shaders" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Integrating double-precision floating-point types into an OpenGL vertex shader resolves rendering artifacts like precision jitter in large-scale virtual environments, but it introduces severe hardware bottlenecks. Developers must weigh critical performanc" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="double-precision-in-opengl-vertex-shaders">Double Precision in
+OpenGL Vertex Shaders</h1>
+<p>Integrating double-precision floating-point types into an OpenGL
+vertex shader resolves rendering artifacts like precision jitter in
+large-scale virtual environments, but it introduces severe hardware
+bottlenecks. Developers must weigh critical performance compromises
+before replacing standard single-precision math with 64-bit operations.
+These trade-offs include drastically reduced arithmetic execution
+throughput, heightened register pressure that lowers GPU occupancy,
+doubled memory bandwidth requirements for vertex attributes, and
+pipeline stalls associated with data conversion.</p>
+<h3 id="asymmetric-alu-throughput">Asymmetric ALU Throughput</h3>
+<p>Consumer-grade graphics processors prioritize single-precision (FP32)
+arithmetic. While enterprise GPUs feature dedicated FP64 cores, standard
+desktop and mobile hardware implement double-precision operations at a
+significantly reduced rate. On mainstream architectures, the ratio of
+FP32 to FP64 execution units commonly ranges from 16:1 to as low as
+64:1. Substituting FP32 operations with <code>double</code>,
+<code>dvec2</code>, <code>dvec3</code>, or <code>dvec4</code>
+instructions directly lowers the execution rate of the vertex execution
+pipeline, turning compute-heavy vertex processing into an immediate
+bottleneck.</p>
+<h3 id="register-pressure-and-reduced-occupancy">Register Pressure and
+Reduced Occupancy</h3>
+<p>A 64-bit variable occupies two 32-bit hardware registers. GPUs rely
+on a shared register file to maintain thousands of active threads across
+streaming multiprocessors or compute units. When a vertex shader demands
+more registers to track double-precision data, the hardware scheduler
+must reduce the number of active warps or wavefronts in flight. This
+drop in occupancy limits the GPU's ability to hide memory access
+latency, degrading overall execution efficiency even if the arithmetic
+itself is relatively simple.</p>
+<h3 id="vertex-fetch-and-bus-bandwidth">Vertex Fetch and Bus
+Bandwidth</h3>
+<p>Supplying true double-precision data requires transferring 64-bit
+values from system memory to GPU VRAM and into the vertex processing
+pipeline via <code>glVertexAttribLPointer</code>. This doubles the byte
+payload per vertex relative to 32-bit floats. The increased footprint
+strains PCIe bus transfers, consumes more internal VRAM bandwidth, and
+decreases the hit rate of hardware vertex caches. Consequently,
+rendering pipelines with high vertex counts risk becoming memory-bound
+during attribute fetch stages.</p>
+<h3 id="instruction-latency-and-casting-costs">Instruction Latency and
+Casting Costs</h3>
+<p>Double-precision instructions require more clock cycles to complete
+than their 32-bit counterparts. Mixing single- and double-precision
+types within the same shader also introduces implicit or explicit
+casting operations (e.g., converting a <code>dvec3</code> position to a
+standard <code>vec4</code> for <code>gl_Position</code>). These
+conversion instructions consume additional clock cycles and execution
+slots, adding overhead that can negate the perceived simplicity of
+working with native doubles.</p>
+<h3 id="architectural-alternatives">Architectural Alternatives</h3>
+<p>Given these compromises, native double-precision in vertex shaders is
+rarely the optimal solution for real-time rendering. Common production
+techniques—such as Camera-Relative Rendering (Relative-to-Eye
+coordinates), dividing large scenes into hierarchical local coordinate
+spaces, or employing emulated double-precision (storing positions as
+pairs of high- and low-order 32-bit floats)—achieve 64-bit spatial
+accuracy while maintaining standard FP32 execution speeds and memory
+throughput.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/double-precision-in-open-gl-vertex-shaders';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

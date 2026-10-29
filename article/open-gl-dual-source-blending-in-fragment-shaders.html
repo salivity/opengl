@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Dual-Source Blending in Fragment Shaders - opengl</title>
+    <meta name="description" content="Dual-source blending in OpenGL is a rendering technique that allows a single fragment shader execution to output two distinct color values to a single color attachment. By binding two color outputs to the same draw buffer index using specific layout quali">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-dual-source-blending-in-fragment-shaders">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Dual-Source Blending in Fragment Shaders - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-dual-source-blending-in-fragment-shaders" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Dual-source blending in OpenGL is a rendering technique that allows a single fragment shader execution to output two distinct color values to a single color attachment. By binding two color outputs to the same draw buffer index using specific layout quali" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-dual-source-blending-in-fragment-shaders">OpenGL
+Dual-Source Blending in Fragment Shaders</h1>
+<p>Dual-source blending in OpenGL is a rendering technique that allows a
+single fragment shader execution to output two distinct color values to
+a single color attachment. By binding two color outputs to the same draw
+buffer index using specific layout qualifiers, the graphics pipeline can
+use the second output as an additional blending factor in the
+fixed-function blend stage. This mechanism is primarily utilized for
+complex blending equations, such as subpixel font rendering and
+specialized transparency algorithms, without requiring multiple render
+passes.</p>
+<h3 id="fragment-shader-output-configuration">Fragment Shader Output
+Configuration</h3>
+<p>In standard rendering pipelines, a fragment shader outputs a single
+color per draw buffer
+(<code>layout(location = 0) out vec4 fragColor;</code>). Dual-source
+blending extends this by utilizing the <code>index</code> layout
+qualifier alongside the <code>location</code> qualifier. Both outputs
+must be mapped to the same draw buffer location (typically location 0),
+distinguished by an index of either 0 or 1.</p>
+<p>The GLSL configuration requires the following layout syntax:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 330 core</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="co">// Primary source color (Src)</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">0</span><span class="op">,</span> <span class="dt">index</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">out</span> <span class="dt">vec4</span> primaryColor<span class="op">;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="co">// Secondary source color (Src1)</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">0</span><span class="op">,</span> <span class="dt">index</span> <span class="op">=</span> <span class="dv">1</span><span class="op">)</span> <span class="dt">out</span> <span class="dt">vec4</span> secondaryColor<span class="op">;</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    primaryColor <span class="op">=</span> <span class="dt">vec4</span><span class="op">(</span><span class="fl">1.0</span><span class="op">,</span> <span class="fl">0.0</span><span class="op">,</span> <span class="fl">0.0</span><span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span>   <span class="co">// The base color to be blended</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    secondaryColor <span class="op">=</span> <span class="dt">vec4</span><span class="op">(</span><span class="fl">0.5</span><span class="op">,</span> <span class="fl">0.5</span><span class="op">,</span> <span class="fl">0.5</span><span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span> <span class="co">// The secondary factor used in blending</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>The output assigned to <code>index = 0</code> acts as the primary
+source (<code>Src</code>), while the output at <code>index = 1</code>
+acts as the secondary source (<code>Src1</code>).</p>
+<h3 id="configuring-the-opengl-blend-state">Configuring the OpenGL Blend
+State</h3>
+<p>For dual-source blending to function, blending must be enabled via
+<code>glEnable(GL_BLEND)</code>, and the blend function must explicitly
+reference the secondary source. OpenGL provides dedicated blend factor
+tokens for this purpose:</p>
+<ul>
+<li><code>GL_SRC1_COLOR</code></li>
+<li><code>GL_ONE_MINUS_SRC1_COLOR</code></li>
+<li><code>GL_SRC1_ALPHA</code></li>
+<li><code>GL_ONE_MINUS_SRC1_ALPHA</code></li>
+</ul>
+<p>For example, to configure a blend equation where the destination
+color is modulated by the secondary source output and combined with the
+primary source output:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>glEnable<span class="op">(</span>GL_BLEND<span class="op">);</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>glBlendFunc<span class="op">(</span>GL_ONE<span class="op">,</span> GL_ONE_MINUS_SRC1_COLOR<span class="op">);</span></span></code></pre></div>
+<p>In this setup, the blending formula evaluated by the hardware is:</p>
+<p><span class="math display">\[\text{FinalColor} = (\text{primaryColor}
+\times 1.0) + (\text{destColor} \times (1.0 -
+\text{secondaryColor}))\]</span></p>
+<h3 id="common-use-cases">Common Use Cases</h3>
+<ul>
+<li><strong>Subpixel Text Rendering:</strong> Subpixel font rendering
+requires per-component alpha masking to handle red, green, and blue LCD
+subpixels individually. Standard blending allows only scalar alpha
+blending across all channels. With dual-source blending,
+<code>primaryColor</code> carries the colored text, while
+<code>secondaryColor</code> carries the component-wise alpha mask.
+Setting the blend function to
+<code>glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC1_COLOR)</code> allows
+independent channel modulation in a single pass.</li>
+<li><strong>Order-Independent Transparency (OIT):</strong> Certain
+weighted blended OIT formulations require computing multiple
+accumulation factors simultaneously. Dual-source blending allows the
+shader to contribute both the weighted color and the revealage/coverage
+factor directly to the frame buffer in one pass.</li>
+</ul>
+<h3 id="hardware-limitations">Hardware Limitations</h3>
+<p>Dual-source blending relies on specialized hardware support,
+originally introduced through the <code>ARB_blend_func_extended</code>
+extension and integrated into core OpenGL 3.3.</p>
+<p>Because dual-source blending uses multiple hardware color output
+registers for a single render target, it severely limits simultaneous
+multiple render target (MRT) usage. The maximum number of draw buffers
+that can simultaneously utilize dual-source blending is queried via
+<code>glGetIntegerv(GL_MAX_DUAL_SOURCE_DRAW_BUFFERS, &amp;maxBuffers)</code>.
+On virtually all consumer hardware, this limit is 1, meaning dual-source
+blending can only be applied to draw buffer 0. Attempting to bind dual
+sources to other draw buffers will generate an
+<code>INVALID_OPERATION</code> error or fail shader linkage.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/open-gl-dual-source-blending-in-fragment-shaders';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

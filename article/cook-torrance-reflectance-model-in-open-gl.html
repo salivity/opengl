@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cook-Torrance Reflectance Model in OpenGL - opengl</title>
+    <meta name="description" content="This article provides a comprehensive overview of the Cook-Torrance microfacet reflectance model and demonstrates its implementation within an OpenGL fragment shader. You will learn the core theory behind microfacet specular reflection, the mathematical f">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/cook-torrance-reflectance-model-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Cook-Torrance Reflectance Model in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/cook-torrance-reflectance-model-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article provides a comprehensive overview of the Cook-Torrance microfacet reflectance model and demonstrates its implementation within an OpenGL fragment shader. You will learn the core theory behind microfacet specular reflection, the mathematical f" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="cook-torrance-reflectance-model-in-opengl">Cook-Torrance
+Reflectance Model in OpenGL</h1>
+<p>This article provides a comprehensive overview of the Cook-Torrance
+microfacet reflectance model and demonstrates its implementation within
+an OpenGL fragment shader. You will learn the core theory behind
+microfacet specular reflection, the mathematical formulation of the
+<span class="math inline">\(D\)</span>, <span
+class="math inline">\(F\)</span>, and <span
+class="math inline">\(G\)</span> functions, and how to combine these
+components in GLSL to produce physically based rendering (PBR) lighting
+effects.</p>
+<h2 id="what-is-the-cook-torrance-model">What is the Cook-Torrance
+Model?</h2>
+<p>The Cook-Torrance model is a physically based Bidirectional
+Reflectance Distribution Function (BRDF) designed to simulate the
+reflection of light from rough, microfaceted surfaces. Traditional
+empirical models like Phong or Blinn-Phong approximate specular
+highlights using simplified mathematical curves. In contrast,
+Cook-Torrance models a surface as a collection of microscopic, perfectly
+reflective mirrors (microfacets), whose orientations determine how
+incoming light is scattered.</p>
+<p>The total reflected radiance is divided into diffuse and specular
+components:</p>
+<p><span class="math display">\[f_r = k_d f_{\text{diffuse}} + k_s
+f_{\text{specular}}\]</span></p>
+<p>While <span class="math inline">\(f_{\text{diffuse}}\)</span> is
+typically computed using standard Lambertian reflection (<span
+class="math inline">\(\frac{c}{\pi}\)</span>), the specular term <span
+class="math inline">\(f_{\text{specular}}\)</span> is defined by the
+Cook-Torrance formula:</p>
+<p><span class="math display">\[f_{\text{cook-torrance}} = \frac{D \cdot
+F \cdot G}{4(\mathbf{N} \cdot \mathbf{V})(\mathbf{N} \cdot
+\mathbf{L})}\]</span></p>
+<p>Where:</p>
+<ul>
+<li><strong><span class="math inline">\(\mathbf{N}\)</span></strong> is
+the surface normal.</li>
+<li><strong><span class="math inline">\(\mathbf{V}\)</span></strong> is
+the view direction vector pointing toward the camera.</li>
+<li><strong><span class="math inline">\(\mathbf{L}\)</span></strong> is
+the light direction vector pointing toward the light source.</li>
+<li><strong><span class="math inline">\(D\)</span> (Normal Distribution
+Function):</strong> Approximates the ratio of microfacets aligned with
+the half-vector <span class="math inline">\(\mathbf{H}\)</span>.</li>
+<li><strong><span class="math inline">\(F\)</span> (Fresnel
+Equation):</strong> Calculates the ratio of light reflected versus
+refracted at different angles of incidence.</li>
+<li><strong><span class="math inline">\(G\)</span> (Geometric
+Shadowing/Masking Function):</strong> Accounts for the self-shadowing
+and occlusion of microfacets by neighboring facets.</li>
+</ul>
+<hr />
+<h2 id="mathematical-formulation-of-d-f-and-g">Mathematical Formulation
+of D, F, and G</h2>
+<p>Modern real-time rendering pipelines generally use standard
+approximations for these three terms:</p>
+<h3 id="1-normal-distribution-function-d-trowbridge-reitz-ggx">1. Normal
+Distribution Function (<span class="math inline">\(D\)</span>):
+Trowbridge-Reitz GGX</h3>
+<p>The GGX distribution models specular highlights with realistic
+falloff and broad tails:</p>
+<p><span class="math display">\[D_{GGX}(\mathbf{N}, \mathbf{H}, \alpha)
+= \frac{\alpha^2}{\pi \left((\mathbf{N} \cdot \mathbf{H})^2 (\alpha^2 -
+1) + 1\right)^2}\]</span></p>
+<p>Here, <span class="math inline">\(\alpha\)</span> represents surface
+roughness (often mapped as <span class="math inline">\(\alpha =
+\text{roughness}^2\)</span>).</p>
+<h3 id="2-fresnel-equation-f-fresnel-schlick">2. Fresnel Equation (<span
+class="math inline">\(F\)</span>): Fresnel-Schlick</h3>
+<p>The Schlick approximation simplifies the Fresnel reflection
+coefficient:</p>
+<p><span class="math display">\[F_{\text{Schlick}}(\mathbf{V},
+\mathbf{H}, F_0) = F_0 + (1 - F_0)(1 - (\mathbf{V} \cdot
+\mathbf{H}))^5\]</span></p>
+<p><span class="math inline">\(F_0\)</span> represents the base
+reflectance of the surface at normal incidence (<span
+class="math inline">\(0^\circ\)</span>). Non-metals generally have an
+<span class="math inline">\(F_0 \approx 0.04\)</span>, while metals use
+their albedo color as <span class="math inline">\(F_0\)</span>.</p>
+<h3 id="3-geometry-function-g-smiths-model-with-schlick-ggx">3. Geometry
+Function (<span class="math inline">\(G\)</span>): Smith's Model with
+Schlick-GGX</h3>
+<p>Smith's method factors in both light direction (masking) and view
+direction (shadowing):</p>
+<p><span class="math display">\[G(\mathbf{N}, \mathbf{V}, \mathbf{L}, k)
+= G_1(\mathbf{N}, \mathbf{V}, k) \cdot G_1(\mathbf{N}, \mathbf{L},
+k)\]</span></p>
+<p><span class="math display">\[G_1(\mathbf{N}, \mathbf{X}, k) =
+\frac{\mathbf{N} \cdot \mathbf{X}}{(\mathbf{N} \cdot \mathbf{X})(1 - k)
++ k}\]</span></p>
+<p>For direct analytical lights, <span class="math inline">\(k =
+\frac{(\alpha + 1)^2}{8}\)</span>.</p>
+<hr />
+<h2 id="opengl-fragment-shader-implementation">OpenGL Fragment Shader
+Implementation</h2>
+<p>Below is a complete GLSL fragment shader implementation demonstrating
+the Cook-Torrance evaluation for a single point light source.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 330 core</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec4</span> FragColor<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="dt">in</span> <span class="dt">vec3</span> WorldPos<span class="op">;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="dt">in</span> <span class="dt">vec3</span> Normal<span class="op">;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="dt">in</span> <span class="dt">vec2</span> TexCoords<span class="op">;</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">vec3</span> camPos<span class="op">;</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">vec3</span> lightPos<span class="op">;</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">vec3</span> lightColor<span class="op">;</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">vec3</span> albedo<span class="op">;</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">float</span> metallic<span class="op">;</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">float</span> roughness<span class="op">;</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a><span class="dt">const</span> <span class="dt">float</span> PI <span class="op">=</span> <span class="fl">3.14159265359</span><span class="op">;</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a><span class="co">// 1. Normal Distribution Function: Trowbridge-Reitz GGX</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> <span class="fu">DistributionGGX</span><span class="op">(</span><span class="dt">vec3</span> N<span class="op">,</span> <span class="dt">vec3</span> H<span class="op">,</span> <span class="dt">float</span> roughness<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> a <span class="op">=</span> roughness <span class="op">*</span> roughness<span class="op">;</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> a2 <span class="op">=</span> a <span class="op">*</span> a<span class="op">;</span></span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> NdotH <span class="op">=</span> <span class="bu">max</span><span class="op">(</span><span class="bu">dot</span><span class="op">(</span>N<span class="op">,</span> H<span class="op">),</span> <span class="fl">0.0</span><span class="op">);</span></span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> NdotH2 <span class="op">=</span> NdotH <span class="op">*</span> NdotH<span class="op">;</span></span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> denom <span class="op">=</span> <span class="op">(</span>NdotH2 <span class="op">*</span> <span class="op">(</span>a2 <span class="op">-</span> <span class="fl">1.0</span><span class="op">)</span> <span class="op">+</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a>    denom <span class="op">=</span> PI <span class="op">*</span> denom <span class="op">*</span> denom<span class="op">;</span></span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> a2 <span class="op">/</span> <span class="bu">max</span><span class="op">(</span>denom<span class="op">,</span> <span class="fl">0.0000001</span><span class="op">);</span></span>
+<span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb1-31"><a href="#cb1-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-32"><a href="#cb1-32" aria-hidden="true" tabindex="-1"></a><span class="co">// 2. Geometry Function: Schlick-GGX sub-function</span></span>
+<span id="cb1-33"><a href="#cb1-33" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> <span class="fu">GeometrySchlickGGX</span><span class="op">(</span><span class="dt">float</span> NdotV<span class="op">,</span> <span class="dt">float</span> roughness<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-34"><a href="#cb1-34" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> r <span class="op">=</span> <span class="op">(</span>roughness <span class="op">+</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb1-35"><a href="#cb1-35" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> k <span class="op">=</span> <span class="op">(</span>r <span class="op">*</span> r<span class="op">)</span> <span class="op">/</span> <span class="fl">8.0</span><span class="op">;</span></span>
+<span id="cb1-36"><a href="#cb1-36" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-37"><a href="#cb1-37" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> denom <span class="op">=</span> NdotV <span class="op">*</span> <span class="op">(</span><span class="fl">1.0</span> <span class="op">-</span> k<span class="op">)</span> <span class="op">+</span> k<span class="op">;</span></span>
+<span id="cb1-38"><a href="#cb1-38" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> NdotV <span class="op">/</span> denom<span class="op">;</span></span>
+<span id="cb1-39"><a href="#cb1-39" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb1-40"><a href="#cb1-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-41"><a href="#cb1-41" aria-hidden="true" tabindex="-1"></a><span class="co">// Smith&#39;s method combining shadowing and masking</span></span>
+<span id="cb1-42"><a href="#cb1-42" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> <span class="fu">GeometrySmith</span><span class="op">(</span><span class="dt">vec3</span> N<span class="op">,</span> <span class="dt">vec3</span> V<span class="op">,</span> <span class="dt">vec3</span> L<span class="op">,</span> <span class="dt">float</span> roughness<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-43"><a href="#cb1-43" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> NdotV <span class="op">=</span> <span class="bu">max</span><span class="op">(</span><span class="bu">dot</span><span class="op">(</span>N<span class="op">,</span> V<span class="op">),</span> <span class="fl">0.0</span><span class="op">);</span></span>
+<span id="cb1-44"><a href="#cb1-44" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> NdotL <span class="op">=</span> <span class="bu">max</span><span class="op">(</span><span class="bu">dot</span><span class="op">(</span>N<span class="op">,</span> L<span class="op">),</span> <span class="fl">0.0</span><span class="op">);</span></span>
+<span id="cb1-45"><a href="#cb1-45" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> ggx2 <span class="op">=</span> <span class="fu">GeometrySchlickGGX</span><span class="op">(</span>NdotV<span class="op">,</span> roughness<span class="op">);</span></span>
+<span id="cb1-46"><a href="#cb1-46" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> ggx1 <span class="op">=</span> <span class="fu">GeometrySchlickGGX</span><span class="op">(</span>NdotL<span class="op">,</span> roughness<span class="op">);</span></span>
+<span id="cb1-47"><a href="#cb1-47" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-48"><a href="#cb1-48" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> ggx1 <span class="op">*</span> ggx2<span class="op">;</span></span>
+<span id="cb1-49"><a href="#cb1-49" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb1-50"><a href="#cb1-50" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-51"><a href="#cb1-51" aria-hidden="true" tabindex="-1"></a><span class="co">// 3. Fresnel Equation: Fresnel-Schlick</span></span>
+<span id="cb1-52"><a href="#cb1-52" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> <span class="fu">FresnelSchlick</span><span class="op">(</span><span class="dt">float</span> cosTheta<span class="op">,</span> <span class="dt">vec3</span> F0<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-53"><a href="#cb1-53" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> F0 <span class="op">+</span> <span class="op">(</span><span class="fl">1.0</span> <span class="op">-</span> F0<span class="op">)</span> <span class="op">*</span> <span class="bu">pow</span><span class="op">(</span><span class="bu">clamp</span><span class="op">(</span><span class="fl">1.0</span> <span class="op">-</span> cosTheta<span class="op">,</span> <span class="fl">0.0</span><span class="op">,</span> <span class="fl">1.0</span><span class="op">),</span> <span class="fl">5.0</span><span class="op">);</span></span>
+<span id="cb1-54"><a href="#cb1-54" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb1-55"><a href="#cb1-55" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-56"><a href="#cb1-56" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb1-57"><a href="#cb1-57" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> N <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span>Normal<span class="op">);</span></span>
+<span id="cb1-58"><a href="#cb1-58" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> V <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span>camPos <span class="op">-</span> WorldPos<span class="op">);</span></span>
+<span id="cb1-59"><a href="#cb1-59" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> L <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span>lightPos <span class="op">-</span> WorldPos<span class="op">);</span></span>
+<span id="cb1-60"><a href="#cb1-60" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> H <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span>V <span class="op">+</span> L<span class="op">);</span></span>
+<span id="cb1-61"><a href="#cb1-61" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-62"><a href="#cb1-62" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Compute attenuation</span></span>
+<span id="cb1-63"><a href="#cb1-63" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> <span class="bu">distance</span> <span class="op">=</span> <span class="bu">length</span><span class="op">(</span>lightPos <span class="op">-</span> WorldPos<span class="op">);</span></span>
+<span id="cb1-64"><a href="#cb1-64" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> attenuation <span class="op">=</span> <span class="fl">1.0</span> <span class="op">/</span> <span class="op">(</span><span class="bu">distance</span> <span class="op">*</span> <span class="bu">distance</span><span class="op">);</span></span>
+<span id="cb1-65"><a href="#cb1-65" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> radiance <span class="op">=</span> lightColor <span class="op">*</span> attenuation<span class="op">;</span></span>
+<span id="cb1-66"><a href="#cb1-66" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-67"><a href="#cb1-67" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Base reflectivity: 0.04 for dielectrics, tinted by albedo for metals</span></span>
+<span id="cb1-68"><a href="#cb1-68" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> F0 <span class="op">=</span> <span class="dt">vec3</span><span class="op">(</span><span class="fl">0.04</span><span class="op">);</span></span>
+<span id="cb1-69"><a href="#cb1-69" aria-hidden="true" tabindex="-1"></a>    F0 <span class="op">=</span> <span class="bu">mix</span><span class="op">(</span>F0<span class="op">,</span> albedo<span class="op">,</span> metallic<span class="op">);</span></span>
+<span id="cb1-70"><a href="#cb1-70" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-71"><a href="#cb1-71" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Cook-Torrance BRDF components</span></span>
+<span id="cb1-72"><a href="#cb1-72" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> NDF <span class="op">=</span> <span class="fu">DistributionGGX</span><span class="op">(</span>N<span class="op">,</span> H<span class="op">,</span> roughness<span class="op">);</span></span>
+<span id="cb1-73"><a href="#cb1-73" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> G   <span class="op">=</span> <span class="fu">GeometrySmith</span><span class="op">(</span>N<span class="op">,</span> V<span class="op">,</span> L<span class="op">,</span> roughness<span class="op">);</span></span>
+<span id="cb1-74"><a href="#cb1-74" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> F    <span class="op">=</span> <span class="fu">FresnelSchlick</span><span class="op">(</span><span class="bu">max</span><span class="op">(</span><span class="bu">dot</span><span class="op">(</span>H<span class="op">,</span> V<span class="op">),</span> <span class="fl">0.0</span><span class="op">),</span> F0<span class="op">);</span></span>
+<span id="cb1-75"><a href="#cb1-75" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-76"><a href="#cb1-76" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Specular BRDF term</span></span>
+<span id="cb1-77"><a href="#cb1-77" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> numerator <span class="op">=</span> NDF <span class="op">*</span> G <span class="op">*</span> F<span class="op">;</span></span>
+<span id="cb1-78"><a href="#cb1-78" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> denominator <span class="op">=</span> <span class="fl">4.0</span> <span class="op">*</span> <span class="bu">max</span><span class="op">(</span><span class="bu">dot</span><span class="op">(</span>N<span class="op">,</span> V<span class="op">),</span> <span class="fl">0.0</span><span class="op">)</span> <span class="op">*</span> <span class="bu">max</span><span class="op">(</span><span class="bu">dot</span><span class="op">(</span>N<span class="op">,</span> L<span class="op">),</span> <span class="fl">0.0</span><span class="op">)</span> <span class="op">+</span> <span class="fl">0.0001</span><span class="op">;</span></span>
+<span id="cb1-79"><a href="#cb1-79" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> specular <span class="op">=</span> numerator <span class="op">/</span> denominator<span class="op">;</span></span>
+<span id="cb1-80"><a href="#cb1-80" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-81"><a href="#cb1-81" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Energy conservation: specular (kS) vs diffuse (kD)</span></span>
+<span id="cb1-82"><a href="#cb1-82" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> kS <span class="op">=</span> F<span class="op">;</span></span>
+<span id="cb1-83"><a href="#cb1-83" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> kD <span class="op">=</span> <span class="dt">vec3</span><span class="op">(</span><span class="fl">1.0</span><span class="op">)</span> <span class="op">-</span> kS<span class="op">;</span></span>
+<span id="cb1-84"><a href="#cb1-84" aria-hidden="true" tabindex="-1"></a>    kD <span class="op">*=</span> <span class="fl">1.0</span> <span class="op">-</span> metallic<span class="op">;</span></span>
+<span id="cb1-85"><a href="#cb1-85" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-86"><a href="#cb1-86" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Lambertian diffuse</span></span>
+<span id="cb1-87"><a href="#cb1-87" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> diffuse <span class="op">=</span> <span class="op">(</span>kD <span class="op">*</span> albedo<span class="op">)</span> <span class="op">/</span> PI<span class="op">;</span></span>
+<span id="cb1-88"><a href="#cb1-88" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-89"><a href="#cb1-89" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Outgoing radiance</span></span>
+<span id="cb1-90"><a href="#cb1-90" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> NdotL <span class="op">=</span> <span class="bu">max</span><span class="op">(</span><span class="bu">dot</span><span class="op">(</span>N<span class="op">,</span> L<span class="op">),</span> <span class="fl">0.0</span><span class="op">);</span></span>
+<span id="cb1-91"><a href="#cb1-91" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> Lo <span class="op">=</span> <span class="op">(</span>diffuse <span class="op">+</span> specular<span class="op">)</span> <span class="op">*</span> radiance <span class="op">*</span> NdotL<span class="op">;</span></span>
+<span id="cb1-92"><a href="#cb1-92" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-93"><a href="#cb1-93" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Ambient term and tone mapping</span></span>
+<span id="cb1-94"><a href="#cb1-94" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> ambient <span class="op">=</span> <span class="dt">vec3</span><span class="op">(</span><span class="fl">0.03</span><span class="op">)</span> <span class="op">*</span> albedo<span class="op">;</span></span>
+<span id="cb1-95"><a href="#cb1-95" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> color <span class="op">=</span> ambient <span class="op">+</span> Lo<span class="op">;</span></span>
+<span id="cb1-96"><a href="#cb1-96" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-97"><a href="#cb1-97" aria-hidden="true" tabindex="-1"></a>    <span class="co">// HDR to LDR tone mapping (Reinhard) and Gamma correction</span></span>
+<span id="cb1-98"><a href="#cb1-98" aria-hidden="true" tabindex="-1"></a>    color <span class="op">=</span> color <span class="op">/</span> <span class="op">(</span>color <span class="op">+</span> <span class="dt">vec3</span><span class="op">(</span><span class="fl">1.0</span><span class="op">));</span></span>
+<span id="cb1-99"><a href="#cb1-99" aria-hidden="true" tabindex="-1"></a>    color <span class="op">=</span> <span class="bu">pow</span><span class="op">(</span>color<span class="op">,</span> <span class="dt">vec3</span><span class="op">(</span><span class="fl">1.0</span> <span class="op">/</span> <span class="fl">2.2</span><span class="op">));</span></span>
+<span id="cb1-100"><a href="#cb1-100" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-101"><a href="#cb1-101" aria-hidden="true" tabindex="-1"></a>    FragColor <span class="op">=</span> <span class="dt">vec4</span><span class="op">(</span>color<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb1-102"><a href="#cb1-102" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h2 id="summary-of-the-shader-pipeline">Summary of the Shader
+Pipeline</h2>
+<ol type="1">
+<li><strong>Vectors Setup:</strong> Normalize the surface normal <span
+class="math inline">\(\mathbf{N}\)</span>, view vector <span
+class="math inline">\(\mathbf{V}\)</span>, and light vector <span
+class="math inline">\(\mathbf{L}\)</span>. Compute the half-vector <span
+class="math inline">\(\mathbf{H} = \frac{\mathbf{V} +
+\mathbf{L}}{\|\mathbf{V} + \mathbf{L}\|}\)</span>.</li>
+<li><strong>Material Setup:</strong> Interpolate dielectric base
+reflectivity (<span class="math inline">\(0.04\)</span>) with the
+surface albedo according to the <code>metallic</code> parameter to
+establish <span class="math inline">\(F_0\)</span>.</li>
+<li><strong>BRDF Calculation:</strong> Evaluate the <span
+class="math inline">\(D\)</span>, <span
+class="math inline">\(F\)</span>, and <span
+class="math inline">\(G\)</span> functions. Compute specular radiance
+via <span
+class="math inline">\(\frac{DFG}{4(\mathbf{N}\cdot\mathbf{V})(\mathbf{N}\cdot\mathbf{L})}\)</span>.</li>
+<li><strong>Energy Conservation:</strong> Balance diffuse reflection
+against Fresnel reflection using <span class="math inline">\(k_d = (1 -
+k_s)(1 - \text{metallic})\)</span> to preserve physical energy
+constraints.</li>
+<li><strong>Output Processing:</strong> Sum diffuse and specular
+contributions, apply ambient lighting, and perform tone mapping and
+gamma correction before final pixel output.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/cook-torrance-reflectance-model-in-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

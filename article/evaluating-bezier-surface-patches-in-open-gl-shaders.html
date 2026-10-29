@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Evaluating Bezier Surface Patches in OpenGL Shaders - opengl</title>
+    <meta name="description" content="This article explores the fundamentals of Bézier surface patches and explains how modern OpenGL utilizes GPU tessellation shaders to evaluate them dynamically in real time. Readers will learn the mathematical foundation behind bicubic parametric surfaces,">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/evaluating-bezier-surface-patches-in-open-gl-shaders">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Evaluating Bezier Surface Patches in OpenGL Shaders - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/evaluating-bezier-surface-patches-in-open-gl-shaders" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explores the fundamentals of Bézier surface patches and explains how modern OpenGL utilizes GPU tessellation shaders to evaluate them dynamically in real time. Readers will learn the mathematical foundation behind bicubic parametric surfaces," />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="evaluating-bezier-surface-patches-in-opengl-shaders">Evaluating
+Bezier Surface Patches in OpenGL Shaders</h1>
+<p>This article explores the fundamentals of Bézier surface patches and
+explains how modern OpenGL utilizes GPU tessellation shaders to evaluate
+them dynamically in real time. Readers will learn the mathematical
+foundation behind bicubic parametric surfaces, how to bypass CPU-bound
+geometry bottlenecks, and the implementation details of computing smooth
+curved surfaces and analytical normals directly on the GPU.</p>
+<h3 id="what-are-bézier-surface-patches">What Are Bézier Surface
+Patches?</h3>
+<p>A Bézier surface patch is a parametric 3D surface defined by an array
+of control points. While a standard Bézier curve uses a single parameter
+<span class="math inline">\(u \in [0, 1]\)</span> to interpolate points
+in space, a Bézier surface extends this concept into two dimensions
+using two parameters, <span class="math inline">\((u, v) \in [0, 1]
+\times [0, 1]\)</span>.</p>
+<p>The most common variant in computer graphics is the bicubic Bézier
+patch, which is defined by a <span class="math inline">\(4 \times
+4\)</span> grid of 16 control points. The spatial position <span
+class="math inline">\(P(u, v)\)</span> on the patch is computed as the
+tensor product of Bernstein basis polynomials:</p>
+<p><span class="math display">\[P(u, v) = \sum_{i=0}^{3} \sum_{j=0}^{3}
+B_{i,3}(u) B_{j,3}(v) P_{i,j}\]</span></p>
+<p>Where <span class="math inline">\(P_{i,j}\)</span> represents the
+control point at row <span class="math inline">\(i\)</span> and column
+<span class="math inline">\(j\)</span>, and <span
+class="math inline">\(B_{i,3}(t)\)</span> represents the cubic Bernstein
+polynomials:</p>
+<ul>
+<li><span class="math inline">\(B_{0,3}(t) = (1 - t)^3\)</span></li>
+<li><span class="math inline">\(B_{1,3}(t) = 3t(1 - t)^2\)</span></li>
+<li><span class="math inline">\(B_{2,3}(t) = 3t^2(1 - t)\)</span></li>
+<li><span class="math inline">\(B_{3,3}(t) = t^3\)</span></li>
+</ul>
+<p>Control points do not generally lie on the surface itself (except for
+the four corner points); instead, they exert a directional pull,
+allowing artists and CAD engines to manipulate complex, organic shapes
+using a compact set of coordinates.</p>
+<h3 id="dynamic-evaluation-in-opengl">Dynamic Evaluation in OpenGL</h3>
+<p>Traditionally, evaluating these equations required pre-tessellating
+the patch on the CPU into a fixed mesh of triangles. Modern OpenGL
+offloads this process entirely to the hardware through the tessellation
+pipeline (introduced in OpenGL 4.0), comprising the Tessellation Control
+Shader (TCS), the Primitive Generator, and the Tessellation Evaluation
+Shader (TES).</p>
+<h4 id="1-vertex-shader-setup">1. Vertex Shader Setup</h4>
+<p>Control points are submitted to OpenGL using the
+<code>GL_PATCHES</code> primitive type:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>glPatchParameteri<span class="op">(</span>GL_PATCH_VERTICES<span class="op">,</span> <span class="dv">16</span><span class="op">);</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>glDrawArrays<span class="op">(</span>GL_PATCHES<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> numVertices<span class="op">);</span></span></code></pre></div>
+<p>The Vertex Shader typically performs minimal work, passing the raw 3D
+control points straight through to the tessellation stages without
+model-view projection.</p>
+<h4 id="2-tessellation-control-shader-tcs">2. Tessellation Control
+Shader (TCS)</h4>
+<p>The TCS determines the degree of subdivision dynamically. It runs
+once per control point of the output patch and sets the inner and outer
+tessellation levels (<code>gl_TessLevelInner</code> and
+<code>gl_TessLevelOuter</code>):</p>
+<ul>
+<li><strong>Dynamic Level of Detail (LOD):</strong> Tessellation levels
+can be scaled according to the patch’s distance from the camera or its
+screen-space footprint. Patches close to the camera receive high
+subdivision factors, while distant patches use lower factors.</li>
+<li><strong>Data Pass-Through:</strong> The TCS forwards the 16 control
+points to the evaluation stage via output patch variables.</li>
+</ul>
+<h4 id="3-fixed-function-primitive-generator">3. Fixed-Function
+Primitive Generator</h4>
+<p>The hardware primitive generator takes the tessellation factors
+defined in the TCS and generates a regular grid of barycentric
+coordinates <span class="math inline">\((u, v)\)</span> across the unit
+square domain <span class="math inline">\([0, 1] \times [0,
+1]\)</span>.</p>
+<h4 id="4-tessellation-evaluation-shader-tes">4. Tessellation Evaluation
+Shader (TES)</h4>
+<p>The TES executes once for each vertex generated by the primitive
+generator. It receives the domain coordinate via the built-in variable
+<code>gl_TessCoord.xy</code>, representing <span
+class="math inline">\((u, v)\)</span>.</p>
+<p>The TES performs the following operations:</p>
+<ol type="1">
+<li><strong>Evaluate Basis Functions:</strong> Calculate the Bernstein
+polynomials for <span class="math inline">\(u\)</span> and <span
+class="math inline">\(v\)</span> using <code>gl_TessCoord.x</code> and
+<code>gl_TessCoord.y</code>.</li>
+<li><strong>Compute Position:</strong> Sum the weighted contributions of
+all 16 control points to determine the final local vertex position.</li>
+<li><strong>Compute Analytical Normals:</strong> Exact surface normals
+can be derived analytically without neighboring vertex approximations.
+By taking the partial derivatives of the surface equation with respect
+to <span class="math inline">\(u\)</span> and <span
+class="math inline">\(v\)</span> (<span
+class="math inline">\(\frac{\partial P}{\partial u}\)</span> and <span
+class="math inline">\(\frac{\partial P}{\partial v}\)</span>), the
+shader computes two tangent vectors. The cross product of these vectors
+yields the true normal: <span class="math display">\[\mathbf{N} =
+\frac{\partial P}{\partial u} \times \frac{\partial P}{\partial
+v}\]</span></li>
+<li><strong>Transform to Clip Space:</strong> Multiply the final
+evaluated position by the Model-View-Projection (MVP) matrix and output
+to <code>gl_Position</code>.</li>
+</ol>
+<h3 id="advantages-of-gpu-side-evaluation">Advantages of GPU-Side
+Evaluation</h3>
+<p>Evaluating Bézier patches directly on the GPU offers significant
+performance and visual fidelity benefits:</p>
+<ul>
+<li><strong>Bandwidth Efficiency:</strong> Transmitting 16 control
+points over the PCIe bus replaces the need to send thousands of static
+vertices and index buffers.</li>
+<li><strong>Adaptive Smoothness:</strong> Silhouettes remain perfectly
+smooth at arbitrary zoom levels without popping artifacts, as
+tessellation factors adjust per frame.</li>
+<li><strong>Memory Savings:</strong> Storage requirements in GPU VRAM
+are drastically reduced compared to storing high-density triangle
+meshes.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/evaluating-bezier-surface-patches-in-open-gl-shaders';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

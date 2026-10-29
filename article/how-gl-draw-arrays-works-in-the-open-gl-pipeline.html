@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How glDrawArrays Works in the OpenGL Pipeline - opengl</title>
+    <meta name="description" content="The glDrawArrays command serves as a fundamental draw call in OpenGL, instructing the GPU to render primitives by fetching vertex data sequentially from currently enabled vertex buffers without referencing an index buffer. This article explains how execut">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-gl-draw-arrays-works-in-the-open-gl-pipeline">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How glDrawArrays Works in the OpenGL Pipeline - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-gl-draw-arrays-works-in-the-open-gl-pipeline" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The glDrawArrays command serves as a fundamental draw call in OpenGL, instructing the GPU to render primitives by fetching vertex data sequentially from currently enabled vertex buffers without referencing an index buffer. This article explains how execut" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-gldrawarrays-works-in-the-opengl-pipeline">How glDrawArrays
+Works in the OpenGL Pipeline</h1>
+<p>The <code>glDrawArrays</code> command serves as a fundamental draw
+call in OpenGL, instructing the GPU to render primitives by fetching
+vertex data sequentially from currently enabled vertex buffers without
+referencing an index buffer. This article explains how executing
+<code>glDrawArrays</code> triggers the unindexed rendering sequence,
+detailing the progression from vertex data extraction and vertex shader
+invocation to primitive assembly and downstream pipeline stages.</p>
+<h3 id="parameters-and-initial-invocation">Parameters and Initial
+Invocation</h3>
+<p>The command signature is defined as:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> glDrawArrays<span class="op">(</span>GLenum mode<span class="op">,</span> GLint first<span class="op">,</span> GLsizei count<span class="op">);</span></span></code></pre></div>
+<p>When invoked, the OpenGL context evaluates three core parameters:</p>
+<ul>
+<li><strong><code>mode</code></strong>: Specifies the primitive type to
+construct, such as <code>GL_TRIANGLES</code>, <code>GL_LINES</code>, or
+<code>GL_TRIANGLE_STRIP</code>.</li>
+<li><strong><code>first</code></strong>: The starting index within the
+enabled vertex attribute arrays.</li>
+<li><strong><code>count</code></strong>: The total number of sequential
+indices to process.</li>
+</ul>
+<p>Upon execution, the driver validates the active state, confirming
+that a valid Vertex Array Object (VAO) and an active shader program are
+bound.</p>
+<h3 id="unindexed-vertex-attribute-fetching">Unindexed Vertex Attribute
+Fetching</h3>
+<p>Unlike indexed drawing functions (such as
+<code>glDrawElements</code>), which rely on an Element Array Buffer to
+map indices to vertices, <code>glDrawArrays</code> operates strictly
+sequentially.</p>
+<p>The pipeline determines vertex indices as an implicit linear
+sequence:</p>
+<p><span class="math display">\[\text{Index}_i = \text{first} + i \quad
+\text{for } i \in [0, \text{count} - 1]\]</span></p>
+<p>For each index in this range, the GPU's input assembler queries the
+bindings configured in the currently bound VAO. It calculates memory
+offsets into the associated Vertex Buffer Objects (VBOs) using each
+attribute’s stride, data type, and base offset. The hardware then pulls
+the raw attribute data (such as positions, normals, and texture
+coordinates) directly into the processing registers.</p>
+<h3 id="vertex-shader-execution">Vertex Shader Execution</h3>
+<p>For every index generated from <code>first</code> to
+<code>first + count - 1</code>, the GPU dispatches an instance of the
+vertex shader:</p>
+<ul>
+<li>The system sets the built-in variable <code>gl_VertexID</code> to
+the current index value.</li>
+<li>Vertex attributes defined as <code>in</code> variables in GLSL
+receive the fetched data corresponding to that index.</li>
+<li>The vertex shader executes its transformation routines (e.g.,
+model-view-projection matrix multiplications) and writes the results to
+output variables, including the mandatory clip-space coordinate
+<code>gl_Position</code>.</li>
+</ul>
+<p>Because the drawing is unindexed, duplicate vertices across adjacent
+primitives are processed redundantly, resulting in independent shader
+invocations for every single entry within the range.</p>
+<h3 id="primitive-assembly-and-subsequent-stages">Primitive Assembly and
+Subsequent Stages</h3>
+<p>Once the vertex shader outputs the transformed vertices, the pipeline
+groups them according to the <code>mode</code> parameter:</p>
+<ul>
+<li><strong>Grouping</strong>: If <code>mode</code> is
+<code>GL_TRIANGLES</code>, every three consecutive vertices form an
+independent triangle. If <code>mode</code> is
+<code>GL_TRIANGLE_STRIP</code>, overlapping sets of three vertices form
+linked triangles.</li>
+<li><strong>Optional Intermediate Processing</strong>: If enabled, the
+assembled primitives pass directly to tessellation and geometry shaders
+for additional procedural generation or modification.</li>
+<li><strong>Clipping and Screen Mapping</strong>: Primitives are tested
+against the view frustum. Portions falling outside are clipped, followed
+by perspective division (converting homogeneous coordinates to
+Normalized Device Coordinates) and the viewport transform, which maps
+coordinates to screen space.</li>
+<li><strong>Rasterization and Fragment Shading</strong>: Finally, the
+rasterizer interpolates vertex outputs across the primitive faces to
+generate fragments, invoking the fragment shader to calculate final
+pixel colors for the framebuffer.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/how-gl-draw-arrays-works-in-the-open-gl-pipeline';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

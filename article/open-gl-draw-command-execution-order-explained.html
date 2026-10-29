@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Draw Command Execution Order Explained - opengl</title>
+    <meta name="description" content="This article explores how OpenGL processes sequentially issued draw commands, detailing the conceptual in-order execution model mandated by the OpenGL specification alongside the modern GPU&#39;s real-world parallel execution. It covers how the graphics pipel">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-draw-command-execution-order-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Draw Command Execution Order Explained - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-draw-command-execution-order-explained" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explores how OpenGL processes sequentially issued draw commands, detailing the conceptual in-order execution model mandated by the OpenGL specification alongside the modern GPU&#39;s real-world parallel execution. It covers how the graphics pipel" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-draw-command-execution-order-explained">OpenGL Draw
+Command Execution Order Explained</h1>
+<p>This article explores how OpenGL processes sequentially issued draw
+commands, detailing the conceptual in-order execution model mandated by
+the OpenGL specification alongside the modern GPU's real-world parallel
+execution. It covers how the graphics pipeline maintains primitive and
+fragment ordering, how the driver and hardware optimize execution while
+adhering to the "as-if" rule, and where developers must introduce
+explicit synchronization for incoherent memory operations.</p>
+<h3 id="the-sequential-specification-model">The Sequential Specification
+Model</h3>
+<p>From the perspective of the OpenGL specification, commands issued to
+an OpenGL context execute strictly in the order they are received.
+OpenGL operates as a state machine where each draw command (such as
+<code>glDrawArrays</code> or <code>glDrawElements</code>) relies on the
+state established by the commands preceding it and directly affects the
+state observed by subsequent commands.</p>
+<p>To the application, the execution appears strictly sequential:</p>
+<ol type="1">
+<li>State modifications (e.g., binding a new texture, updating a uniform
+buffer) take effect immediately for all subsequent draw calls.</li>
+<li>Draw call <span class="math inline">\(N\)</span> processes its
+geometry and rasterizes its pixels before draw call <span
+class="math inline">\(N+1\)</span> affects the same pixels, ensuring
+predictable blending, depth testing, and stencil results.</li>
+</ol>
+<h3 id="hardware-reality-and-the-as-if-rule">Hardware Reality and the
+"As-If" Rule</h3>
+<p>While the specification dictates in-order results, underlying
+graphics drivers and modern GPUs rarely execute commands in a purely
+serial manner. Instead, the driver and hardware pipeline commands to
+maximize hardware utilization, using the "as-if" rule: the GPU may
+execute operations out of order, overlap vertex and fragment processing,
+or execute multiple draw calls concurrently across different compute
+units, provided the final output is completely indistinguishable from
+strict sequential execution.</p>
+<p>Key areas of hardware concurrency include:</p>
+<ul>
+<li><strong>Overlapping Pipeline Stages:</strong> The vertex shading
+stage of draw call <span class="math inline">\(N+1\)</span> often runs
+concurrently with the fragment shading stage of draw call <span
+class="math inline">\(N\)</span>.</li>
+<li><strong>Independent Primitives:</strong> If draw commands write to
+non-overlapping regions of the framebuffer or do not read/write shared
+resources, modern hardware can process them simultaneously.</li>
+</ul>
+<h3 id="fragment-and-primitive-ordering">Fragment and Primitive
+Ordering</h3>
+<p>Even when geometry is processed out of order in parallel shader
+cores, rasterization and per-sample operations must preserve the
+submission order. Modern GPU rasterizers contain specialized hardware to
+reorder fragments before they reach the blending and depth/stencil
+testing units.</p>
+<p>When two draw commands target the same pixel:</p>
+<ul>
+<li><strong>Depth Testing:</strong> The fragment from the earlier
+command is tested and written to the depth buffer before the fragment
+from the later command is evaluated against that same pixel.</li>
+<li><strong>Color Blending:</strong> Blending operations are
+non-commutative in many configurations (such as standard alpha
+blending). Hardware ensures that the destination color used in draw call
+<span class="math inline">\(N+1\)</span> includes the blended result of
+draw call <span class="math inline">\(N\)</span>.</li>
+</ul>
+<h3 id="cpu-to-gpu-asynchrony">CPU-to-GPU Asynchrony</h3>
+<p>Draw commands are non-blocking when issued from the CPU. Calling a
+draw command places a work item into the driver's internal software
+queue or command buffer, and the function returns immediately to the
+calling thread.</p>
+<p>The driver batches these commands and transmits them to the GPU's
+hardware queue via Direct Memory Access (DMA). The CPU application may
+be several frames ahead of the GPU unless throttled by vertical
+synchronization (VSync) or explicit sync primitives.</p>
+<ul>
+<li><code>glFlush()</code> forces the driver to push all buffered
+commands to the hardware queue for execution, but does not wait for
+completion.</li>
+<li><code>glFinish()</code> blocks CPU execution until all previously
+submitted commands have fully finished execution on the GPU.</li>
+</ul>
+<h3 id="exceptions-incoherent-memory-and-barriers">Exceptions:
+Incoherent Memory and Barriers</h3>
+<p>The automatic sequential execution guarantee strictly applies to
+traditional rasterization pipelines targeting framebuffers. It does
+<strong>not</strong> automatically apply to arbitrary memory operations
+introduced in modern OpenGL (such as Shader Storage Buffer Objects
+(SSBOs), atomic counters, or arbitrary texture writes via
+<code>imageStore</code>).</p>
+<p>When draw call <span class="math inline">\(N\)</span> writes to an
+image or buffer using incoherent memory access and draw call <span
+class="math inline">\(N+1\)</span> reads from that same resource,
+sequential execution is not guaranteed by default. Developers must
+explicitly enforce memory visibility and execution ordering between such
+calls by invoking <code>glMemoryBarrier()</code> with the appropriate
+barrier bits.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/open-gl-draw-command-execution-order-explained';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPU Frustum Culling in OpenGL Using Compute Shaders - opengl</title>
+    <meta name="description" content="This article explains how to move frustum culling from the CPU to the GPU using OpenGL compute shaders and indirect drawing. By processing bounding volumes on the graphics card and generating draw commands directly in GPU memory, applications can eliminat">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/gpu-frustum-culling-in-open-gl-using-compute-shaders">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="GPU Frustum Culling in OpenGL Using Compute Shaders - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/gpu-frustum-culling-in-open-gl-using-compute-shaders" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how to move frustum culling from the CPU to the GPU using OpenGL compute shaders and indirect drawing. By processing bounding volumes on the graphics card and generating draw commands directly in GPU memory, applications can eliminat" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="gpu-frustum-culling-in-opengl-using-compute-shaders">GPU Frustum
+Culling in OpenGL Using Compute Shaders</h1>
+<p>This article explains how to move frustum culling from the CPU to the
+GPU using OpenGL compute shaders and indirect drawing. By processing
+bounding volumes on the graphics card and generating draw commands
+directly in GPU memory, applications can eliminate CPU-side traversal
+bottlenecks, bypass driver submission overhead, and render massive
+scenes with thousands of individual meshes in a single draw
+invocation.</p>
+<h3 id="the-pipeline-architecture">The Pipeline Architecture</h3>
+<p>Traditional frustum culling requires the CPU to test every entity's
+bounding volume against the camera's view frustum, construct a list of
+visible render commands, and submit them individually or in batches to
+the GPU. This approach creates significant CPU-GPU synchronization
+overhead and driver bottlenecks.</p>
+<p>Offloading this process to the GPU relies on three core OpenGL
+components:</p>
+<ol type="1">
+<li><strong>Shader Storage Buffer Objects (SSBOs):</strong> Store
+per-instance metadata (model matrices, bounding spheres/boxes, and mesh
+descriptors).</li>
+<li><strong>Compute Shaders:</strong> Perform parallel sphere or
+axis-aligned bounding box (AABB) intersection tests against the camera’s
+view frustum planes.</li>
+<li><strong>Indirect Draw Buffers:</strong> Store draw commands that the
+compute shader generates dynamically, which are then consumed by
+<code>glMultiDrawElementsIndirect</code> or
+<code>glMultiDrawArraysIndirect</code>.</li>
+</ol>
+<h3 id="1-data-structures-and-memory-layout">1. Data Structures and
+Memory Layout</h3>
+<p>In modern OpenGL, indirect draw commands mirror the standard draw
+parameters in memory. For indexed geometry, define the command structure
+matching the standard specification:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> DrawElementsIndirectCommand <span class="op">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    GLuint count<span class="op">;</span>         <span class="co">// Number of indices to draw</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    GLuint instanceCount<span class="op">;</span> <span class="co">// Number of instances to draw (typically 1 for non-instanced)</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    GLuint firstIndex<span class="op">;</span>    <span class="co">// Base index in the index buffer</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    GLint  baseVertex<span class="op">;</span>    <span class="co">// Offset added to each index</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    GLuint baseInstance<span class="op">;</span>  <span class="co">// Base instance ID for instanced rendering</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
+<p>You must allocate three primary GPU buffers:</p>
+<ul>
+<li><strong>Object Data Buffer (SSBO):</strong> Contains world-space
+bounding volumes (center and radius for spheres, or min/max extents for
+AABBs) and an index pointing to mesh properties.</li>
+<li><strong>Draw Command Template Buffer (SSBO):</strong> Contains
+pre-populated <code>DrawElementsIndirectCommand</code> templates for
+each mesh in your scene.</li>
+<li><strong>Output Indirect Command Buffer
+(<code>GL_DRAW_INDIRECT_BUFFER</code>):</strong> Receives the commands
+for meshes that pass the visibility test.</li>
+<li><strong>Atomic Counter / Indirect Count Buffer:</strong> Tracks the
+total number of visible objects passed to the final draw call.</li>
+</ul>
+<h3 id="2-computing-frustum-planes">2. Computing Frustum Planes</h3>
+<p>Extract the six frustum planes on the CPU from the camera's
+View-Projection matrix using the Gribb-Hartmann method, normalize them,
+and upload them to a uniform block or directly into the compute
+shader:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co">// A frustum plane represented as ax + by + cz + d = 0</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> Plane <span class="op">{</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> normal<span class="op">;</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> <span class="bu">distance</span><span class="op">;</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">std140</span><span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="kw">uniform</span> CameraData <span class="op">{</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    <span class="dt">mat4</span> viewMatrix<span class="op">;</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">mat4</span> projectionMatrix<span class="op">;</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    Plane frustumPlanes<span class="op">[</span><span class="dv">6</span><span class="op">];</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
+<h3 id="3-the-compute-shader-culling-pass">3. The Compute Shader Culling
+Pass</h3>
+<p>The compute shader executes one thread per candidate object, performs
+the intersection test, and writes visible commands to the output
+buffer.</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 460 core</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span>local_size_x <span class="op">=</span> <span class="dv">64</span><span class="op">,</span> local_size_y <span class="op">=</span> <span class="dv">1</span><span class="op">,</span> local_size_z <span class="op">=</span> <span class="dv">1</span><span class="op">)</span> <span class="dt">in</span><span class="op">;</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> BoundingSphere <span class="op">{</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> center<span class="op">;</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> radius<span class="op">;</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> DrawCommand <span class="op">{</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint</span> count<span class="op">;</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint</span> instanceCount<span class="op">;</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint</span> firstIndex<span class="op">;</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span>  baseVertex<span class="op">;</span></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint</span> baseInstance<span class="op">;</span></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">std430</span><span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">1</span><span class="op">)</span> <span class="dt">readonly</span> <span class="kw">buffer</span> ObjectBuffer <span class="op">{</span></span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a>    BoundingSphere objects<span class="op">[];</span></span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">std430</span><span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">2</span><span class="op">)</span> <span class="dt">readonly</span> <span class="kw">buffer</span> CommandTemplates <span class="op">{</span></span>
+<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a>    DrawCommand inputCommands<span class="op">[];</span></span>
+<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-26"><a href="#cb3-26" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">std430</span><span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">3</span><span class="op">)</span> <span class="dt">writeonly</span> <span class="kw">buffer</span> FilteredCommands <span class="op">{</span></span>
+<span id="cb3-27"><a href="#cb3-27" aria-hidden="true" tabindex="-1"></a>    DrawCommand outputCommands<span class="op">[];</span></span>
+<span id="cb3-28"><a href="#cb3-28" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb3-29"><a href="#cb3-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-30"><a href="#cb3-30" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">binding</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="kw">uniform</span> <span class="dt">atomic_uint</span> visibleCount<span class="op">;</span></span>
+<span id="cb3-31"><a href="#cb3-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-32"><a href="#cb3-32" aria-hidden="true" tabindex="-1"></a><span class="dt">bool</span> <span class="fu">isVisible</span><span class="op">(</span><span class="dt">vec3</span> center<span class="op">,</span> <span class="dt">float</span> radius<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-33"><a href="#cb3-33" aria-hidden="true" tabindex="-1"></a>    <span class="kw">for</span> <span class="op">(</span><span class="dt">int</span> i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> <span class="dv">6</span><span class="op">;</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-34"><a href="#cb3-34" aria-hidden="true" tabindex="-1"></a>        <span class="kw">if</span> <span class="op">(</span><span class="bu">dot</span><span class="op">(</span>frustumPlanes<span class="op">[</span>i<span class="op">].</span><span class="fu">normal</span><span class="op">,</span> center<span class="op">)</span> <span class="op">+</span> frustumPlanes<span class="op">[</span>i<span class="op">].</span><span class="fu">distance</span> <span class="op">&lt;</span> <span class="op">-</span>radius<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-35"><a href="#cb3-35" aria-hidden="true" tabindex="-1"></a>            <span class="kw">return</span> <span class="kw">false</span><span class="op">;</span></span>
+<span id="cb3-36"><a href="#cb3-36" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-37"><a href="#cb3-37" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb3-38"><a href="#cb3-38" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> <span class="kw">true</span><span class="op">;</span></span>
+<span id="cb3-39"><a href="#cb3-39" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb3-40"><a href="#cb3-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-41"><a href="#cb3-41" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb3-42"><a href="#cb3-42" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint</span> id <span class="op">=</span> <span class="bu">gl_GlobalInvocationID</span><span class="op">.</span><span class="fu">x</span><span class="op">;</span></span>
+<span id="cb3-43"><a href="#cb3-43" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> <span class="op">(</span>id <span class="op">&gt;=</span> objects<span class="op">.</span><span class="fu">length</span><span class="op">())</span> <span class="kw">return</span><span class="op">;</span></span>
+<span id="cb3-44"><a href="#cb3-44" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-45"><a href="#cb3-45" aria-hidden="true" tabindex="-1"></a>    BoundingSphere sphere <span class="op">=</span> objects<span class="op">[</span>id<span class="op">];</span></span>
+<span id="cb3-46"><a href="#cb3-46" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-47"><a href="#cb3-47" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> <span class="op">(</span><span class="fu">isVisible</span><span class="op">(</span>sphere<span class="op">.</span><span class="fu">center</span><span class="op">,</span> sphere<span class="op">.</span><span class="fu">radius</span><span class="op">))</span> <span class="op">{</span></span>
+<span id="cb3-48"><a href="#cb3-48" aria-hidden="true" tabindex="-1"></a>        <span class="dt">uint</span> outputIndex <span class="op">=</span> <span class="bu">atomicCounterIncrement</span><span class="op">(</span>visibleCount<span class="op">);</span></span>
+<span id="cb3-49"><a href="#cb3-49" aria-hidden="true" tabindex="-1"></a>        outputCommands<span class="op">[</span>outputIndex<span class="op">]</span> <span class="op">=</span> inputCommands<span class="op">[</span>id<span class="op">];</span></span>
+<span id="cb3-50"><a href="#cb3-50" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb3-51"><a href="#cb3-51" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="4-synchronization-and-indirect-execution">4. Synchronization and
+Indirect Execution</h3>
+<p>Before executing the draw call, you must insert an explicit memory
+barrier to ensure all compute shader writes to the command buffer and
+counter are committed:</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co">// 1. Reset visible counter to 0</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>GLuint zero <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>glBindBuffer<span class="op">(</span>GL_ATOMIC_COUNTER_BUFFER<span class="op">,</span> counterBuffer<span class="op">);</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>glBufferSubData<span class="op">(</span>GL_ATOMIC_COUNTER_BUFFER<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="kw">sizeof</span><span class="op">(</span>GLuint<span class="op">),</span> <span class="op">&amp;</span>zero<span class="op">);</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="co">// 2. Dispatch compute shader</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>glUseProgram<span class="op">(</span>cullComputeProgram<span class="op">);</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>glDispatchCompute<span class="op">((</span>numObjects <span class="op">+</span> <span class="dv">63</span><span class="op">)</span> <span class="op">/</span> <span class="dv">64</span><span class="op">,</span> <span class="dv">1</span><span class="op">,</span> <span class="dv">1</span><span class="op">);</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="co">// 3. Insert memory barriers for command and indirect buffer access</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>glMemoryBarrier<span class="op">(</span>GL_COMMAND_BARRIER_BIT <span class="op">|</span> GL_SHADER_STORAGE_BARRIER_BIT<span class="op">);</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a><span class="co">// 4. Bind geometry and indirect buffer</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>glBindVertexArray<span class="op">(</span>sceneVAO<span class="op">);</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>glBindBuffer<span class="op">(</span>GL_DRAW_INDIRECT_BUFFER<span class="op">,</span> outputCommandBuffer<span class="op">);</span></span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a><span class="co">// 5. Execute indirect rendering</span></span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a><span class="co">// If using GL_ARB_indirect_parameters (OpenGL 4.6 core):</span></span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>glBindBuffer<span class="op">(</span>GL_PARAMETER_BUFFER_ARB<span class="op">,</span> counterBuffer<span class="op">);</span></span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>glMultiDrawElementsIndirectCount<span class="op">(</span></span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a>    GL_TRIANGLES<span class="op">,</span></span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a>    GL_UNSIGNED_INT<span class="op">,</span></span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a>    <span class="dv">0</span><span class="op">,</span>                  <span class="co">// Indirect buffer offset</span></span>
+<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a>    <span class="dv">0</span><span class="op">,</span>                  <span class="co">// Parameter buffer offset (stores draw count)</span></span>
+<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a>    numObjects<span class="op">,</span>         <span class="co">// Maximum draw count</span></span>
+<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a>    <span class="kw">sizeof</span><span class="op">(</span>DrawElementsIndirectCommand<span class="op">)</span></span>
+<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a><span class="op">);</span></span></code></pre></div>
+<p>If OpenGL 4.6 (or <code>GL_ARB_indirect_parameters</code>) is
+unavailable, you can read back the counter value using
+<code>glGetBufferSubData</code> to supply the draw count to
+<code>glMultiDrawElementsIndirect</code>. However, this introduces a
+minor GPU pipeline stall. Alternatively, set <code>instanceCount</code>
+inside the <code>inputCommands</code> directly to <code>0</code> for
+culled objects, and issue a full
+<code>glMultiDrawElementsIndirect</code> across all objects without
+altering array indices; hardware will skip draw instances where
+<code>instanceCount == 0</code>.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/gpu-frustum-culling-in-open-gl-using-compute-shaders';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

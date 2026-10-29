@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Light Space Perspective Shadow Mapping in OpenGL - opengl</title>
+    <meta name="description" content="Light Space Perspective Shadow Mapping (LiSPSM) is an advanced shadowing technique designed to mitigate perspective aliasing by dynamically redistributing shadow map resolution. Standard shadow mapping wastes precision by uniformly allocating texels acros">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/light-space-perspective-shadow-mapping-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Light Space Perspective Shadow Mapping in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/light-space-perspective-shadow-mapping-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Light Space Perspective Shadow Mapping (LiSPSM) is an advanced shadowing technique designed to mitigate perspective aliasing by dynamically redistributing shadow map resolution. Standard shadow mapping wastes precision by uniformly allocating texels acros" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="light-space-perspective-shadow-mapping-in-opengl">Light Space
+Perspective Shadow Mapping in OpenGL</h1>
+<p>Light Space Perspective Shadow Mapping (LiSPSM) is an advanced
+shadowing technique designed to mitigate perspective aliasing by
+dynamically redistributing shadow map resolution. Standard shadow
+mapping wastes precision by uniformly allocating texels across the
+scene, causing visible pixelation near the viewer and redundant detail
+in the distance. LiSPSM resolves this in OpenGL by applying an
+additional perspective transformation in light space, effectively
+warping the depth buffer to prioritize regions close to the camera while
+maintaining light-space linearity and temporal stability.</p>
+<h3 id="the-problem-perspective-aliasing">The Problem: Perspective
+Aliasing</h3>
+<p>In traditional directional shadow mapping, the light uses an
+orthographic projection matrix. This creates a uniform grid of shadow
+texels across the scene. However, the eye camera observes the world
+through a perspective projection, where nearby objects occupy vastly
+more screen pixels than distant ones. When the uniform shadow map is
+projected onto screen space, the texel density near the camera is
+insufficient to match screen pixel resolution. This mismatch leads to
+severe perspective aliasing, manifesting as jagged, blocky shadow edges
+in the foreground.</p>
+<h3 id="the-lispsm-perspective-warp">The LiSPSM Perspective Warp</h3>
+<p>LiSPSM eliminates this discrepancy by applying a perspective
+projection directly inside light space before rasterizing the depth
+buffer. Instead of standard orthographic mapping, LiSPSM constructs a
+light projection matrix that behaves perspectively along an axis
+perpendicular to the light vector.</p>
+<p>By bending coordinates toward the camera's view direction, the
+transformation assigns smaller light-space intervals to foreground
+geometry and larger intervals to the background. Consequently,
+foreground objects receive a significantly higher concentration of
+shadow map texels. Because the perspective transformation occurs purely
+in light space along the directional plane, it preserves the parallel
+nature of directional light rays while altering only the density
+distribution of depth samples.</p>
+<h3 id="maintaining-stability-with-the-parameter-n">Maintaining
+Stability with the Parameter <span class="math inline">\(n\)</span></h3>
+<p>Earlier warping approaches, such as Perspective Shadow Maps (PSMs),
+suffered from severe singularities and temporal flickering when the
+camera aligned with the light direction. LiSPSM solves this by
+introducing a configurable near-plane parameter, typically denoted as
+<span class="math inline">\(n\)</span>.</p>
+<p>The parameter <span class="math inline">\(n\)</span> dictates the
+strength of the perspective warp based on the angle <span
+class="math inline">\(\gamma\)</span> between the view direction and the
+light direction:</p>
+<ul>
+<li><strong>Perpendicular Light (<span class="math inline">\(\gamma
+\approx 90^\circ\)</span>):</strong> The maximum perspective warp is
+applied. Texel density is heavily biased toward the viewer's near plane,
+providing the greatest resolution boost where aliasing is most
+pronounced.</li>
+<li><strong>Parallel Light (<span class="math inline">\(\gamma \approx
+0^\circ\)</span> or <span
+class="math inline">\(180^\circ\)</span>):</strong> Perspective warping
+offers diminishing returns and risks projection singularities. LiSPSM
+automatically increases <span class="math inline">\(n\)</span>, smoothly
+transitioning the projection back toward a standard uniform orthographic
+projection.</li>
+</ul>
+<p>By dynamically scaling <span class="math inline">\(n\)</span>, LiSPSM
+guarantees that depth resolution never degenerates below standard
+uniform shadow mapping, preventing frame-to-frame popping.</p>
+<h3 id="opengl-implementation-pipeline">OpenGL Implementation
+Pipeline</h3>
+<p>Integrating LiSPSM into an OpenGL pipeline requires constructing a
+customized light-projection matrix <span
+class="math inline">\(P_{LiSPSM}\)</span>:</p>
+<ol type="1">
+<li><strong>Calculate the Focus Region:</strong> Determine the
+intersection volume between the camera's view frustum and the scene's
+bounding volume. Any geometry outside this intersection that casts
+shadows into the frustum must also be included.</li>
+<li><strong>Establish the Light-Space Coordinate Frame:</strong> Rotate
+the scene into light space, aligning the z-axis with the light
+direction. A secondary axis is oriented toward the camera's forward
+vector projected onto the plane perpendicular to the light.</li>
+<li><strong>Compute the Perspective Matrix:</strong> Generate the LiSPSM
+projection matrix using the calculated parameter <span
+class="math inline">\(n\)</span> and the bounding limits of the
+intersection volume.</li>
+<li><strong>Depth Pass:</strong> Bind the shadow map framebuffer object
+(FBO) with an attached depth texture (<code>GL_DEPTH_COMPONENT32F</code>
+is recommended to minimize precision artifacts resulting from non-linear
+distribution). Multiply the light view matrix by <span
+class="math inline">\(P_{LiSPSM}\)</span> and upload it to your vertex
+shader uniform.</li>
+<li><strong>Lighting Pass:</strong> When sampling the shadow map during
+the forward or deferred lighting pass, transform the world-space
+fragment coordinates using the identical combined LiSPSM matrix. Use
+projective texture coordinates (<code>textureProj</code> in GLSL) to
+account for the perspective divide (<span
+class="math inline">\(w\)</span>-component) introduced by the
+light-space warp.</li>
+</ol>
+<p>Through this formulation, LiSPSM optimizes depth resolution
+utilization across the depth buffer, matching the observer's visual
+requirements without increasing the underlying texture dimensions or
+requiring multi-pass cascades.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/light-space-perspective-shadow-mapping-in-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

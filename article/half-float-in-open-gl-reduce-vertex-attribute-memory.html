@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Half-Float in OpenGL: Reduce Vertex Attribute Memory - opengl</title>
+    <meta name="description" content="The half-float data type (16-bit floating-point) reduces memory footprints in OpenGL attribute arrays by cutting per-component storage requirements in half compared to standard 32-bit single-precision floats. This reduction directly shrinks Vertex Buffer">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/half-float-in-open-gl-reduce-vertex-attribute-memory">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Half-Float in OpenGL: Reduce Vertex Attribute Memory - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/half-float-in-open-gl-reduce-vertex-attribute-memory" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The half-float data type (16-bit floating-point) reduces memory footprints in OpenGL attribute arrays by cutting per-component storage requirements in half compared to standard 32-bit single-precision floats. This reduction directly shrinks Vertex Buffer" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="half-float-in-opengl-reduce-vertex-attribute-memory">Half-Float
+in OpenGL: Reduce Vertex Attribute Memory</h1>
+<p>The half-float data type (16-bit floating-point) reduces memory
+footprints in OpenGL attribute arrays by cutting per-component storage
+requirements in half compared to standard 32-bit single-precision
+floats. This reduction directly shrinks Vertex Buffer Object (VBO)
+sizes, reduces graphics memory consumption, conserves memory bandwidth
+between the GPU and VRAM, and enhances cache utilization during vertex
+fetching. This guide explains the mechanics of
+<code>GL_HALF_FLOAT</code>, how it optimizes the rendering pipeline, and
+where it can be applied effectively.</p>
+<h3 id="the-storage-mechanics-32-bit-vs-16-bit">The Storage Mechanics:
+32-Bit vs. 16-Bit</h3>
+<p>Standard floating-point numbers (<code>GL_FLOAT</code>) adhere to the
+IEEE 754 standard for single precision, consuming 32 bits (4 bytes) per
+component:</p>
+<ul>
+<li>1 sign bit</li>
+<li>8 exponent bits</li>
+<li>23 mantissa (fraction) bits</li>
+</ul>
+<p>The half-float format (<code>GL_HALF_FLOAT</code>) compresses this
+representation into 16 bits (2 bytes) per component:</p>
+<ul>
+<li>1 sign bit</li>
+<li>5 exponent bits</li>
+<li>10 mantissa bits</li>
+</ul>
+<p>By halving the byte count per scalar, any vertex attribute using
+half-floats requires 50% less physical memory. For a standard 3D mesh
+containing positions, normals, and texture coordinates, converting
+non-position attributes to 16-bit floats significantly reduces the
+overall stride of the vertex structure.</p>
+<h3 id="practical-impact-on-vertex-buffer-arrays">Practical Impact on
+Vertex Buffer Arrays</h3>
+<p>Consider a typical vertex structure defined with standard floats:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> Vertex <span class="op">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> position<span class="op">[</span><span class="dv">3</span><span class="op">];</span> <span class="co">// 12 bytes</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> normal<span class="op">[</span><span class="dv">3</span><span class="op">];</span>   <span class="co">// 12 bytes</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> texCoord<span class="op">[</span><span class="dv">2</span><span class="op">];</span> <span class="co">// 8 bytes</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="op">};</span> <span class="co">// Total: 32 bytes per vertex</span></span></code></pre></div>
+<p>A model with 1,000,000 vertices using this layout requires 32 MB of
+VRAM.</p>
+<p>By transitioning appropriate attributes to half-precision:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> VertexOptimized <span class="op">{</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> position<span class="op">[</span><span class="dv">3</span><span class="op">];</span>          <span class="co">// 12 bytes (maintained for precision)</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">unsigned</span> <span class="dt">short</span> normal<span class="op">[</span><span class="dv">3</span><span class="op">];</span>   <span class="co">// 6 bytes (half-float)</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">unsigned</span> <span class="dt">short</span> texCoord<span class="op">[</span><span class="dv">2</span><span class="op">];</span> <span class="co">// 4 bytes (half-float)</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">unsigned</span> <span class="dt">short</span> padding<span class="op">;</span>     <span class="co">// 2 bytes (alignment)</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="op">};</span> <span class="co">// Total: 24 bytes per vertex</span></span></code></pre></div>
+<p>The memory footprint drops to 24 MB, yielding an immediate 25%
+reduction in total buffer size for the mesh. If positions can also
+safely use half-floats (such as in local object space for smaller
+assets), the footprint falls to 16 bytes per vertex—a 50% overall memory
+reduction.</p>
+<h3 id="bandwidth-and-cache-efficiency">Bandwidth and Cache
+Efficiency</h3>
+<p>The primary performance bottleneck in vertex processing is frequently
+memory bandwidth rather than compute capability. The GPU's vertex fetch
+stage must stream vertex data from memory into the shader cores.</p>
+<ol type="1">
+<li><strong>Reduced Bandwidth Consumption:</strong> Loading 16-bit
+values transfers half the data over the memory bus per attribute,
+preventing saturation during high-geometry scenes.</li>
+<li><strong>Improved Vertex Cache Hit Rates:</strong> Smaller vertex
+strides allow more vertices to fit inside the GPU's L1/L2 caches and
+post-transform caches. This maximizes cache hits, reducing the need to
+re-fetch redundant data for shared vertices across indexed
+triangles.</li>
+</ol>
+<h3 id="implementation-in-opengl">Implementation in OpenGL</h3>
+<p>OpenGL supports half-floats natively through core specifications (and
+via extensions like <code>OES_vertex_half_float</code> in older OpenGL
+ES environments). Half-floats are declared in the attribute pointer
+configuration using <code>GL_HALF_FLOAT</code>.</p>
+<p>To bind an attribute array containing half-precision data:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Example: Normal vector with 3 half-float components</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>glVertexAttribPointer<span class="op">(</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    normalAttributeLocation<span class="op">,</span> </span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    <span class="dv">3</span><span class="op">,</span>                  <span class="co">// Number of components (x, y, z)</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    GL_HALF_FLOAT<span class="op">,</span>      <span class="co">// Data type</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    GL_FALSE<span class="op">,</span>           <span class="co">// Normalized (typically false for floats)</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    <span class="kw">sizeof</span><span class="op">(</span>VertexOptimized<span class="op">),</span> </span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>    <span class="op">(</span><span class="dt">void</span><span class="op">*)</span>offsetof<span class="op">(</span>VertexOptimized<span class="op">,</span> normal<span class="op">)</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="op">);</span></span></code></pre></div>
+<p>Hardware modern enough to support programmable shaders unpacks these
+16-bit values automatically into standard 32-bit registers inside the
+vertex shader, meaning shader calculations retain high precision without
+requiring custom decompression code.</p>
+<h3 id="best-practices-and-precision-trade-offs">Best Practices and
+Precision Trade-Offs</h3>
+<p>While half-floats substantially lower memory footprints, the reduced
+dynamic range (±65,504) and precision (~3.3 decimal digits) require
+selective application:</p>
+<ul>
+<li><strong>Ideal for Half-Floats:</strong>
+<ul>
+<li><strong>Texture Coordinates (UVs):</strong> Most standard UV mapping
+stays within the 0.0 to 1.0 range, where half-float precision is more
+than adequate to prevent texture swimming.</li>
+<li><strong>Normals and Tangents:</strong> Unit vectors always remain
+within the range of [-1.0, 1.0], making them optimal candidates for
+half-precision storage.</li>
+<li><strong>Vertex Colors:</strong> Linear RGB values easily fit within
+the range and precision of 16-bit floats.</li>
+</ul></li>
+<li><strong>Use Caution With:</strong>
+<ul>
+<li><strong>World-Space Positions:</strong> Large-scale environments
+will suffer from visible vertex jitter (quantization artifacts) due to
+the limited mantissa precision. Keep positions in standard 32-bit
+floats, or restrict half-float positions strictly to localized,
+normalized object-space models.</li>
+</ul></li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/half-float-in-open-gl-reduce-vertex-attribute-memory';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Buffer Sub-Allocation with Frame Allocators - opengl</title>
+    <meta name="description" content="Custom frame allocators maximize rendering performance in modern OpenGL by eliminating the driver overhead and pipeline stalls associated with repeatedly creating, binding, and reallocating GPU memory. By allocating a single, large OpenGL buffer object up">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-buffer-sub-allocation-with-frame-allocators">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Buffer Sub-Allocation with Frame Allocators - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-buffer-sub-allocation-with-frame-allocators" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Custom frame allocators maximize rendering performance in modern OpenGL by eliminating the driver overhead and pipeline stalls associated with repeatedly creating, binding, and reallocating GPU memory. By allocating a single, large OpenGL buffer object up" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-buffer-sub-allocation-with-frame-allocators">OpenGL
+Buffer Sub-Allocation with Frame Allocators</h1>
+<p>Custom frame allocators maximize rendering performance in modern
+OpenGL by eliminating the driver overhead and pipeline stalls associated
+with repeatedly creating, binding, and reallocating GPU memory. By
+allocating a single, large OpenGL buffer object upfront and partitioning
+it on the CPU, developers can achieve fast, deterministic memory
+allocation for dynamic data such as per-frame uniforms, dynamic vertex
+streams, and instance arrays. This article explains how custom frame
+allocators implement linear and ring buffer sub-allocation strategies,
+enforce hardware alignment constraints, and maintain CPU-GPU
+synchronization using persistent mappings and fences.</p>
+<h2 id="the-persistent-backing-buffer">The Persistent Backing
+Buffer</h2>
+<p>At the core of a custom sub-allocator is a single large OpenGL buffer
+object initialized using immutable storage via
+<code>glBufferStorage</code>. Creating the buffer with the flags
+<code>GL_MAP_WRITE_BIT</code>, <code>GL_MAP_PERSISTENT_BIT</code>, and
+optionally <code>GL_MAP_COHERENT_BIT</code> allows the application to
+map the entire memory range to a CPU pointer once at initialization
+using <code>glMapBufferRange</code>.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>GLbitfield flags <span class="op">=</span> GL_MAP_WRITE_BIT <span class="op">|</span> GL_MAP_PERSISTENT_BIT <span class="op">|</span> GL_MAP_COHERENT_BIT<span class="op">;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>glGenBuffers<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="op">&amp;</span>bufferID<span class="op">);</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>glBindBuffer<span class="op">(</span>GL_COPY_WRITE_BUFFER<span class="op">,</span> bufferID<span class="op">);</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>glBufferStorage<span class="op">(</span>GL_COPY_WRITE_BUFFER<span class="op">,</span> totalBufferSize<span class="op">,</span> <span class="kw">nullptr</span><span class="op">,</span> flags<span class="op">);</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span><span class="op">*</span> baseMappedPtr <span class="op">=</span> glMapBufferRange<span class="op">(</span>GL_COPY_WRITE_BUFFER<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> totalBufferSize<span class="op">,</span> flags<span class="op">);</span></span></code></pre></div>
+<p>By persistently mapping the buffer, the CPU retains a valid pointer
+to GPU-accessible memory across frames, eliminating the cost of
+subsequent <code>glMapBuffer</code> and <code>glUnmapBuffer</code>
+calls.</p>
+<h2 id="linear-bump-sub-allocation">Linear (Bump) Sub-Allocation</h2>
+<p>The most common allocation model for per-frame dynamic data is a
+linear or "bump" allocator. This system treats the large buffer as a
+continuous linear array managed by an integer offset:</p>
+<ol type="1">
+<li><strong>State Tracking:</strong> The allocator maintains a current
+offset representing the head of free memory.</li>
+<li><strong>Allocation:</strong> When a subsystem requests memory, the
+allocator records the current offset, advances the head by the requested
+size, and returns the pointer: <span
+class="math display">\[\text{Allocated Pointer} = \text{baseMappedPtr} +
+\text{offset}\]</span></li>
+<li><strong>Binding:</strong> When drawing, the application binds the
+sub-allocated region to OpenGL binding points using offset-aware
+functions such as <code>glBindBufferRange</code> or provides the offset
+directly via base vertex parameters
+(<code>glDrawElementsBaseVertex</code>) or indirect draw commands.</li>
+<li><strong>Frame Reset:</strong> Once the frame's commands are
+submitted to the GPU, the head offset can simply be reset to zero (or
+the start of a designated frame slice), reclaiming all memory
+simultaneously in <span class="math inline">\(O(1)\)</span> time with
+zero fragmentation.</li>
+</ol>
+<h2 id="managing-hardware-alignment-requirements">Managing Hardware
+Alignment Requirements</h2>
+<p>Memory offsets passed to OpenGL binding targets must conform to
+hardware-defined alignment rules. For instance:</p>
+<ul>
+<li>Uniform Buffer Objects (UBOs) must align to
+<code>GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT</code>.</li>
+<li>Shader Storage Buffer Objects (SSBOs) must align to
+<code>GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT</code>.</li>
+<li>Raw vertex and index data typically require 4-byte or 16-byte
+alignment to prevent performance penalties.</li>
+</ul>
+<p>The allocator calculates the necessary padding before advancing the
+head offset using the standard alignment formula:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="dt">size_t</span> alignedOffset <span class="op">=</span> <span class="op">(</span>currentOffset <span class="op">+</span> alignment <span class="op">-</span> <span class="dv">1</span><span class="op">)</span> <span class="op">&amp;</span> <span class="op">~(</span>alignment <span class="op">-</span> <span class="dv">1</span><span class="op">);</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="dt">size_t</span> nextOffset <span class="op">=</span> alignedOffset <span class="op">+</span> requestedSize<span class="op">;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="op">(</span>nextOffset <span class="op">&lt;=</span> totalBufferSize<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">void</span><span class="op">*</span> resultPtr <span class="op">=</span> <span class="kw">static_cast</span><span class="op">&lt;</span><span class="dt">char</span><span class="op">*&gt;(</span>baseMappedPtr<span class="op">)</span> <span class="op">+</span> alignedOffset<span class="op">;</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    currentOffset <span class="op">=</span> nextOffset<span class="op">;</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="op">{</span> resultPtr<span class="op">,</span> alignedOffset <span class="op">};</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="co">// Handle out-of-memory condition</span></span></code></pre></div>
+<p>Ignoring alignment rules causes OpenGL errors
+(<code>GL_INVALID_VALUE</code>) or undefined behavior during shader
+execution.</p>
+<h2 id="multi-buffering-and-ring-buffering">Multi-Buffering and Ring
+Buffering</h2>
+<p>Because the GPU processes draw commands asynchronously, resetting the
+bump pointer to zero at the start of the next frame would overwrite data
+the GPU is still actively reading, causing visual corruption or race
+conditions. To prevent this, allocators use multi-buffering or
+ring-buffering techniques.</p>
+<h3 id="ring-buffer-strategy">Ring Buffer Strategy</h3>
+<p>The total buffer capacity is divided logically or dynamically across
+multiple frames (commonly triple-buffering). The allocator maintains a
+head pointer (where the CPU writes) and a tail pointer (the oldest
+region the GPU might still be reading).</p>
+<p>If the head wraps around to the beginning of the buffer, it must not
+overtake the tail.</p>
+<h3 id="synchronization-with-fences">Synchronization with Fences</h3>
+<p>To track GPU progress safely without blocking execution prematurely,
+the allocator places sync objects (<code>GLsync</code>) into the command
+stream at the end of each frame:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>GLsync frameSync <span class="op">=</span> glFenceSync<span class="op">(</span>GL_SYNC_GPU_COMMANDS_COMPLETE<span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span></code></pre></div>
+<p>When the allocator needs to reuse a partition of the buffer in a
+subsequent frame, it checks whether the GPU has finished using that
+partition:</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>GLenum status <span class="op">=</span> glClientWaitSync<span class="op">(</span>frameSync<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">);</span> <span class="co">// Non-blocking check</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="op">(</span>status <span class="op">==</span> GL_TIMEOUT_EXPIRED<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    <span class="co">// GPU is still reading; block until completion or wait on another frame</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    glClientWaitSync<span class="op">(</span>frameSync<span class="op">,</span> GL_SYNC_FLUSH_COMMANDS_BIT<span class="op">,</span> <span class="dv">1000000000</span><span class="op">);</span> <span class="co">// 1-second timeout fallback</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>glDeleteSync<span class="op">(</span>frameSync<span class="op">);</span></span></code></pre></div>
+<p>By decoupling CPU allocation from driver allocations and
+synchronizing exclusively through fences, the engine ensures sustained
+high throughput, minimal memory fragmentation, and zero driver stalls
+during frame rendering.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/open-gl-buffer-sub-allocation-with-frame-allocators';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

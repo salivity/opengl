@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Volumetric Fog Using 3D Textures in OpenGL - opengl</title>
+    <meta name="description" content="This article outlines how to implement real-time volumetric fog in OpenGL by combining compute shaders with a 3D texture grid, commonly referred to as a frustum grid or &quot;froxel&quot; volume. You will learn how the frustum space is discretized, how lighting and">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/volumetric-fog-using-3-d-textures-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Volumetric Fog Using 3D Textures in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/volumetric-fog-using-3-d-textures-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article outlines how to implement real-time volumetric fog in OpenGL by combining compute shaders with a 3D texture grid, commonly referred to as a frustum grid or &quot;froxel&quot; volume. You will learn how the frustum space is discretized, how lighting and" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="volumetric-fog-using-3d-textures-in-opengl">Volumetric Fog Using
+3D Textures in OpenGL</h1>
+<p>This article outlines how to implement real-time volumetric fog in
+OpenGL by combining compute shaders with a 3D texture grid, commonly
+referred to as a frustum grid or "froxel" volume. You will learn how the
+frustum space is discretized, how lighting and density are injected into
+the 3D volume, the mathematical accumulation of light along the view
+ray, and the final compositing step with the rendered scene.</p>
+<h3 id="1-allocating-the-frustum-volume-froxels">1. Allocating the
+Frustum Volume (Froxels)</h3>
+<p>Rather than using an axis-aligned world-space grid, volumetric fog
+typically relies on a view-frustum-aligned grid. In OpenGL, this
+structure is stored as an immutable 3D texture allocated via
+<code>glTexStorage3D</code> with a target of
+<code>GL_TEXTURE_3D</code>.</p>
+<p>The dimensions are typically set to a fraction of the screen
+resolution (for instance, <span class="math inline">\(160 \times 90
+\times 64\)</span> or <span class="math inline">\(256 \times 144 \times
+128\)</span>) to balance performance and quality:</p>
+<ul>
+<li><strong>X and Y dimensions:</strong> Map linearly to normalized
+device coordinates (screen space).</li>
+<li><strong>Z dimension (depth):</strong> Distributed exponentially
+between the near and far planes. An exponential distribution places more
+slices near the camera where visual fidelity is critical and fewer
+slices in the distance.</li>
+</ul>
+<p>The mapping from view-space depth <span
+class="math inline">\(z\)</span> to a normalized texture coordinate
+<span class="math inline">\(w\)</span> typically follows the
+formula:</p>
+<p><span class="math display">\[w = \frac{\ln(z / z_{near})}{\ln(z_{far}
+/ z_{near})}\]</span></p>
+<h3 id="2-density-and-phase-function-evaluation">2. Density and Phase
+Function Evaluation</h3>
+<p>The implementation begins with a compute shader pass
+(<code>glDispatchCompute</code>) that evaluates fog density and material
+properties for every cell in the 3D texture.</p>
+<ul>
+<li><strong>Density Generation:</strong> For uniform fog, density is
+constant. For dynamic, patchy fog, the compute shader samples an
+auxiliary 3D noise texture (such as Perlin-Worley noise) using the
+reconstructed world-space position of the froxel.</li>
+<li><strong>Scattering and Absorption:</strong> Medium parameters define
+scattering (<span class="math inline">\(\sigma_s\)</span>) and
+absorption (<span class="math inline">\(\sigma_a\)</span>) coefficients,
+giving an extinction coefficient <span class="math inline">\(\sigma_t =
+\sigma_s + \sigma_a\)</span>.</li>
+<li><strong>Phase Function:</strong> The angular distribution of
+scattered light is modeled using the Henyey-Greenstein phase
+function:</li>
+</ul>
+<p><span class="math display">\[p(\theta) = \frac{1}{4\pi} \frac{1 -
+g^2}{(1 + g^2 - 2g \cos\theta)^{3/2}}\]</span></p>
+<p>where <span class="math inline">\(g \in (-1, 1)\)</span> is the
+asymmetry parameter controlling forward or backward scattering relative
+to the view vector and light direction.</p>
+<h3 id="3-light-injection-pass">3. Light Injection Pass</h3>
+<p>In this compute pass, incoming radiance is calculated for each
+froxel:</p>
+<ol type="1">
+<li><strong>World Position Reconstruction:</strong> The shader maps the
+3D grid index <span class="math inline">\((x, y, z)\)</span> to clip
+space, applies the inverse view-projection matrix, and divides by <span
+class="math inline">\(w\)</span> to determine the world-space center of
+the cell.</li>
+<li><strong>Shadow Map Sampling:</strong> The shader samples standard
+shadow maps (e.g., cascaded shadow maps for directional lights or shadow
+cubemaps for point lights) to check for occlusion.</li>
+<li><strong>In-Scattering Calculation:</strong> For all unshadowed
+lights, the shader evaluates light color, attenuation, and the phase
+function <span class="math inline">\(p(\theta)\)</span>, storing the
+resulting in-scattered radiance alongside the extinction coefficient in
+the 3D texture using image load/store
+(<code>glBindImageTexture</code>).</li>
+</ol>
+<h3 id="4-raymarching-and-accumulation">4. Raymarching and
+Accumulation</h3>
+<p>Once the lighting and extinction are evaluated per cell, a separate
+compute shader integrates the volume along the view rays (the Z-axis of
+the 3D texture) from near to far.</p>
+<p>Using the Beer-Lambert law, light is accumulated through each cell
+slice:</p>
+<ul>
+<li><strong>Transmittance Step:</strong> <span
+class="math display">\[\Delta \tau = \exp(-\sigma_t \cdot \Delta
+d)\]</span> where <span class="math inline">\(\Delta d\)</span> is the
+distance between the near and far planes of the current slice.</li>
+<li><strong>Light Accumulation:</strong> <span
+class="math display">\[L_{accum} = L_{accum} + L_{cell} \cdot
+T_{current}\]</span></li>
+<li><strong>Transmittance Accumulation:</strong> <span
+class="math display">\[T_{current} = T_{current} \cdot \Delta
+\tau\]</span></li>
+</ul>
+<p>This integration computes the total light scattered toward the camera
+and the net transmittance up to each depth slice. The output is written
+into a final filtered 3D texture.</p>
+<h3 id="5-temporal-filtering-and-jittering">5. Temporal Filtering and
+Jittering</h3>
+<p>To hide spatial banding artifacts caused by coarse slice resolution,
+depth jittering is applied. Each frame, a sub-voxel offset derived from
+a pseudo-random sequence (such as blue noise or Halton sequence) offsets
+the ray positions.</p>
+<p>A temporal reprojection compute pass then blends the current frame’s
+3D texture with the previous frame's 3D texture using camera motion
+vectors. This effectively smooths out noise and improves perceived
+volume resolution without extra raymarching steps.</p>
+<h3 id="6-final-scene-composition">6. Final Scene Composition</h3>
+<p>The accumulated volumetric data is applied to the scene during the
+post-processing or forward-lighting pass:</p>
+<ol type="1">
+<li>The linear depth of the opaque scene fragment is retrieved from the
+scene's depth buffer.</li>
+<li>The fragment's screen coordinates and linear depth are converted
+into 3D texture coordinates <span class="math inline">\((u, v,
+w)\)</span> using the exponential depth equation.</li>
+<li>The integrated 3D texture is sampled using hardware trilinear
+interpolation (<code>GL_LINEAR</code>).</li>
+<li>The sampled in-scattered light is added to the scene color, and the
+scene color is attenuated by the sampled transmittance:</li>
+</ol>
+<p><span class="math display">\[\text{Final Color} = \text{Scene Color}
+\times \text{Transmittance} + \text{InScattered Light}\]</span></p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/volumetric-fog-using-3-d-textures-in-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

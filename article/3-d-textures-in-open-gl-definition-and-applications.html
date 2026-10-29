@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Textures in OpenGL: Definition and Applications - opengl</title>
+    <meta name="description" content="This article provides an overview of three-dimensional (3D) textures in OpenGL, explaining their fundamental architecture and how they differ from conventional 2D textures. It explores the core rendering domains where 3D textures are essential, including">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/3-d-textures-in-open-gl-definition-and-applications">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="3D Textures in OpenGL: Definition and Applications - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/3-d-textures-in-open-gl-definition-and-applications" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article provides an overview of three-dimensional (3D) textures in OpenGL, explaining their fundamental architecture and how they differ from conventional 2D textures. It explores the core rendering domains where 3D textures are essential, including" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="3d-textures-in-opengl-definition-and-applications">3D Textures
+in OpenGL: Definition and Applications</h1>
+<p>This article provides an overview of three-dimensional (3D) textures
+in OpenGL, explaining their fundamental architecture and how they differ
+from conventional 2D textures. It explores the core rendering domains
+where 3D textures are essential, including medical imaging, scientific
+visualization, atmospheric simulation, and advanced lighting models. By
+examining both the theoretical concept and practical usage, readers will
+gain a clear understanding of how volumetric texel data is sampled and
+rendered in modern graphics pipelines.</p>
+<h3 id="understanding-3d-textures-in-opengl">Understanding 3D Textures
+in OpenGL</h3>
+<p>In OpenGL, a 3D texture is a three-dimensional grid of texels defined
+by width, height, and depth, managed under the target
+<code>GL_TEXTURE_3D</code>. While a standard 2D texture maps pixels onto
+a flat surface using <span class="math inline">\((s, t)\)</span>
+coordinates, a 3D texture adds a third dimension, sampled using <span
+class="math inline">\((s, t, r)\)</span> normalized coordinates.</p>
+<p>When a shader samples a 3D texture, OpenGL performs trilinear
+filtering by interpolating between neighboring texels across all three
+spatial axes. This volumetric structure allows shaders to sample
+continuous, solid materials or data volumes without visible seams or
+stretching across complex geometries. OpenGL manages these textures
+through functions such as <code>glTexImage3D</code> and
+<code>glTexStorage3D</code>, allocating continuous blocks of GPU memory
+capable of storing scalar fields, vector fields, or multi-channel color
+data.</p>
+<h3 id="common-rendering-domains-and-applications">Common Rendering
+Domains and Applications</h3>
+<h4 id="1-medical-imaging-and-scientific-visualization">1. Medical
+Imaging and Scientific Visualization</h4>
+<p>Direct Volume Rendering (DVR) heavily relies on 3D textures to
+visualize scans from Computed Tomography (CT), Magnetic Resonance
+Imaging (MRI), and Ultrasound. In these workflows, the raw scan slices
+are stacked sequentially into a single 3D texture representing
+biological tissue density. Ray marching shaders then cast rays through
+this volume, sampling absorption and emission values along the ray path
+to reconstruct internal organs, bones, or vascular systems without
+generating traditional polygonal meshes. Similar approaches are used in
+computational fluid dynamics (CFD) and geophysics to visualize velocity
+fields, stress distributions, and seismic data.</p>
+<h4 id="2-atmospheric-and-volumetric-effects">2. Atmospheric and
+Volumetric Effects</h4>
+<p>Simulating participating media such as clouds, smoke, fire, and fog
+requires density representations that change continuously throughout a
+3D space. Developers generate or upload pre-simulated fluid density
+matrices into 3D textures. During rendering, shaders march through the
+volume, accumulating light scattering, extinction, and shadow
+attenuation. This technique enables physically plausible volumetric
+lighting, god rays, and dynamic cloudscapes.</p>
+<h4 id="3-color-grading-and-correction-3d-luts">3. Color Grading and
+Correction (3D LUTs)</h4>
+<p>In film and real-time graphics pipelines, 3D textures frequently
+serve as Color Look-Up Tables (3D LUTs). A 3D LUT organizes color
+transformation targets into an RGB cube (e.g., <span
+class="math inline">\(16 \times 16 \times 16\)</span> or <span
+class="math inline">\(32 \times 32 \times 32\)</span>). The source
+pixel's red, green, and blue components act as the <span
+class="math inline">\((s, t, r)\)</span> texture coordinates. Because
+the GPU performs hardware-accelerated trilinear interpolation between
+the discrete LUT points, complex grading, cross-processing, and
+non-linear color adjustments can be applied to an entire scene in a
+single sampling operation.</p>
+<h4 id="4-procedural-texturing-and-solid-materials">4. Procedural
+Texturing and Solid Materials</h4>
+<p>Unlike 2D textures that require UV unwrapping and often produce seam
+artifacts, 3D textures can store "solid" volumetric patterns, such as 3D
+Perlin noise, Worley noise, or wood and marble grain simulations.
+Shaders sample the 3D texture using the world-space or local-space
+coordinates of a fragment. As a result, 3D models appear as though they
+are carved directly out of a solid block of material, eliminating
+texture distortion across complex geometry.</p>
+<h4 id="5-real-time-global-illumination">5. Real-Time Global
+Illumination</h4>
+<p>Modern rendering techniques like Voxel Cone Tracing (VCT) use 3D
+clipmaps or nested 3D textures to store a discretized representation of
+scene geometry, opacity, and outgoing radiance. Shaders cast cones
+through these voxel volumes to approximate indirect diffuse lighting,
+specular reflections, and ambient occlusion in real time without the
+computational overhead of path tracing.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/3-d-textures-in-open-gl-definition-and-applications';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

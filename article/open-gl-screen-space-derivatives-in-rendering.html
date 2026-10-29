@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Screen-Space Derivatives in Rendering - opengl</title>
+    <meta name="description" content="Screen-space derivatives in OpenGL—evaluated using GLSL functions such as dFdx, dFdy, and fwidth—calculate the rate of change of any variable across a 2x2 pixel quad. These built-in calculations are fundamental to modern real-time graphics pipelines, enab">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-screen-space-derivatives-in-rendering">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Screen-Space Derivatives in Rendering - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-screen-space-derivatives-in-rendering" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Screen-space derivatives in OpenGL—evaluated using GLSL functions such as dFdx, dFdy, and fwidth—calculate the rate of change of any variable across a 2x2 pixel quad. These built-in calculations are fundamental to modern real-time graphics pipelines, enab" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-screen-space-derivatives-in-rendering">OpenGL
+Screen-Space Derivatives in Rendering</h1>
+<p>Screen-space derivatives in OpenGL—evaluated using GLSL functions
+such as <code>dFdx</code>, <code>dFdy</code>, and
+<code>fwidth</code>—calculate the rate of change of any variable across
+a 2x2 pixel quad. These built-in calculations are fundamental to modern
+real-time graphics pipelines, enabling shaders to deduce geometric,
+depth, and spatial variations without precomputed vertex attributes. By
+measuring hardware-level differences between adjacent fragments, several
+rendering techniques rely directly on these screen-space derivatives to
+handle texture sampling, antialiasing, lighting, and geometric
+reconstruction efficiently.</p>
+<h3 id="automatic-texture-mipmapping-and-filtering">Automatic Texture
+Mipmapping and Filtering</h3>
+<p>The most widespread implicit use of screen-space derivatives is the
+selection of texture Level of Detail (LoD) and anisotropic filtering.
+When calling standard sampling functions like <code>texture()</code>,
+the GPU calculates the derivative of texture coordinates (<span
+class="math inline">\(u, v\)</span>) with respect to screen coordinates
+(<span class="math inline">\(x, y\)</span>). This footprint indicates
+how much texture space is covered by a single screen pixel. If the
+derivative is high, the surface is viewed at a distance or at an acute
+angle, triggering the hardware to sample higher mipmap levels to prevent
+undersampling and texture aliasing. Explicit derivatives via
+<code>textureGrad()</code> allow developers to supply custom derivatives
+when branching causes native derivative evaluation to become
+undefined.</p>
+<h3 id="procedural-pattern-antialiasing">Procedural Pattern
+Antialiasing</h3>
+<p>When generating procedural textures, such as stripes, checkerboards,
+or grid lines, sharp mathematical edges cause severe spatial aliasing.
+The <code>fwidth</code> function, which computes the sum of the absolute
+derivatives (<code>abs(dFdx(v)) + abs(dFdy(v))</code>), determines the
+rate of change across pixel boundaries. By combining <code>fwidth</code>
+with the <code>smoothstep</code> function, shaders create an analytical
+filter region that smoothly transitions across boundaries over a span of
+one to two pixels, producing clean, antialiased edges regardless of the
+camera's angle or distance.</p>
+<h3 id="dynamic-normal-generation-faceted-shading">Dynamic Normal
+Generation (Faceted Shading)</h3>
+<p>Screen-space derivatives allow fragment shaders to compute face
+normals on the fly without storing or interpolating vertex normals. By
+evaluating the cross product of the screen-space derivatives of the
+interpolated surface position:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> normal <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span><span class="bu">cross</span><span class="op">(</span><span class="bu">dFdx</span><span class="op">(</span>v_position<span class="op">),</span> <span class="bu">dFdy</span><span class="op">(</span>v_position<span class="op">)));</span></span></code></pre></div>
+<p>the shader dynamically determines the geometric normal for the
+current polygon. This technique is standard for rendering low-poly art
+styles, dynamic tessellation results, or complex geometry formats where
+per-vertex normals are omitted to conserve memory.</p>
+<h3 id="tangent-free-normal-and-bump-mapping">Tangent-Free Normal and
+Bump Mapping</h3>
+<p>Traditional tangent-space normal mapping requires precomputed
+per-vertex tangent and bitangent vectors. Screen-space derivatives
+eliminate this requirement by computing the surface gradient directly in
+the fragment shader. By calculating the partial derivatives of both the
+world-space surface position and the texture coordinates, a shader can
+reconstruct the local tangent frame on demand. This approach avoids
+tangent attribute storage, handles non-uniform UV scaling correctly, and
+resolves mirrored UV seam artifacts seamlessly.</p>
+<h3 id="normal-reconstruction-from-depth">Normal Reconstruction from
+Depth</h3>
+<p>Deferred rendering and post-processing passes (such as Screen-Space
+Ambient Occlusion, or SSAO) often require view-space or world-space
+normals. Instead of allocating memory to store high-precision normal
+G-buffers, engines can reconstruct normals dynamically from a single
+depth buffer. By using <code>dFdx</code> and <code>dFdy</code> on the
+reconstructed view-space positions derived from linear depth, the
+fragment shader computes accurate surface orientations directly during
+post-processing passes.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/open-gl-screen-space-derivatives-in-rendering';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Role of VSync in OpenGL Framebuffer Swapping - opengl</title>
+    <meta name="description" content="Vertical synchronization (VSync) plays a critical role in OpenGL by coordinating the timing between the GPU&#39;s framebuffer swaps and the display monitor&#39;s physical refresh cycle. In double-buffered rendering, VSync determines whether the front and back buf">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/the-role-of-v-sync-in-open-gl-framebuffer-swapping">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="The Role of VSync in OpenGL Framebuffer Swapping - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/the-role-of-v-sync-in-open-gl-framebuffer-swapping" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Vertical synchronization (VSync) plays a critical role in OpenGL by coordinating the timing between the GPU&#39;s framebuffer swaps and the display monitor&#39;s physical refresh cycle. In double-buffered rendering, VSync determines whether the front and back buf" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="the-role-of-vsync-in-opengl-framebuffer-swapping">The Role of
+VSync in OpenGL Framebuffer Swapping</h1>
+<p>Vertical synchronization (VSync) plays a critical role in OpenGL by
+coordinating the timing between the GPU's framebuffer swaps and the
+display monitor's physical refresh cycle. In double-buffered rendering,
+VSync determines whether the front and back buffers swap immediately
+upon completion of a frame or wait for the monitor to finish drawing the
+current image. By synchronizing this swap with the display's vertical
+blanking interval, VSync directly controls frame pacing, prevents screen
+tearing, and influences input latency.</p>
+<h3 id="double-buffering-and-the-swap-mechanism">Double Buffering and
+the Swap Mechanism</h3>
+<p>To prevent flickering during rendering, OpenGL applications typically
+use double buffering. In this architecture:</p>
+<ul>
+<li>The <strong>front buffer</strong> holds the finished frame currently
+being scanned out and displayed by the monitor.</li>
+<li>The <strong>back buffer</strong> is where the GPU renders the next
+frame.</li>
+</ul>
+<p>Once the GPU finishes rendering the back buffer, an execution
+call—such as <code>glfwSwapBuffers</code>, <code>wglSwapBuffers</code>,
+or <code>glXSwapBuffers</code>—is issued to swap the buffers, turning
+the back buffer into the new front buffer.</p>
+<h3 id="what-vsync-controls">What VSync Controls</h3>
+<p>Displays redraw pixels row by row from top to bottom at a set
+frequency (e.g., 60Hz, 144Hz). Between completing one full frame and
+starting the next, the monitor undergoes a brief pause known as the
+Vertical Blanking Interval (VBLANK). VSync settings determine
+<em>when</em> the buffer swap is allowed to execute relative to
+VBLANK:</p>
+<h4 id="1-vsync-disabled-swap-interval-0">1. VSync Disabled (Swap
+Interval 0)</h4>
+<p>When VSync is turned off, the buffer swap occurs immediately when the
+frame finishes rendering, regardless of where the display's scanout beam
+is located.</p>
+<ul>
+<li><strong>Consequence:</strong> If the buffers swap mid-scanout, the
+display draws the top portion of the screen from the old frame and the
+bottom portion from the new frame. This results in an artifact known as
+<strong>screen tearing</strong>.</li>
+<li><strong>Latency:</strong> Input latency is minimized because the
+monitor always receives the newest available image data with zero wait
+time.</li>
+</ul>
+<h4 id="2-vsync-enabled-swap-interval-1">2. VSync Enabled (Swap Interval
+1)</h4>
+<p>When VSync is enabled, the GPU halts the buffer swap until the
+monitor finishes the current frame and enters the VBLANK period.</p>
+<ul>
+<li><strong>Consequence:</strong> Screen tearing is completely
+eliminated because a swap never occurs while the screen is actively
+reading pixels.</li>
+<li><strong>Latency &amp; Frame Drops:</strong> If the GPU takes longer
+to render a frame than the duration of the display's refresh interval
+(for example, taking 17ms on a 60Hz/16.6ms screen), the swap misses the
+VBLANK. The monitor must redraw the previous frame again, effectively
+cutting the perceived framerate in half (e.g., dropping from 60 FPS
+directly to 30 FPS) and introducing input lag.</li>
+</ul>
+<h4 id="3-higher-swap-intervals-interval-n">3. Higher Swap Intervals
+(Interval <span class="math inline">\(n\)</span>)</h4>
+<p>OpenGL allows setting an integer swap interval via platform
+extensions (like <code>wglSwapIntervalEXT</code> on Windows or
+<code>glXSwapIntervalSGI</code> on Linux). Setting an interval of <span
+class="math inline">\(n\)</span> forces the application to wait for
+<span class="math inline">\(n\)</span> monitor refresh cycles before
+swapping, effectively locking the maximum frame rate to <span
+class="math inline">\(\frac{\text{Refresh Rate}}{n}\)</span>.</p>
+<h4 id="4-adaptive-vsync-negative-swap-intervals">4. Adaptive VSync
+(Negative Swap Intervals)</h4>
+<p>Many modern OpenGL implementations support extensions such as
+<code>EXT_swap_control_tear</code>. Passing a negative interval (such as
+<code>-1</code>) enables adaptive VSync:</p>
+<ul>
+<li>If the application runs at or above the monitor's refresh rate,
+VSync remains active to eliminate tearing.</li>
+<li>If the frame rate drops below the refresh rate, VSync automatically
+disables itself for that frame, allowing an immediate swap to minimize
+stutter and input lag at the expense of temporary tearing.</li>
+</ul>
+<h3 id="summary">Summary</h3>
+<p>The vertical synchronization setting in OpenGL is the gatekeeper of
+buffer presentation. It acts as a deliberate trade-off mechanism:
+enabling it prioritizes visual integrity and smooth pacing by aligning
+buffer swaps with VBLANK, while disabling it prioritizes immediate
+responsiveness and low latency at the expense of screen tearing.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/the-role-of-v-sync-in-open-gl-framebuffer-swapping';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

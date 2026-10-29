@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Soft Shadows in OpenGL with Percentage-Closer Filtering - opengl</title>
+    <meta name="description" content="Percentage-closer filtering (PCF) produces soft shadow edges in OpenGL by sampling multiple neighboring depth values from a shadow map, evaluating the depth test for each sample, and averaging the boolean results into a fractional visibility factor. Unlik">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/soft-shadows-in-open-gl-with-percentage-closer-filtering">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Soft Shadows in OpenGL with Percentage-Closer Filtering - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/soft-shadows-in-open-gl-with-percentage-closer-filtering" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Percentage-closer filtering (PCF) produces soft shadow edges in OpenGL by sampling multiple neighboring depth values from a shadow map, evaluating the depth test for each sample, and averaging the boolean results into a fractional visibility factor. Unlik" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="soft-shadows-in-opengl-with-percentage-closer-filtering">Soft
+Shadows in OpenGL with Percentage-Closer Filtering</h1>
+<p>Percentage-closer filtering (PCF) produces soft shadow edges in
+OpenGL by sampling multiple neighboring depth values from a shadow map,
+evaluating the depth test for each sample, and averaging the boolean
+results into a fractional visibility factor. Unlike standard shadow
+mapping, which performs a single depth comparison resulting in hard,
+pixelated borders, PCF smooths the transition between light and shadow
+by filtering the shadow comparison results rather than the raw depth
+values.</p>
+<h3 id="the-limitation-of-standard-shadow-mapping">The Limitation of
+Standard Shadow Mapping</h3>
+<p>In basic shadow mapping, a fragment's position is transformed into
+light space, and its projected depth is compared against the single
+closest depth value stored in the shadow map texture. This produces a
+binary outcome: the fragment is either fully illuminated (1.0) or
+completely in shadow (0.0). Because shadow maps have a finite
+resolution, this binary evaluation magnifies texel boundaries, resulting
+in noticeable staircase artifacts and harsh, aliased edges on the
+geometry.</p>
+<p>Directly applying linear filtering to the shadow map's depth values
+does not fix this problem. Averaging depth values before the comparison
+yields nonsensical depth measurements near geometry edges, causing
+severe shadow acne and rendering artifacts.</p>
+<h3 id="the-percentage-closer-filtering-algorithm">The Percentage-Closer
+Filtering Algorithm</h3>
+<p>Percentage-closer filtering solves aliasing by reversing the order of
+operations: it performs the depth comparisons first and filters the
+results second.</p>
+<ol type="1">
+<li><strong>Coordinate Transformation:</strong> The fragment's
+world-space position is transformed into light clip space using the
+light's view-projection matrix. A perspective divide is applied, and the
+coordinates are mapped from the normalized device coordinate range
+<code>[-1, 1]</code> to the texture coordinate range
+<code>[0, 1]</code>.</li>
+<li><strong>Kernel Sampling:</strong> Instead of sampling a single texel
+at the transformed UV coordinates, the fragment shader defines a
+sampling kernel—such as a 3x3, 4x4, or Poisson disk distribution—around
+the target UV point.</li>
+<li><strong>Offset Calculation:</strong> Each sample offset is scaled by
+the inverse of the shadow map's dimensions
+(<code>1.0 / textureSize(shadowMap, 0)</code>), ensuring that samples
+align precisely with adjacent texels.</li>
+<li><strong>Per-Sample Comparison:</strong> For every offset in the
+kernel, the fragment shader compares the current fragment’s light-space
+depth (minus an appropriate depth bias to eliminate shadow acne) with
+the depth stored in the shadow map at that offset. Each test returns
+<code>1.0</code> if the sample is illuminated or <code>0.0</code> if it
+is occluded.</li>
+<li><strong>Averaging:</strong> The shader sums the results of all
+individual comparisons and divides the total by the number of samples
+taken.</li>
+</ol>
+<p>The resulting value is a floating-point number between
+<code>0.0</code> and <code>1.0</code> representing the percentage of the
+fragment's footprint that is illuminated. Multiplying the light's
+diffuse and specular contributions by this factor produces a smooth
+gradient along shadow boundaries, simulating an antialiased
+penumbra.</p>
+<h3 id="hardware-accelerated-pcf-in-opengl">Hardware-Accelerated PCF in
+OpenGL</h3>
+<p>OpenGL provides native hardware support for PCF, enabling efficient
+2x2 bilinear percentage-closer filtering directly on the GPU without
+requiring multiple manual texture fetches in the shader.</p>
+<p>To configure hardware PCF:</p>
+<ul>
+<li>Set the shadow texture's comparison mode using
+<code>glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE)</code>.</li>
+<li>Define the comparison operator using
+<code>glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL)</code>.</li>
+<li>Set the texture filtering parameters
+(<code>GL_TEXTURE_MIN_FILTER</code> and
+<code>GL_TEXTURE_MAG_FILTER</code>) to <code>GL_LINEAR</code>.</li>
+</ul>
+<p>In the GLSL fragment shader, the shadow map is declared as a
+<code>sampler2DShadow</code> instead of a standard
+<code>sampler2D</code>. When sampling with
+<code>texture(shadowMap, vec3(uv, currentDepth))</code>, the GPU
+automatically samples the four nearest texels, compares each against
+<code>currentDepth</code>, and bilinearly interpolates the four
+comparison results.</p>
+<p>Developers can combine this native hardware feature with a custom
+multi-tap sampling loop in GLSL. By running a manual kernel over a
+<code>sampler2DShadow</code>, each tap evaluates a pre-filtered 2x2
+footprint, producing high-quality, wide penumbras with significantly
+fewer shader instructions and reduced performance overhead.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/soft-shadows-in-open-gl-with-percentage-closer-filtering';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

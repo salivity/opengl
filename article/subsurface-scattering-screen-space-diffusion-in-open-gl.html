@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Subsurface Scattering &amp; Screen-Space Diffusion in OpenGL - opengl</title>
+    <meta name="description" content="Subsurface scattering (SSS) is a critical rendering technique for simulating translucent materials like skin, marble, and wax, where light penetrates an object&#39;s surface, scatters internally, and exits at a different point. Screen-Space Subsurface Scatter">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/subsurface-scattering-screen-space-diffusion-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Subsurface Scattering &amp; Screen-Space Diffusion in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/subsurface-scattering-screen-space-diffusion-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Subsurface scattering (SSS) is a critical rendering technique for simulating translucent materials like skin, marble, and wax, where light penetrates an object&#39;s surface, scatters internally, and exits at a different point. Screen-Space Subsurface Scatter" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="subsurface-scattering--screen-space-diffusion-in-opengl">Subsurface
+Scattering &amp; Screen-Space Diffusion in OpenGL</h1>
+<p>Subsurface scattering (SSS) is a critical rendering technique for
+simulating translucent materials like skin, marble, and wax, where light
+penetrates an object's surface, scatters internally, and exits at a
+different point. Screen-Space Subsurface Scattering (SSSS) approximates
+this computationally expensive phenomenon directly in post-processing by
+blurring irradiance using a diffusion profile. This guide explains the
+core principles of SSS and outlines a step-by-step approach to
+implementing screen-space diffusion profiles within an OpenGL
+pipeline.</p>
+<hr />
+<h3 id="understanding-subsurface-scattering">Understanding Subsurface
+Scattering</h3>
+<p>Standard diffuse shading models, such as Lambertian reflection,
+assume light reflects immediately from the exact point of incidence. In
+reality, translucent materials allow light to enter the medium, interact
+with internal particles through multiple scattering events, and
+re-emerge at nearby surface locations.</p>
+<p>This behavior softens hard shadow edges, causes color bleeding across
+surface contours (such as the distinct reddish hue seen when light
+passes through human ears), and creates a soft, lifelike appearance.
+Accurately modeling this via Bidirectional Surface Scattering
+Reflectance Distribution Functions (BSSRDF) requires expensive
+volumetric path tracing, making real-time approximations necessary for
+interactive applications.</p>
+<hr />
+<h3 id="the-screen-space-diffusion-profile">The Screen-Space Diffusion
+Profile</h3>
+<p>A <strong>diffusion profile</strong> <span
+class="math inline">\(R(r)\)</span> mathematically describes how light
+distribution diminishes as a function of the radial distance <span
+class="math inline">\(r\)</span> from the entry point. Because different
+wavelengths of light scatter at different rates—red light typically
+travels farther through human tissue than green or blue light—diffusion
+profiles are spectral, containing unique scattering parameters for each
+color channel.</p>
+<p>Jorge Jimenez’s Separable Subsurface Scattering method established
+that arbitrary diffusion profiles can be represented as a sum of
+Gaussians:</p>
+<p><span class="math display">\[R(r) = \sum_{i=1}^{k} w_i \cdot G(r,
+\sigma_i)\]</span></p>
+<p>Where:</p>
+<ul>
+<li><span class="math inline">\(w_i\)</span> is the weight of each
+Gaussian term (per color channel).</li>
+<li><span class="math inline">\(\sigma_i\)</span> is the variance (blur
+radius).</li>
+</ul>
+<p>By decomposing the diffusion profile into a sum of Gaussians, the
+blur becomes separable, allowing a two-dimensional radial convolution to
+be executed as two sequential one-dimensional passes (horizontal and
+vertical), dramatically reducing computation time.</p>
+<hr />
+<h3
+id="implementing-the-screen-space-diffusion-pipeline-in-opengl">Implementing
+the Screen-Space Diffusion Pipeline in OpenGL</h3>
+<p>Applying this technique in OpenGL requires a multi-pass deferred
+rendering or post-processing architecture using Framebuffer Objects
+(FBOs).</p>
+<h4 id="1-geometry-and-irradiance-pass">1. Geometry and Irradiance
+Pass</h4>
+<p>Render the scene geometry to an off-screen FBO. You must store:</p>
+<ul>
+<li><strong>Diffuse Irradiance (RGB):</strong> The pure diffuse lighting
+(e.g., standard N·L light intensity without specular highlights or
+ambient terms), as only the diffuse component scatters.</li>
+<li><strong>Depth Buffer:</strong> Linearized view-space depth used to
+calculate world-space distances during blurring.</li>
+<li><strong>Surface Normals (optional, for bilateral
+filtering):</strong> To avoid blurring across sharp geometric
+discontinuities.</li>
+<li><strong>Material Mask:</strong> An identifier channel specifying
+which objects receive subsurface scattering and their respective profile
+strengths.</li>
+</ul>
+<h4 id="2-separable-bilateral-filtering-passes">2. Separable Bilateral
+Filtering Passes</h4>
+<p>The diffuse texture is convolved using a depth-aware bilateral filter
+in two separate passes.</p>
+<ul>
+<li><strong>Horizontal Pass:</strong> Bind the diffuse buffer as input,
+execute a horizontal 1D blur kernel via a fragment shader, and render
+the intermediate result to a temporary texture.</li>
+<li><strong>Vertical Pass:</strong> Read from the intermediate texture,
+execute the vertical 1D blur kernel, and output the fully scattered
+diffuse result.</li>
+</ul>
+<h5 id="core-filtering-logic-in-glsl">Core Filtering Logic in GLSL</h5>
+<p>The fragment shader samples neighboring pixels along the blur
+direction, scaling the sample offset by the surface's distance to
+preserve perspective correctness:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 450 core</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec4</span> FragColor<span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="dt">in</span> <span class="dt">vec2</span> TexCoords<span class="op">;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">sampler2D</span> uDiffuseTex<span class="op">;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">sampler2D</span> uDepthTex<span class="op">;</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">vec2</span> uBlurDirection<span class="op">;</span> <span class="co">// (1.0 / width, 0.0) or (0.0 / height, 1.0)</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">float</span> uSubsurfaceWidth<span class="op">;</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="co">// Precalculated Gaussian weights and offsets for the diffusion profile</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="dt">const</span> <span class="dt">int</span> NUM_SAMPLES <span class="op">=</span> <span class="dv">7</span><span class="op">;</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">vec3</span> uWeights<span class="op">[</span>NUM_SAMPLES<span class="op">];</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">float</span> uOffsets<span class="op">[</span>NUM_SAMPLES<span class="op">];</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> centerColor <span class="op">=</span> <span class="bu">texture</span><span class="op">(</span>uDiffuseTex<span class="op">,</span> TexCoords<span class="op">);</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> centerDepth <span class="op">=</span> <span class="bu">texture</span><span class="op">(</span>uDepthTex<span class="op">,</span> TexCoords<span class="op">).</span><span class="fu">r</span><span class="op">;</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Scale blur radius according to distance (world-space consistency)</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec2</span> <span class="bu">step</span> <span class="op">=</span> <span class="op">(</span>uBlurDirection <span class="op">*</span> uSubsurfaceWidth<span class="op">)</span> <span class="op">/</span> centerDepth<span class="op">;</span></span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> accumulatedLight <span class="op">=</span> centerColor<span class="op">.</span><span class="fu">rgb</span> <span class="op">*</span> uWeights<span class="op">[</span><span class="dv">0</span><span class="op">];</span></span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>    <span class="kw">for</span> <span class="op">(</span><span class="dt">int</span> i <span class="op">=</span> <span class="dv">1</span><span class="op">;</span> i <span class="op">&lt;</span> NUM_SAMPLES<span class="op">;</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a>        <span class="dt">vec2</span> sampleOffset <span class="op">=</span> <span class="bu">step</span> <span class="op">*</span> uOffsets<span class="op">[</span>i<span class="op">];</span></span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a>        <span class="co">// Sample both positive and negative directions</span></span>
+<span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a>        <span class="dt">vec2</span> uv1 <span class="op">=</span> TexCoords <span class="op">+</span> sampleOffset<span class="op">;</span></span>
+<span id="cb1-31"><a href="#cb1-31" aria-hidden="true" tabindex="-1"></a>        <span class="dt">vec2</span> uv2 <span class="op">=</span> TexCoords <span class="op">-</span> sampleOffset<span class="op">;</span></span>
+<span id="cb1-32"><a href="#cb1-32" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-33"><a href="#cb1-33" aria-hidden="true" tabindex="-1"></a>        <span class="dt">float</span> depth1 <span class="op">=</span> <span class="bu">texture</span><span class="op">(</span>uDepthTex<span class="op">,</span> uv1<span class="op">).</span><span class="fu">r</span><span class="op">;</span></span>
+<span id="cb1-34"><a href="#cb1-34" aria-hidden="true" tabindex="-1"></a>        <span class="dt">float</span> depth2 <span class="op">=</span> <span class="bu">texture</span><span class="op">(</span>uDepthTex<span class="op">,</span> uv2<span class="op">).</span><span class="fu">r</span><span class="op">;</span></span>
+<span id="cb1-35"><a href="#cb1-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-36"><a href="#cb1-36" aria-hidden="true" tabindex="-1"></a>        <span class="co">// Bilateral weight to prevent bleeding across depth edges</span></span>
+<span id="cb1-37"><a href="#cb1-37" aria-hidden="true" tabindex="-1"></a>        <span class="dt">float</span> depthWeight1 <span class="op">=</span> <span class="bu">exp</span><span class="op">(-</span><span class="bu">abs</span><span class="op">(</span>centerDepth <span class="op">-</span> depth1<span class="op">)</span> <span class="op">*</span> <span class="fl">20.0</span><span class="op">);</span></span>
+<span id="cb1-38"><a href="#cb1-38" aria-hidden="true" tabindex="-1"></a>        <span class="dt">float</span> depthWeight2 <span class="op">=</span> <span class="bu">exp</span><span class="op">(-</span><span class="bu">abs</span><span class="op">(</span>centerDepth <span class="op">-</span> depth2<span class="op">)</span> <span class="op">*</span> <span class="fl">20.0</span><span class="op">);</span></span>
+<span id="cb1-39"><a href="#cb1-39" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-40"><a href="#cb1-40" aria-hidden="true" tabindex="-1"></a>        accumulatedLight <span class="op">+=</span> <span class="bu">texture</span><span class="op">(</span>uDiffuseTex<span class="op">,</span> uv1<span class="op">).</span><span class="fu">rgb</span> <span class="op">*</span> uWeights<span class="op">[</span>i<span class="op">]</span> <span class="op">*</span> depthWeight1<span class="op">;</span></span>
+<span id="cb1-41"><a href="#cb1-41" aria-hidden="true" tabindex="-1"></a>        accumulatedLight <span class="op">+=</span> <span class="bu">texture</span><span class="op">(</span>uDiffuseTex<span class="op">,</span> uv2<span class="op">).</span><span class="fu">rgb</span> <span class="op">*</span> uWeights<span class="op">[</span>i<span class="op">]</span> <span class="op">*</span> depthWeight2<span class="op">;</span></span>
+<span id="cb1-42"><a href="#cb1-42" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb1-43"><a href="#cb1-43" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-44"><a href="#cb1-44" aria-hidden="true" tabindex="-1"></a>    FragColor <span class="op">=</span> <span class="dt">vec4</span><span class="op">(</span>accumulatedLight<span class="op">,</span> centerColor<span class="op">.</span><span class="fu">a</span><span class="op">);</span></span>
+<span id="cb1-45"><a href="#cb1-45" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h4 id="3-final-composition-pass">3. Final Composition Pass</h4>
+<p>Combine the scattered diffuse component with the remaining rendering
+components:</p>
+<ul>
+<li>Non-scattered specular highlights (Phong, Blinn-Phong, or
+Cook-Torrance BRDF).</li>
+<li>Transmittance (thin-object back-lighting, often sampled from a
+shadow map).</li>
+<li>Ambient lighting and environment reflections.</li>
+</ul>
+<hr />
+<h3 id="key-optimizations-and-considerations">Key Optimizations and
+Considerations</h3>
+<ol type="1">
+<li><strong>Depth Discontinuities:</strong> A pure Gaussian blur bleeds
+color into surrounding, non-translucent geometry. The bilateral filter
+must strictly compare view-space depth differentials and surface normal
+orientations to cancel samples that lie outside the target surface.</li>
+<li><strong>Profile Pre-computation:</strong> Derive Gaussian kernels
+and channel-specific weights on the CPU during initialization, then
+upload them as uniform arrays or within a uniform buffer object (UBO) to
+keep the fragment stage branch-free.</li>
+<li><strong>Half-Resolution Execution:</strong> Since scattering acts as
+a low-pass filter on irradiance, this effect can be rendered into a
+half-resolution framebuffer and upsampled using a bilateral upsampling
+filter to minimize bandwidth consumption.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/subsurface-scattering-screen-space-diffusion-in-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Integer Vertex Attributes and glVertexAttribIPointer - opengl</title>
+    <meta name="description" content="In modern OpenGL, vertex data often includes non-spatial information such as bone indices for skeletal animation, material IDs, or bitmask flags that require integer representation in vertex shaders. This article explains what integer vertex attributes ar">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/integer-vertex-attributes-and-gl-vertex-attrib-i-pointer">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Integer Vertex Attributes and glVertexAttribIPointer - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/integer-vertex-attributes-and-gl-vertex-attrib-i-pointer" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In modern OpenGL, vertex data often includes non-spatial information such as bone indices for skeletal animation, material IDs, or bitmask flags that require integer representation in vertex shaders. This article explains what integer vertex attributes ar" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="integer-vertex-attributes-and-glvertexattribipointer">Integer
+Vertex Attributes and glVertexAttribIPointer</h1>
+<p>In modern OpenGL, vertex data often includes non-spatial information
+such as bone indices for skeletal animation, material IDs, or bitmask
+flags that require integer representation in vertex shaders. This
+article explains what integer vertex attributes are, how the OpenGL
+pipeline processes them, and why developers must initialize them using
+<code>glVertexAttribIPointer</code> rather than the traditional
+<code>glVertexAttribPointer</code> to avoid silent data corruption.</p>
+<h3 id="what-are-integer-vertex-attributes">What Are Integer Vertex
+Attributes?</h3>
+<p>Integer vertex attributes are per-vertex data fields that bind
+directly to integer types inside a GLSL shader—such as <code>int</code>,
+<code>ivec2</code>, <code>ivec4</code>, <code>uint</code>,
+<code>uvec3</code>, and related variants. Unlike standard attributes
+that represent continuous spatial properties like positions, normals,
+and UV coordinates (which use floating-point types like
+<code>float</code> or <code>vec3</code>), integer attributes represent
+discrete data. Common use cases include:</p>
+<ul>
+<li><strong>Skeletal animation:</strong> Bone indices pointing to
+transformation matrices.</li>
+<li><strong>Instancing and batching:</strong> Object or draw-call
+identifiers.</li>
+<li><strong>Texture arrays:</strong> Layer indices specifying which
+texture slice to sample.</li>
+<li><strong>Logic masks:</strong> Bitfields representing state flags or
+rendering modes.</li>
+</ul>
+<h3 id="the-problem-with-glvertexattribpointer">The Problem with
+<code>glVertexAttribPointer</code></h3>
+<p>OpenGL provides the standard <code>glVertexAttribPointer</code>
+function to describe the layout of vertex buffer data. A common mistake
+is attempting to configure integer attributes by setting the
+<code>type</code> parameter of <code>glVertexAttribPointer</code> to an
+integer enum, such as <code>GL_INT</code> or
+<code>GL_UNSIGNED_INT</code>:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Incorrect configuration for an &#39;in ivec4 boneIDs&#39; shader attribute</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>glVertexAttribPointer<span class="op">(</span>index<span class="op">,</span> <span class="dv">4</span><span class="op">,</span> GL_INT<span class="op">,</span> GL_FALSE<span class="op">,</span> stride<span class="op">,</span> pointer<span class="op">);</span></span></code></pre></div>
+<p>While this compiles and runs without generating an explicit
+<code>GL_INVALID_OPERATION</code> error, it causes data corruption.
+<code>glVertexAttribPointer</code> instructs the driver to load the data
+from the buffer and convert it into a floating-point value before
+delivering it to the shader:</p>
+<ol type="1">
+<li><strong>Normalized (<code>normalized = GL_TRUE</code>):</strong>
+Integer values are mapped to floating-point values in the range
+<code>[0.0, 1.0]</code> or <code>[-1.0, 1.0]</code>.</li>
+<li><strong>Un-normalized (<code>normalized = GL_FALSE</code>):</strong>
+Integer values are directly converted to floating-point numbers (for
+example, the integer <code>5</code> becomes <code>5.0f</code>).</li>
+</ol>
+<p>Because the shader input is declared as an integer type
+(<code>int</code> or <code>ivec*</code>), feeding it float-converted
+data causes a type mismatch. The hardware expects pure bit-pattern
+integers, but it receives floating-point registers. As a result, the
+shader reads undefined values, zeroes, or corrupted IDs.</p>
+<h3 id="why-glvertexattribipointer-must-be-used">Why
+<code>glVertexAttribIPointer</code> Must Be Used</h3>
+<p>The OpenGL specification introduced
+<code>glVertexAttribIPointer</code> (with the <code>I</code> standing
+for "Integer") specifically to bind integer buffer data to integer
+shader attributes without intermediate floating-point conversions.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Correct configuration for an &#39;in ivec4 boneIDs&#39; shader attribute</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>glVertexAttribIPointer<span class="op">(</span>index<span class="op">,</span> <span class="dv">4</span><span class="op">,</span> GL_INT<span class="op">,</span> stride<span class="op">,</span> pointer<span class="op">);</span></span></code></pre></div>
+<p>Notice that <code>glVertexAttribIPointer</code> does not contain a
+<code>normalized</code> parameter. This omission is intentional: integer
+vertex attributes are never normalized. Instead, the function preserves
+raw integer binary data throughout the input assembly stage:</p>
+<ul>
+<li><strong>Type Consistency:</strong> It explicitly informs the driver
+that both the buffer source and the destination GLSL attribute are
+integers.</li>
+<li><strong>Bit Preservation:</strong> Byte, short, and integer data
+types (<code>GL_BYTE</code>, <code>GL_UNSIGNED_BYTE</code>,
+<code>GL_SHORT</code>, <code>GL_UNSIGNED_SHORT</code>,
+<code>GL_INT</code>, <code>GL_UNSIGNED_INT</code>) are sign-extended or
+zero-extended directly into 32-bit integer shader registers without
+touching floating-point execution units.</li>
+<li><strong>Correct Indexing:</strong> Integer lookups, such as array
+indices and bitwise operators (<code>&amp;</code>, <code>|</code>,
+<code>^</code>), function as expected inside the shader without rounding
+errors or precision loss.</li>
+</ul>
+<h3 id="summary-of-pointer-functions">Summary of Pointer Functions</h3>
+<p>To ensure data reaches shaders correctly, choose the attribute
+configuration function that matches the GLSL input declaration:</p>
+<ul>
+<li>Use <strong><code>glVertexAttribPointer</code></strong> for
+attributes declared as floating-point types (<code>float</code>,
+<code>vec2</code>, <code>vec3</code>, <code>vec4</code>), even if the
+underlying buffer data uses packed integer formats intended for
+normalization or float conversion.</li>
+<li>Use <strong><code>glVertexAttribIPointer</code></strong> strictly
+for attributes declared as integer types (<code>int</code>,
+<code>ivec*</code>, <code>uint</code>, <code>uvec*</code>).</li>
+<li>Use <strong><code>glVertexAttribLPointer</code></strong> for
+attributes declared as 64-bit double-precision types
+(<code>double</code>, <code>dvec*</code>).</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/integer-vertex-attributes-and-gl-vertex-attrib-i-pointer';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

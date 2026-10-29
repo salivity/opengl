@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Particle Rendering: Point Sprites vs Quads - opengl</title>
+    <meta name="description" content="Particle systems in OpenGL commonly rely on either point sprites (GLPOINTS) or instanced quads to draw large volumes of 2D billboards. While instanced quads offer superior flexibility for rotation and custom geometry, point sprites provide distinct perfor">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-particle-rendering-point-sprites-vs-quads">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Particle Rendering: Point Sprites vs Quads - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-particle-rendering-point-sprites-vs-quads" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Particle systems in OpenGL commonly rely on either point sprites (GLPOINTS) or instanced quads to draw large volumes of 2D billboards. While instanced quads offer superior flexibility for rotation and custom geometry, point sprites provide distinct perfor" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-particle-rendering-point-sprites-vs-quads">OpenGL
+Particle Rendering: Point Sprites vs Quads</h1>
+<p>Particle systems in OpenGL commonly rely on either point sprites
+(<code>GL_POINTS</code>) or instanced quads to draw large volumes of 2D
+billboards. While instanced quads offer superior flexibility for
+rotation and custom geometry, point sprites provide distinct performance
+benefits by minimizing memory bandwidth, reducing vertex pipeline
+overhead, and simplifying data throughput. This article examines how
+point sprites achieve these efficiency gains over instanced quads,
+alongside the technical trade-offs developers must evaluate.</p>
+<h2 id="reduced-vertex-bandwidth-and-memory-footprint">Reduced Vertex
+Bandwidth and Memory Footprint</h2>
+<p>The primary performance advantage of point sprites lies in vertex
+data transfer. An instanced quad setup requires drawing two triangles
+(four vertices) per particle. Even when using hardware instancing where
+particle-specific data is stored in a separate per-instance buffer, the
+GPU must still process an index buffer and manage the base vertex
+geometry for every particle.</p>
+<p>In contrast, point sprites define an entire particle using a single
+vertex (<code>GL_POINTS</code>). Because each particle requires only one
+position and attribute set instead of four, the total data passed
+through the vertex stream is significantly smaller. This drastically
+reduces vertex buffer object (VBO) memory usage and bus bandwidth
+between system RAM and the GPU, which is often a critical bottleneck
+when rendering hundreds of thousands of particles simultaneously.</p>
+<h2 id="decreased-vertex-shader-workload">Decreased Vertex Shader
+Workload</h2>
+<p>With instanced quads, the vertex shader must execute for each vertex
+of the quad—typically four times per particle—to calculate screen
+positions and texture coordinates.</p>
+<p>Point sprites execute the vertex shader only once per particle. The
+vertex shader outputs the particle's center position and sets the
+built-in variable <code>gl_PointSize</code>. Because the vertex shader
+stage runs at one-fourth the frequency compared to non-indexed quads,
+the GPU's fixed-function scheduling and unified shader cores handle
+substantially lower workloads before rasterization begins.</p>
+<h2 id="hardware-rasterizer-quad-generation">Hardware Rasterizer Quad
+Generation</h2>
+<p>Instead of using the primitive assembly stage to construct two
+triangles per particle, point sprites offload quad generation directly
+to the GPU rasterizer. The rasterizer takes the single vertex and
+automatically expands it into a screen-aligned square based on
+<code>gl_PointSize</code>.</p>
+<p>During fragment shading, OpenGL provides the built-in variable
+<code>gl_PointCoord</code>, which supplies normalized two-dimensional
+coordinates (ranging from 0.0 to 1.0) across the point's surface. This
+eliminates the need to pass explicit texture coordinates (UVs) through
+vertex attributes or varying registers, further conserving hardware
+interpolation resources.</p>
+<h2 id="limitations-and-trade-offs">Limitations and Trade-Offs</h2>
+<p>While point sprites provide memory and vertex processing advantages,
+they introduce several technical limitations compared to instanced
+quads:</p>
+<ul>
+<li><strong>Size Limitations:</strong> Hardware drivers enforce a
+maximum point size limit via <code>GL_POINT_SIZE_RANGE</code>. If
+particles need to scale beyond this maximum (such as when approaching
+the camera), point sprites clamp and produce visual artifacts.</li>
+<li><strong>Clipping Behavior:</strong> Because a point sprite is
+defined by a single center point, OpenGL's clipping stage tests only
+that single coordinate against the view frustum. If the center falls
+just outside the screen boundary, the entire particle can abruptly
+disappear, even if its visual radius should remain partially on-screen.
+Instanced quads clip properly per-triangle at the frustum
+boundaries.</li>
+<li><strong>Rotation Constraints:</strong> Point sprites are natively
+axis-aligned to screen space. Rotating a particle requires manually
+transforming <code>gl_PointCoord</code> inside the fragment shader using
+2D rotation matrices, which increases per-pixel fragment costs.</li>
+</ul>
+<h2 id="conclusion">Conclusion</h2>
+<p>Particle rendering benefits from point sprites primarily when the
+system is constrained by memory bandwidth, vertex throughput, or sheer
+particle count. For massive effects like dust, sparks, stars, or
+rain—where particles remain relatively small and do not require
+individual rotation—point sprites deliver substantial rendering
+performance gains over instanced quads. When particles must support true
+camera-space rotation, custom aspect ratios, or scale up close to the
+camera, instanced quads remain the necessary standard.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/open-gl-particle-rendering-point-sprites-vs-quads';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

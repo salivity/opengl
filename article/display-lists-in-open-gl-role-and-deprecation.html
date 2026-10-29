@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Display Lists in OpenGL: Role and Deprecation - opengl</title>
+    <meta name="description" content="In early versions of OpenGL, display lists served as a primary optimization technique by compiling rendering commands and geometry into reusable, server-side memory blocks. While they drastically improved performance compared to immediate mode rendering,">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/display-lists-in-open-gl-role-and-deprecation">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Display Lists in OpenGL: Role and Deprecation - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/display-lists-in-open-gl-role-and-deprecation" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In early versions of OpenGL, display lists served as a primary optimization technique by compiling rendering commands and geometry into reusable, server-side memory blocks. While they drastically improved performance compared to immediate mode rendering," />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="display-lists-in-opengl-role-and-deprecation">Display Lists in
+OpenGL: Role and Deprecation</h1>
+<p>In early versions of OpenGL, display lists served as a primary
+optimization technique by compiling rendering commands and geometry into
+reusable, server-side memory blocks. While they drastically improved
+performance compared to immediate mode rendering, the evolution of
+programmable graphics hardware eventually rendered them obsolete. This
+article examines the original function of display lists in legacy
+OpenGL, the architectural bottlenecks they created, and the reasons
+modern OpenGL completely removed them in favor of flexible buffer-based
+architectures.</p>
+<h3 id="the-role-of-display-lists-in-legacy-opengl">The Role of Display
+Lists in Legacy OpenGL</h3>
+<p>In legacy OpenGL (versions 1.x and 2.x), rendering geometry was
+typically done using immediate mode. Developers issued commands
+sequentially between <code>glBegin()</code> and <code>glEnd()</code>
+calls, sending vertex coordinates, normals, and colors one by one across
+the system bus from the CPU to the GPU. This process introduced
+significant CPU overhead and created a major communication
+bottleneck.</p>
+<p>To solve this, OpenGL introduced display lists via commands such as
+<code>glNewList()</code>, <code>glEndList()</code>, and
+<code>glCallList()</code>. A display list allowed developers to record a
+sequence of OpenGL commands—including geometry definition, texture
+binding, matrix transformations, and material properties—and compile
+them directly into the graphics driver or GPU memory. Once compiled, an
+application could execute the entire sequence with a single call to
+<code>glCallList()</code>. This eliminated per-frame CPU-to-GPU data
+transfer overhead and allowed drivers to optimize the recorded state
+changes and geometry for faster execution on the hardware.</p>
+<h3 id="why-display-lists-were-deprecated">Why Display Lists Were
+Deprecated</h3>
+<p>Despite their utility in early 3D graphics, display lists suffered
+from critical design flaws that became incompatible with the transition
+to modern GPU architectures:</p>
+<ul>
+<li><strong>Static Nature and Immutability:</strong> Display lists were
+strictly immutable. Once compiled, an application could not modify
+individual vertices or properties inside the list. If any geometry
+shifted or deformed, the entire list had to be destroyed and recompiled
+from scratch. This made them largely useless for animated meshes,
+particle systems, or dynamically generated terrain.</li>
+<li><strong>Driver Complexity and Inconsistent Performance:</strong>
+Display lists were treated as a "black box." Because a list could
+encapsulate arbitrary OpenGL state changes rather than just raw
+geometry, the optimization process was left entirely up to the graphics
+driver vendor. Consequently, a display list might run exceptionally well
+on one vendor's GPU but suffer major performance degradation or driver
+crashes on another.</li>
+<li><strong>Shift to Programmable Pipelines:</strong> Early OpenGL
+relied on a fixed-function pipeline, where rendering logic (lighting,
+fog, coordinate transforms) was hardcoded into the graphics system. As
+GPUs evolved into fully programmable computing engines powered by vertex
+and fragment shaders, storing fixed command sequences became redundant
+and inefficient. Modern architectures require decoupled data buffers
+rather than recorded command sequences.</li>
+<li><strong>Superior Alternatives:</strong> The introduction of Vertex
+Buffer Objects (VBOs) in OpenGL 1.5 offered a direct, transparent way to
+store raw vertex arrays directly in GPU video memory. Unlike display
+lists, VBOs allowed developers to stream, update, or partially map
+memory efficiently without reallocating resources. Combined with Vertex
+Array Objects (VAOs), which store vertex state bindings, VBOs offered
+all the caching advantages of display lists without the associated
+overhead or inflexibility.</li>
+</ul>
+<p>Due to these architectural limitations, display lists were marked as
+deprecated in OpenGL 3.0 and entirely removed from the OpenGL Core
+Profile in version 3.1. Modern graphics programming favors explicit
+control over GPU memory and programmable pipeline state over
+driver-managed command recording.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/display-lists-in-open-gl-role-and-deprecation';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

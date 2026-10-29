@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How to Implement SSAO in OpenGL with Shaders - opengl</title>
+    <meta name="description" content="Screen-Space Ambient Occlusion (SSAO) is a real-time rendering technique designed to approximate the soft contact shadows that occur when ambient light is blocked by nearby geometry. This article explains the fundamentals of SSAO and provides a step-by-st">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-to-implement-ssao-in-open-gl-with-shaders">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How to Implement SSAO in OpenGL with Shaders - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-to-implement-ssao-in-open-gl-with-shaders" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Screen-Space Ambient Occlusion (SSAO) is a real-time rendering technique designed to approximate the soft contact shadows that occur when ambient light is blocked by nearby geometry. This article explains the fundamentals of SSAO and provides a step-by-st" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-to-implement-ssao-in-opengl-with-shaders">How to Implement
+SSAO in OpenGL with Shaders</h1>
+<p>Screen-Space Ambient Occlusion (SSAO) is a real-time rendering
+technique designed to approximate the soft contact shadows that occur
+when ambient light is blocked by nearby geometry. This article explains
+the fundamentals of SSAO and provides a step-by-step guide to
+implementing it using OpenGL framebuffer textures, sample kernels, and
+GLSL shaders, concluding with the blur pass required to produce smooth,
+realistic ambient shadowing.</p>
+<h2 id="understanding-screen-space-ambient-occlusion">Understanding
+Screen-Space Ambient Occlusion</h2>
+<p>Ambient occlusion simulates indirect lighting attenuation in
+crevices, corners, and intersecting surfaces. Traditional global
+illumination calculates this using expensive ray tracing. SSAO
+approximates this effect entirely in screen space as a post-processing
+effect, originally developed by Crytek.</p>
+<p>By analyzing the depth buffer and surface normals of neighboring
+pixels, SSAO determines how "occluded" a given point is by surrounding
+geometry. If a fragment is surrounded by geometry that sticks out past
+it, ambient light reaches it less, and the fragment is darkened.</p>
+<h2 id="step-1-the-geometry-pass-g-buffer">Step 1: The Geometry Pass
+(G-Buffer)</h2>
+<p>SSAO requires access to geometric data in view space. Before running
+the occlusion calculation, render the scene to a multi-render target
+(MRT) Framebuffer Object (FBO) to capture:</p>
+<ol type="1">
+<li><strong>Position Texture:</strong> The fragment's position in view
+space (usually formatted as <code>GL_RGBA16F</code>).</li>
+<li><strong>Normal Texture:</strong> The surface normal vector in view
+space (<code>GL_RGBA16F</code>).</li>
+<li><strong>Albedo/Depth:</strong> Standard color and linear depth
+values.</li>
+</ol>
+<p>In the geometry fragment shader, write the view-space coordinates
+directly:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 330 core</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span> <span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">out</span> <span class="dt">vec3</span> gPosition<span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span> <span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">1</span><span class="op">)</span> <span class="dt">out</span> <span class="dt">vec3</span> gNormal<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="dt">in</span> <span class="dt">vec3</span> FragPos<span class="op">;</span> <span class="co">// View-space position from vertex shader</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="dt">in</span> <span class="dt">vec3</span> Normal<span class="op">;</span>  <span class="co">// View-space normal from vertex shader</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    gPosition <span class="op">=</span> FragPos<span class="op">;</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    gNormal <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span>Normal<span class="op">);</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h2 id="step-2-generating-the-sample-kernel-and-noise">Step 2:
+Generating the Sample Kernel and Noise</h2>
+<p>SSAO samples points within a hemisphere oriented along the surface
+normal.</p>
+<ol type="1">
+<li><strong>Sample Kernel:</strong> Generate an array of 32 to 64 sample
+vectors in tangent space. These points should be distributed randomly
+within a unit hemisphere (where z &gt; 0.0), with higher density toward
+the center of the sphere using an acceleration curve.</li>
+<li><strong>Noise Texture:</strong> Generate a small 4x4 texture filled
+with random rotation vectors lying on the tangent plane (z = 0.0). By
+tiling this texture across the screen, you randomly rotate the
+hemisphere kernel per pixel, swapping regular banding artifacts for
+high-frequency noise that is easily blurred later.</li>
+</ol>
+<p>Upload the sample points to the SSAO shader via uniform arrays or a
+Uniform Buffer Object (UBO), and bind the 4x4 noise texture to an active
+texture unit using <code>GL_REPEAT</code>.</p>
+<h2 id="step-3-the-ssao-fragment-shader">Step 3: The SSAO Fragment
+Shader</h2>
+<p>The core calculation takes place on a screen-filling quad:</p>
+<ol type="1">
+<li><p><strong>Reconstruct Tangent Basis:</strong> Sample the noise
+texture and normal texture to construct a Tangent-Bitangent-Normal (TBN)
+matrix:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> normal <span class="op">=</span> <span class="bu">texture</span><span class="op">(</span>gNormal<span class="op">,</span> TexCoords<span class="op">).</span><span class="fu">rgb</span><span class="op">;</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> randomVec <span class="op">=</span> <span class="bu">texture</span><span class="op">(</span>texNoise<span class="op">,</span> TexCoords <span class="op">*</span> noiseScale<span class="op">).</span><span class="fu">xyz</span><span class="op">;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> tangent <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span>randomVec <span class="op">-</span> normal <span class="op">*</span> <span class="bu">dot</span><span class="op">(</span>randomVec<span class="op">,</span> normal<span class="op">));</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> bitangent <span class="op">=</span> <span class="bu">cross</span><span class="op">(</span>normal<span class="op">,</span> tangent<span class="op">);</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="dt">mat3</span> TBN <span class="op">=</span> <span class="dt">mat3</span><span class="op">(</span>tangent<span class="op">,</span> bitangent<span class="op">,</span> normal<span class="op">);</span></span></code></pre></div></li>
+<li><p><strong>Sample the Hemisphere:</strong> For each sample in the
+kernel, transform it to view space using the TBN matrix and offset it
+from the current fragment position:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> samplePos <span class="op">=</span> fragPos <span class="op">+</span> <span class="op">(</span>TBN <span class="op">*</span> samples<span class="op">[</span>i<span class="op">])</span> <span class="op">*</span> radius<span class="op">;</span></span></code></pre></div></li>
+<li><p><strong>Project to Screen Space:</strong> Project the sample
+position into clip space, then normalize device coordinates (NDC), and
+transform to texture coordinates <code>[0.0, 1.0]</code>:</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="dt">vec4</span> <span class="dt">offset</span> <span class="op">=</span> projection <span class="op">*</span> <span class="dt">vec4</span><span class="op">(</span>samplePos<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="dt">offset</span><span class="op">.</span><span class="fu">xyz</span> <span class="op">/=</span> <span class="dt">offset</span><span class="op">.</span><span class="fu">w</span><span class="op">;</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="dt">offset</span><span class="op">.</span><span class="fu">xyz</span> <span class="op">=</span> <span class="dt">offset</span><span class="op">.</span><span class="fu">xyz</span> <span class="op">*</span> <span class="fl">0.5</span> <span class="op">+</span> <span class="fl">0.5</span><span class="op">;</span></span></code></pre></div></li>
+<li><p><strong>Depth Comparison:</strong> Read the depth at the offset
+texture coordinate from the G-Buffer position texture. If the actual
+surface depth is closer to the camera than the sample's depth, the
+sample is inside geometry and counts toward occlusion:</p>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> sampleDepth <span class="op">=</span> <span class="bu">texture</span><span class="op">(</span>gPosition<span class="op">,</span> <span class="dt">offset</span><span class="op">.</span><span class="fu">xy</span><span class="op">).</span><span class="fu">z</span><span class="op">;</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> rangeCheck <span class="op">=</span> <span class="bu">smoothstep</span><span class="op">(</span><span class="fl">0.0</span><span class="op">,</span> <span class="fl">1.0</span><span class="op">,</span> radius <span class="op">/</span> <span class="bu">abs</span><span class="op">(</span>fragPos<span class="op">.</span><span class="fu">z</span> <span class="op">-</span> sampleDepth<span class="op">));</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>occlusion <span class="op">+=</span> <span class="op">(</span>sampleDepth <span class="op">&gt;=</span> samplePos<span class="op">.</span><span class="fu">z</span> <span class="op">+</span> bias <span class="op">?</span> <span class="fl">1.0</span> <span class="op">:</span> <span class="fl">0.0</span><span class="op">)</span> <span class="op">*</span> rangeCheck<span class="op">;</span></span></code></pre></div></li>
+<li><p><strong>Final Factor:</strong> Average the accumulated occlusion
+and invert it (<code>1.0 - (occlusion / kernelSize)</code>) to obtain an
+ambient accessibility factor stored in a single-channel texture
+(<code>GL_RED</code>).</p></li>
+</ol>
+<h2 id="step-4-the-blur-pass">Step 4: The Blur Pass</h2>
+<p>The resulting SSAO texture contains high-frequency noise caused by
+the rotated sample kernel. To resolve this, render the occlusion texture
+into a second framebuffer using a bilateral or simple box blur.</p>
+<p>A standard 4x4 box blur averages neighboring texels while preserving
+edges by rejecting samples that differ significantly in depth or normal
+direction.</p>
+<h2 id="step-5-final-composition">Step 5: Final Composition</h2>
+<p>During the final lighting pass, sample the blurred SSAO texture using
+the current fragment's screen coordinates. Multiply the ambient lighting
+term by the SSAO factor:</p>
+<div class="sourceCode" id="cb6"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> ambient <span class="op">=</span> ambientColor <span class="op">*</span> <span class="bu">texture</span><span class="op">(</span>ssaoTexture<span class="op">,</span> TexCoords<span class="op">).</span><span class="fu">r</span><span class="op">;</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> color <span class="op">=</span> ambient <span class="op">+</span> diffuse <span class="op">+</span> specular<span class="op">;</span></span></code></pre></div>
+<p>This darkens crevices naturally while leaving direct diffuse and
+specular lighting untouched.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/how-to-implement-ssao-in-open-gl-with-shaders';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

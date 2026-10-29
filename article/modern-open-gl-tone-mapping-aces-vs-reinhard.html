@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modern OpenGL Tone Mapping: ACES vs Reinhard - opengl</title>
+    <meta name="description" content="High Dynamic Range (HDR) rendering requires a tone-mapping operator to map colors from unbounded radiance values down to the standard [0, 1] range of standard dynamic range displays. While the Reinhard tone mapper historically served as the default choice">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/modern-open-gl-tone-mapping-aces-vs-reinhard">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Modern OpenGL Tone Mapping: ACES vs Reinhard - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/modern-open-gl-tone-mapping-aces-vs-reinhard" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="High Dynamic Range (HDR) rendering requires a tone-mapping operator to map colors from unbounded radiance values down to the standard [0, 1] range of standard dynamic range displays. While the Reinhard tone mapper historically served as the default choice" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="modern-opengl-tone-mapping-aces-vs-reinhard">Modern OpenGL Tone
+Mapping: ACES vs Reinhard</h1>
+<p>High Dynamic Range (HDR) rendering requires a tone-mapping operator
+to map colors from unbounded radiance values down to the standard [0, 1]
+range of standard dynamic range displays. While the Reinhard tone mapper
+historically served as the default choice in early OpenGL development
+due to its mathematical simplicity, the ACES (Academy Color Encoding
+System) tone-mapping curve has become the de facto standard integrated
+into modern OpenGL post-processing pipelines. This transition is driven
+by ACES’s ability to preserve contrast, prevent color shifting in bright
+areas, and produce a filmic aesthetic with minimal performance
+overhead.</p>
+<h3 id="the-shift-from-reinhard-to-aces">The Shift from Reinhard to
+ACES</h3>
+<p>Reinhard tone mapping functions by applying a simple rational
+function—typically <code>color / (color + 1.0)</code>—to compress
+luminance or individual RGB channels. While computationally lightweight
+and effective at preventing hard clipping, Reinhard possesses
+significant limitations:</p>
+<ul>
+<li><strong>Desaturation and Dullness:</strong> Reinhard tends to wash
+out high-luminance areas, turning bright colors toward a chalky white or
+gray.</li>
+<li><strong>Loss of Contrast:</strong> The curve flattens midtones and
+compresses dark areas uniformly, resulting in a low-contrast image that
+often requires secondary color grading to look visually appealing.</li>
+</ul>
+<p>To resolve these issues, modern real-time graphics pipelines adopted
+filmic curves. Among these, ACES has become the primary choice in
+contemporary OpenGL shaders.</p>
+<h3 id="why-aces-dominates-modern-opengl">Why ACES Dominates Modern
+OpenGL</h3>
+<p>ACES was originally created by the Academy of Motion Picture Arts and
+Sciences for film production, but lightweight analytical fits made it
+viable for real-time rendering. Today, most modern OpenGL engines
+implement the fitted ACES approximation developed by Krzysztof Narkowicz
+or Stephen Hill.</p>
+<p>ACES is preferred in modern post-processing for several critical
+reasons:</p>
+<ol type="1">
+<li><strong>Natural S-Curve Response:</strong> ACES introduces a
+shoulder for highlight roll-off, a linear midtone region, and a toe for
+deep blacks. This S-curve mimics the behavior of physical film,
+providing high contrast without crushing shadows.</li>
+<li><strong>Hue Preservation:</strong> Unlike per-channel Reinhard,
+which alters color ratios at high intensities, ACES maintains proper hue
+fidelity even when light values scale past standard display limits.</li>
+<li><strong>Low Computational Cost:</strong> The analytical
+approximation requires only a few multiply-add operations in a fragment
+shader, making it practically as fast as Reinhard on modern GPUs.</li>
+</ol>
+<h3 id="glsl-implementation-of-the-modern-standard">GLSL Implementation
+of the Modern Standard</h3>
+<p>In a standard modern OpenGL post-processing fragment shader, the
+Narkowicz ACES fit is typically implemented as follows:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 330 core</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec4</span> FragColor<span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="dt">in</span> <span class="dt">vec2</span> TexCoords<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">sampler2D</span> hdrBuffer<span class="op">;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">float</span> exposure<span class="op">;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> <span class="fu">ACESFilm</span><span class="op">(</span><span class="dt">vec3</span> x<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> a <span class="op">=</span> <span class="fl">2.51</span><span class="op">;</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> b <span class="op">=</span> <span class="fl">0.03</span><span class="op">;</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> c <span class="op">=</span> <span class="fl">2.43</span><span class="op">;</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> d <span class="op">=</span> <span class="fl">0.59</span><span class="op">;</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> e <span class="op">=</span> <span class="fl">0.14</span><span class="op">;</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> <span class="bu">clamp</span><span class="op">((</span>x <span class="op">*</span> <span class="op">(</span>a <span class="op">*</span> x <span class="op">+</span> b<span class="op">))</span> <span class="op">/</span> <span class="op">(</span>x <span class="op">*</span> <span class="op">(</span>c <span class="op">*</span> x <span class="op">+</span> d<span class="op">)</span> <span class="op">+</span> e<span class="op">),</span> <span class="fl">0.0</span><span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> hdrColor <span class="op">=</span> <span class="bu">texture</span><span class="op">(</span>hdrBuffer<span class="op">,</span> TexCoords<span class="op">).</span><span class="fu">rgb</span> <span class="op">*</span> exposure<span class="op">;</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> ldrColor <span class="op">=</span> <span class="fu">ACESFilm</span><span class="op">(</span>hdrColor<span class="op">);</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Gamma correction</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>    ldrColor <span class="op">=</span> <span class="bu">pow</span><span class="op">(</span>ldrColor<span class="op">,</span> <span class="dt">vec3</span><span class="op">(</span><span class="fl">1.0</span> <span class="op">/</span> <span class="fl">2.2</span><span class="op">));</span></span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a>    FragColor <span class="op">=</span> <span class="dt">vec4</span><span class="op">(</span>ldrColor<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="alternatives-in-modern-pipelines">Alternatives in Modern
+Pipelines</h3>
+<p>While ACES is the most integrated curve for cinematic and physically
+based game rendering, modern OpenGL developers also utilize specific
+alternatives depending on project requirements:</p>
+<ul>
+<li><strong>Khronos PBR Neutral:</strong> Standardized by the Khronos
+Group for glTF rendering, this operator avoids the stylized color shifts
+of ACES. It is increasingly adopted in modern OpenGL applications
+focused on e-commerce, product visualization, and CAD where color
+fidelity to the original asset is mandatory.</li>
+<li><strong>Uncharted 2 (Hable):</strong> John Hable's filmic curve
+provided the bridge between Reinhard and ACES. It provides extensive
+manual control over the shoulder, toe, and midtones, but requires more
+arithmetic and fine-tuning than ACES.</li>
+</ul>
+<p>For the vast majority of modern OpenGL applications aiming for
+realistic lighting, physically based rendering (PBR), and visually
+compelling results, the ACES filmic approximation remains the premier,
+industry-standard choice.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/modern-open-gl-tone-mapping-aces-vs-reinhard';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

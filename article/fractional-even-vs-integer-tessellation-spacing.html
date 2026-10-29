@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fractional Even vs Integer Tessellation Spacing - opengl</title>
+    <meta name="description" content="In OpenGL, the tessellation primitive generation stage divides abstract patch edges into smaller segments based on tessellation levels and a designated spacing mode. The choice between integer spacing and fractional even spacing dictates whether the gener">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/fractional-even-vs-integer-tessellation-spacing">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Fractional Even vs Integer Tessellation Spacing - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/fractional-even-vs-integer-tessellation-spacing" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In OpenGL, the tessellation primitive generation stage divides abstract patch edges into smaller segments based on tessellation levels and a designated spacing mode. The choice between integer spacing and fractional even spacing dictates whether the gener" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="fractional-even-vs-integer-tessellation-spacing">Fractional Even
+vs Integer Tessellation Spacing</h1>
+<p>In OpenGL, the tessellation primitive generation stage divides
+abstract patch edges into smaller segments based on tessellation levels
+and a designated spacing mode. The choice between integer spacing and
+fractional even spacing dictates whether the generated segments adapt
+continuously or abruptly when tessellation factors change dynamically.
+While integer spacing strictly produces equally sized segments using
+whole numbers, fractional even spacing introduces new geometry
+gradually, eliminating noticeable geometric popping during dynamic Level
+of Detail (LOD) transitions.</p>
+<h3 id="integer-spacing-equal_spacing">Integer Spacing
+(<code>equal_spacing</code>)</h3>
+<p>When an OpenGL tessellation evaluation shader uses
+<code>equal_spacing</code>, the floating-point tessellation level is
+clamped to the range <span class="math inline">\([1,
+\text{GL\_MAX\_TESS\_GEN\_LEVEL}]\)</span> and rounded up to the nearest
+integer, <span class="math inline">\(n\)</span>.</p>
+<p>The edge is then partitioned into exactly <span
+class="math inline">\(n\)</span> segments of identical length, where
+each segment length is <span class="math inline">\(1/n\)</span> of the
+total parametric edge.</p>
+<p>Because the segment count jumps directly from one whole integer to
+the next, any continuous modification of the tessellation level—such as
+moving the camera toward an object—causes sudden changes in mesh
+density. When the level increases past an integer boundary (e.g., from
+3.0 to 3.01), a new vertex instantly appears, and the lengths of all
+existing segments contract instantaneously. This produces visible
+"popping" artifacts in rendered geometry.</p>
+<h3 id="fractional-even-spacing-fractional_even_spacing">Fractional Even
+Spacing (<code>fractional_even_spacing</code>)</h3>
+<p>To resolve geometric popping, <code>fractional_even_spacing</code>
+provides continuous, smooth transitions. The incoming tessellation level
+is clamped to <span class="math inline">\([2,
+\text{GL\_MAX\_TESS\_GEN\_LEVEL}]\)</span> and rounded up to the next
+even integer, <span class="math inline">\(n\)</span>.</p>
+<p>Unlike integer spacing, the generated segments are not all required
+to be identical in length during intermediate steps. Instead, the edge
+is divided into <span class="math inline">\(n - 2\)</span> segments of
+equal length and two additional, symmetric segments that scale
+dynamically:</p>
+<ul>
+<li>When the tessellation level exactly equals an even integer <span
+class="math inline">\(n - 2\)</span>, the two additional segments have a
+length of zero, effectively rendering <span class="math inline">\(n -
+2\)</span> equal segments.</li>
+<li>As the tessellation level continuously increases toward <span
+class="math inline">\(n\)</span>, the two scaling segments gradually
+expand from zero length until all <span class="math inline">\(n\)</span>
+segments reach equal lengths.</li>
+<li>This smooth transition ensures that new vertices emerge continuously
+from the boundary instead of snapping into place.</li>
+</ul>
+<p>Because the maximum division count is always an even number, symmetry
+is preserved across the center of the patch edge.</p>
+<h3 id="summary-of-differences">Summary of Differences</h3>
+<ol type="1">
+<li><strong>Minimum Tessellation Factor:</strong> Integer spacing allows
+a minimum factor of 1 (a single undivided edge), whereas fractional even
+spacing clamps the minimum factor to 2.</li>
+<li><strong>Segment Uniformity:</strong> Integer spacing guarantees that
+every segment along an edge is identical in length at all times.
+Fractional even spacing produces segments of non-uniform length while
+the tessellation factor falls between even integers.</li>
+<li><strong>Visual Continuity:</strong> Integer spacing causes sudden
+popping artifacts when tessellation factors fluctuate dynamically.
+Fractional even spacing allows seamless geometric morphing, making it
+significantly better suited for smooth distance-based LOD
+implementations.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/fractional-even-vs-integer-tessellation-spacing';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

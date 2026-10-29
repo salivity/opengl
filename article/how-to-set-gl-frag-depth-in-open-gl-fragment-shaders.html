@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How to Set gl_FragDepth in OpenGL Fragment Shaders - opengl</title>
+    <meta name="description" content="In OpenGL, the depth value of a fragment is calculated automatically during rasterization based on its interpolated vertex positions. However, advanced rendering techniques such as raymarching, billboarding, and analytical impostors require replacing this">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-to-set-gl-frag-depth-in-open-gl-fragment-shaders">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How to Set gl_FragDepth in OpenGL Fragment Shaders - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-to-set-gl-frag-depth-in-open-gl-fragment-shaders" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In OpenGL, the depth value of a fragment is calculated automatically during rasterization based on its interpolated vertex positions. However, advanced rendering techniques such as raymarching, billboarding, and analytical impostors require replacing this" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-to-set-gl_fragdepth-in-opengl-fragment-shaders">How to Set
+gl_FragDepth in OpenGL Fragment Shaders</h1>
+<p>In OpenGL, the depth value of a fragment is calculated automatically
+during rasterization based on its interpolated vertex positions.
+However, advanced rendering techniques such as raymarching,
+billboarding, and analytical impostors require replacing this
+hardware-generated depth with a custom value. By writing directly to the
+built-in GLSL output variable <code>gl_FragDepth</code>, developers can
+explicitly author per-fragment depth values to control the depth buffer
+test and subsequent depth writes. This article covers how to implement
+<code>gl_FragDepth</code>, how window-space depth is calculated, and how
+to mitigate the performance penalties associated with manual depth
+modification.</p>
+<h3 id="basic-implementation">Basic Implementation</h3>
+<p><code>gl_FragDepth</code> is a built-in floating-point variable
+available in the fragment shader. To write a custom depth value, assign
+a float in the range <span class="math inline">\([0.0, 1.0]\)</span>,
+which corresponds to the standard OpenGL window-space depth bounds.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 330 core</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec4</span> FragColor<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Compute your shading color</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    FragColor <span class="op">=</span> <span class="dt">vec4</span><span class="op">(</span><span class="fl">1.0</span><span class="op">,</span> <span class="fl">0.0</span><span class="op">,</span> <span class="fl">0.0</span><span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Explicitly write custom depth value (between 0.0 and 1.0)</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    <span class="bu">gl_FragDepth</span> <span class="op">=</span> <span class="fl">0.5</span><span class="op">;</span> </span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>If a fragment shader does not write to <code>gl_FragDepth</code>, the
+hardware defaults to using <code>gl_FragCoord.z</code>. Once you write
+to <code>gl_FragDepth</code> in any execution branch, you must ensure
+that all code paths assign a valid value, otherwise the resulting depth
+for fragments following non-writing paths becomes undefined.</p>
+<h3
+id="calculating-normalized-device-coordinates-to-window-depth">Calculating
+Normalized Device Coordinates to Window Depth</h3>
+<p>When computing custom geometry inside the fragment shader (such as
+finding the intersection point of a ray and a sphere), the resulting
+world-space or view-space position must be mapped into window-space
+depth to integrate seamlessly with the existing depth buffer.</p>
+<ol type="1">
+<li>Transform the view-space position using the projection matrix to
+obtain clip-space coordinates.</li>
+<li>Divide the clip-space Z by clip-space W to get the Normalized Device
+Coordinate (<span class="math inline">\(Z_{ndc}\)</span>).</li>
+<li>Transform <span class="math inline">\(Z_{ndc}\)</span> from <span
+class="math inline">\([-1.0, 1.0]\)</span> into window space <span
+class="math inline">\([0.0, 1.0]\)</span>.</li>
+</ol>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">mat4</span> u_ProjectionMatrix<span class="op">;</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> <span class="fu">calculateDepth</span><span class="op">(</span><span class="dt">vec3</span> viewSpacePosition<span class="op">)</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> clipSpacePos <span class="op">=</span> u_ProjectionMatrix <span class="op">*</span> <span class="dt">vec4</span><span class="op">(</span>viewSpacePosition<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> ndcDepth <span class="op">=</span> clipSpacePos<span class="op">.</span><span class="fu">z</span> <span class="op">/</span> clipSpacePos<span class="op">.</span><span class="fu">w</span><span class="op">;</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Map from [-1.0, 1.0] to [0.0, 1.0]</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> <span class="op">(</span>ndcDepth <span class="op">*</span> <span class="fl">0.5</span><span class="op">)</span> <span class="op">+</span> <span class="fl">0.5</span><span class="op">;</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> calculatedViewPos <span class="op">=</span> <span class="co">/* ... custom calculation ... */</span><span class="op">;</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>    <span class="bu">gl_FragDepth</span> <span class="op">=</span> <span class="fu">calculateDepth</span><span class="op">(</span>calculatedViewPos<span class="op">);</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>    FragColor <span class="op">=</span> <span class="dt">vec4</span><span class="op">(</span><span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="performance-impact-early-z-rejection">Performance Impact:
+Early-Z Rejection</h3>
+<p>Modern GPUs utilize Early Depth Testing (Early-Z and Hierarchical-Z)
+to discard occluded fragments before the fragment shader executes,
+significantly reducing shading overhead.</p>
+<p>Assigning a value to <code>gl_FragDepth</code> disables Early-Z by
+default. Because the GPU cannot predict what value the shader will
+assign to the depth buffer, it must execute the fragment shader
+completely for every fragment covering the polygon, regardless of
+whether it will eventually be occluded.</p>
+<h3 id="restoring-optimizations-with-conservative-depth">Restoring
+Optimizations with Conservative Depth</h3>
+<p>To regain some early rejection optimizations while still authoring
+custom depth values, OpenGL 4.2 introduced layout qualifiers for
+<code>gl_FragDepth</code> (also available via the
+<code>GL_ARB_conservative_depth</code> extension). These qualifiers
+provide hints to the GPU regarding the nature of the depth
+modification:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 420 core</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="co">// Declare depth layout qualifier before main</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span> <span class="op">(</span>depth_greater<span class="op">)</span> <span class="dt">out</span> <span class="dt">float</span> <span class="bu">gl_FragDepth</span><span class="op">;</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec4</span> FragColor<span class="op">;</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>    <span class="co">// The shader guarantees the depth will only ever be &gt;= gl_FragCoord.z</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>    <span class="bu">gl_FragDepth</span> <span class="op">=</span> <span class="bu">gl_FragCoord</span><span class="op">.</span><span class="fu">z</span> <span class="op">+</span> <span class="fl">0.05</span><span class="op">;</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>    FragColor <span class="op">=</span> <span class="dt">vec4</span><span class="op">(</span><span class="fl">0.0</span><span class="op">,</span> <span class="fl">1.0</span><span class="op">,</span> <span class="fl">0.0</span><span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>The available layout qualifiers are:</p>
+<ul>
+<li><code>layout (depth_any)</code>: The default behavior. Depth can
+change in any direction; early tests are disabled.</li>
+<li><code>layout (depth_greater)</code>: The new depth value is
+guaranteed to be greater than or equal to <code>gl_FragCoord.z</code>.
+This allows the GPU to perform early depth rejection when using
+<code>GL_LESS</code> or <code>GL_LEQUAL</code> depth comparison
+functions.</li>
+<li><code>layout (depth_less)</code>: The new depth value is guaranteed
+to be less than or equal to <code>gl_FragCoord.z</code>. This enables
+early rejection when using <code>GL_GREATER</code> or
+<code>GL_GEQUAL</code> depth comparison functions.</li>
+<li><code>layout (depth_unchanged)</code>: Guarantees that if
+<code>gl_FragDepth</code> is written, it equals
+<code>gl_FragCoord.z</code>, preserving Early-Z regardless of the depth
+test function.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/how-to-set-gl-frag-depth-in-open-gl-fragment-shaders';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

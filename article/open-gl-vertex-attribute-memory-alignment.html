@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Vertex Attribute Memory Alignment - opengl</title>
+    <meta name="description" content="Packing mixed-type vertex attributes into an interleaved OpenGL vertex buffer optimizes memory bandwidth and improves cache locality, but it frequently introduces subtle memory alignment challenges. When attributes of different sizes—such as 32-bit floati">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-vertex-attribute-memory-alignment">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Vertex Attribute Memory Alignment - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-vertex-attribute-memory-alignment" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Packing mixed-type vertex attributes into an interleaved OpenGL vertex buffer optimizes memory bandwidth and improves cache locality, but it frequently introduces subtle memory alignment challenges. When attributes of different sizes—such as 32-bit floati" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-vertex-attribute-memory-alignment">OpenGL Vertex
+Attribute Memory Alignment</h1>
+<p>Packing mixed-type vertex attributes into an interleaved OpenGL
+vertex buffer optimizes memory bandwidth and improves cache locality,
+but it frequently introduces subtle memory alignment challenges. When
+attributes of different sizes—such as 32-bit floating-point positions,
+16-bit half-float texture coordinates, and 8-bit normalized color
+components—are stored together, discrepancies between CPU compiler
+padding, GPU memory architecture constraints, and OpenGL's layout
+specifications can cause rendering artifacts, performance degradations,
+or driver-level exceptions.</p>
+<h3 id="cpu-struct-padding-vs-gpu-expectations">CPU Struct Padding vs.
+GPU Expectations</h3>
+<p>The primary conflict arises from how C and C++ compilers structure
+data in host memory compared to how the GPU unpacks it. Compilers
+automatically insert padding bytes between struct members to align each
+data member to its natural boundary (typically its size in bytes). For
+example, placing a 1-byte unsigned char immediately before a 4-byte
+float causes a C/C++ compiler to insert 3 bytes of invisible padding so
+that the float rests on a memory address divisible by 4.</p>
+<p>If developers calculate the stride or attribute offsets manually
+without accounting for this padding, the GPU will read offset data,
+resulting in distorted geometry or scrambled colors. Conversely, using
+compiler directives like <code>#pragma pack(1)</code> to force zero-byte
+packing removes padding on the CPU side, but this introduces unaligned
+memory addresses that mobile GPUs or strict desktop drivers may fail to
+sample correctly.</p>
+<h3 id="hardware-fetch-requirements-and-performance">Hardware Fetch
+Requirements and Performance</h3>
+<p>Modern GPU memory controllers fetch data from global memory in
+cache-line-sized transactions (typically 32, 64, or 128 bytes). When
+vertex attributes are misaligned relative to their native component
+sizes:</p>
+<ul>
+<li><strong>Split Reads:</strong> An attribute that crosses a 4-byte or
+cache-line boundary requires the memory controller to perform two
+separate memory transactions instead of one, cutting effective vertex
+fetch throughput in half.</li>
+<li><strong>Architecture-Specific Faults:</strong> While modern desktop
+GPUs (NVIDIA, AMD) possess robust memory controllers capable of handling
+misaligned 32-bit reads with minimal overhead, mobile GPUs (such as ARM
+Mali or PowerVR using OpenGL ES) often require strict natural alignment.
+Attempting an unaligned read on these platforms can lead to hard faults,
+undefined behavior, or silent rendering failures.</li>
+</ul>
+<h3 id="opengl-offset-and-stride-constraints">OpenGL Offset and Stride
+Constraints</h3>
+<p>The <code>glVertexAttribPointer</code> function defines how the GPU
+interprets packed attributes using two key parameters:
+<code>stride</code> (the byte distance between consecutive vertices) and
+<code>pointer</code> (the byte offset to the first component of the
+attribute).</p>
+<p>OpenGL mandates that the offset provided to
+<code>glVertexAttribPointer</code> must be an exact multiple of the
+component's underlying data type size. For example:</p>
+<ul>
+<li>A <code>GL_FLOAT</code> or <code>GL_UNSIGNED_INT</code> attribute
+requires an offset divisible by 4.</li>
+<li>A <code>GL_HALF_FLOAT</code> or <code>GL_SHORT</code> attribute
+requires an offset divisible by 2.</li>
+<li>A <code>GL_UNSIGNED_BYTE</code> attribute requires an offset
+divisible by 1.</li>
+</ul>
+<p>Furthermore, the total <code>stride</code> of the interleaved buffer
+should generally be kept as a multiple of 4 bytes (or ideally 16 bytes
+for optimal cache-line utilization). An uneven stride causes subsequent
+vertex elements to progressively drift out of natural alignment across
+the buffer, breaking hardware alignment guarantees for every vertex
+following the first.</p>
+<h3 id="best-practices-for-layout-design">Best Practices for Layout
+Design</h3>
+<p>To eliminate alignment issues when packing mixed-type vertex
+attributes:</p>
+<ol type="1">
+<li><strong>Sort Attributes by Descending Size:</strong> Order struct
+members from largest to smallest (e.g., 4-byte floats first, followed by
+2-byte half-floats, then 1-byte normalized integers). This ordering
+naturally satisfies boundary constraints without requiring
+compiler-added padding.</li>
+<li><strong>Explicit Padding:</strong> If attributes must be reordered,
+explicitly declare padding bytes inside the struct (e.g.,
+<code>uint8_t padding[2];</code>) to make the memory layout
+deterministic across different compilers and platforms.</li>
+<li><strong>Use the <code>offsetof</code> Macro:</strong> Always compute
+the byte offsets passed to <code>glVertexAttribPointer</code> using the
+standard C <code>offsetof(StructName, MemberName)</code> macro rather
+than manual hardcoded byte counts.</li>
+<li><strong>Pad the Total Stride:</strong> Ensure the complete vertex
+structure size is aligned to at least a 4-byte boundary, and ideally a
+16-byte boundary, to maximize vectorization and SIMD processing on
+modern graphics hardware.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/open-gl-vertex-attribute-memory-alignment';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

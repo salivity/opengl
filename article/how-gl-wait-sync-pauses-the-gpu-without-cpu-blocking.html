@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How glWaitSync Pauses the GPU Without CPU Blocking - opengl</title>
+    <meta name="description" content="The glWaitSync function enables server-side synchronization in OpenGL by instructing the GPU to halt execution of subsequent commands until a specified fence sync object is signaled, all without stalling the host CPU thread. Unlike client-side primitives">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-gl-wait-sync-pauses-the-gpu-without-cpu-blocking">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How glWaitSync Pauses the GPU Without CPU Blocking - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-gl-wait-sync-pauses-the-gpu-without-cpu-blocking" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The glWaitSync function enables server-side synchronization in OpenGL by instructing the GPU to halt execution of subsequent commands until a specified fence sync object is signaled, all without stalling the host CPU thread. Unlike client-side primitives" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-glwaitsync-pauses-the-gpu-without-cpu-blocking">How
+glWaitSync Pauses the GPU Without CPU Blocking</h1>
+<p>The <code>glWaitSync</code> function enables server-side
+synchronization in OpenGL by instructing the GPU to halt execution of
+subsequent commands until a specified fence sync object is signaled, all
+without stalling the host CPU thread. Unlike client-side primitives that
+block the application until rendering finishes, <code>glWaitSync</code>
+inserts a synchronization token directly into the GPU's command stream.
+This allows the CPU to immediately continue dispatching subsequent draw
+calls or application logic while the GPU handles dependencies
+internally.</p>
+<h3 id="the-client-server-architecture-in-opengl">The Client-Server
+Architecture in OpenGL</h3>
+<p>OpenGL operates on a client-server model where the application on the
+CPU represents the client, and the GPU driver and hardware represent the
+server. When an application calls OpenGL rendering functions, the driver
+does not execute them immediately; instead, it packages these calls into
+commands within a command buffer.</p>
+<p>Synchronization primitives in OpenGL fall into two categories
+depending on which side of the architecture they stall:</p>
+<ul>
+<li><strong><code>glClientWaitSync</code> (Client-side):</strong> Blocks
+the CPU thread. The CPU suspends execution and polls or waits for an
+interrupt until the GPU reaches a specific point and signals the
+fence.</li>
+<li><strong><code>glWaitSync</code> (Server-side):</strong> Instructs
+the GPU to wait for itself or another GPU context. The CPU does not
+wait; it returns execution to the application instantly.</li>
+</ul>
+<h3 id="command-stream-injection">Command Stream Injection</h3>
+<p>When you call <code>glFenceSync</code>, the driver inserts a fence
+marker into the GPU's command queue. As the GPU processes the queue,
+reaching this marker sets the sync object's condition to "signaled."</p>
+<p>When calling
+<code>glWaitSync(GLsync sync, GLbitfield flags, GLuint64 timeout)</code>,
+the driver performs a lightweight operation on the CPU:</p>
+<ol type="1">
+<li>It validates the sync object handle.</li>
+<li>It generates a wait-barrier packet (a synchronization command).</li>
+<li>It appends this packet directly into the GPU's command buffer for
+the current context.</li>
+<li>The function returns control to the CPU immediately, with minimal
+driver overhead.</li>
+</ol>
+<p>Because the synchronization logic is encapsulated entirely as a
+command inside the buffer, the host CPU thread proceeds to the next line
+of code without blocking.</p>
+<h3 id="gpu-hardware-level-execution">GPU Hardware-Level Execution</h3>
+<p>The actual pause occurs entirely on the GPU when its command
+processor reads the enqueued wait-barrier command:</p>
+<ol type="1">
+<li><strong>Sequential Processing:</strong> The GPU's command stream
+processor reads instructions sequentially from the command buffer.</li>
+<li><strong>Barrier Evaluation:</strong> Upon reaching the wait token
+generated by <code>glWaitSync</code>, the hardware scheduler inspects
+the state of the referenced sync object.</li>
+<li><strong>Execution Stall:</strong> If the sync object is not yet
+signaled, the command processor suspends the submission of any further
+commands from that specific stream to the GPU's execution units.</li>
+<li><strong>Resumption:</strong> Once the dependent task finishes and
+sets the sync object to the signaled state (via memory write, interrupt,
+or hardware event), the command processor unblocks and resumes executing
+the subsequent commands in the stream.</li>
+</ol>
+<h3
+id="primary-use-case-multithreaded-and-cross-context-sharing">Primary
+Use Case: Multithreaded and Cross-Context Sharing</h3>
+<p>The primary utility of <code>glWaitSync</code> is coordinating access
+to shared resources across multiple OpenGL contexts or external APIs
+(such as OpenCL or Vulkan interop) without triggering expensive CPU-GPU
+round trips.</p>
+<p>For instance, Context A on Thread A can process a texture, emit a
+fence sync, and hand the sync object to Context B on Thread B. Context B
+issues <code>glWaitSync</code> followed by draw commands that sample the
+texture. Thread B does not sleep or block; it submits its work and moves
+on. The GPU hardware itself guarantees that Context B will not read the
+texture until Context A finishes writing to it.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/how-gl-wait-sync-pauses-the-gpu-without-cpu-blocking';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

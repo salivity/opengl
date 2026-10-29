@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>glDrawPixels in Legacy OpenGL Software Rendering - opengl</title>
+    <meta name="description" content="In early computer graphics, software renderers executed all rasterization, shading, and depth-testing algorithms on the CPU rather than the graphics hardware. To display the final output, developers relied on glDrawPixels as the fundamental bridge between">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/gl-draw-pixels-in-legacy-open-gl-software-rendering">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="glDrawPixels in Legacy OpenGL Software Rendering - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/gl-draw-pixels-in-legacy-open-gl-software-rendering" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In early computer graphics, software renderers executed all rasterization, shading, and depth-testing algorithms on the CPU rather than the graphics hardware. To display the final output, developers relied on glDrawPixels as the fundamental bridge between" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="gldrawpixels-in-legacy-opengl-software-rendering">glDrawPixels
+in Legacy OpenGL Software Rendering</h1>
+<p>In early computer graphics, software renderers executed all
+rasterization, shading, and depth-testing algorithms on the CPU rather
+than the graphics hardware. To display the final output, developers
+relied on <code>glDrawPixels</code> as the fundamental bridge between
+system memory and the GPU's display pipeline. This article examines the
+exact role <code>glDrawPixels</code> played in presenting
+software-rendered frames in legacy OpenGL, how it interacted with
+hardware, and why it was eventually replaced by modern streaming
+architectures.</p>
+<p>In a pure software rendering pipeline, the game or application
+maintains an internal framebuffer allocated in standard CPU system
+memory. This buffer is typically a contiguous array of color values
+representing the pixel grid. While the CPU handles calculating lighting,
+drawing polygons, and writing color values into this array, the
+operating system and graphics hardware still require the final image to
+be blitted to the window's display surface. In legacy OpenGL contexts,
+<code>glDrawPixels</code> acted as the primary standard function for
+reading this CPU-side byte array and writing it directly to the OpenGL
+framebuffer (such as the back buffer).</p>
+<p>To present a frame, the application sets the destination coordinate
+using <code>glRasterPos2i</code>, usually targeting the bottom-left
+corner of the viewport <code>(0, 0)</code>. The software renderer then
+invokes <code>glDrawPixels</code>, specifying the width and height of
+the image, the pixel format (such as <code>GL_RGB</code> or
+<code>GL_BGRA</code>), the data type (such as
+<code>GL_UNSIGNED_BYTE</code>), and a pointer to the CPU buffer.
+OpenGL’s raster operations pipeline reads the source pixels, applies any
+active pixel transfer operations (like zoom factors set via
+<code>glPixelZoom</code>), and draws the pixel data straight into the
+active render target before the application calls
+<code>SwapBuffers</code>.</p>
+<p>Handling memory alignment and stride was a crucial part of this
+workflow. Software renderers often padded frame rows to match CPU cache
+lines or SIMD vector alignments. Developers paired
+<code>glDrawPixels</code> with <code>glPixelStorei</code>
+parameters—specifically <code>GL_UNPACK_ALIGNMENT</code> and
+<code>GL_UNPACK_ROW_LENGTH</code>—to ensure OpenGL unpacked the CPU-side
+image buffer correctly without requiring manual memory copies or
+reorganization before presentation.</p>
+<p>Despite its simplicity, <code>glDrawPixels</code> introduced severe
+performance bottlenecks. The command executed synchronously, forcing a
+blocking data transfer across the system bus (PCI or AGP) to the GPU's
+video memory. Because the CPU often had to wait for the GPU to accept
+the pixel stream, frame rates were limited by bus bandwidth and pipeline
+stalls. Furthermore, GPU hardware vendors rarely optimized the
+fixed-function pixel-path hardware for maximum throughput, leading to
+inconsistent performance across different graphics drivers.</p>
+<p>As graphics hardware matured, developers abandoned
+<code>glDrawPixels</code> in favor of hardware-accelerated texture
+blits. Modern workflows allocate a texture on the GPU and update its
+contents using <code>glTexSubImage2D</code>, typically combined with
+Pixel Buffer Objects (PBOs) for asynchronous direct memory access (DMA)
+transfers. The image is then drawn to the screen by mapping the texture
+onto a full-screen quad. With the introduction of OpenGL 3.0,
+<code>glDrawPixels</code> was officially marked for deprecation, and it
+was entirely removed from the OpenGL 3.1 core profile, cementing its
+status as an artifact of the early software rendering era.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/gl-draw-pixels-in-legacy-open-gl-software-rendering';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

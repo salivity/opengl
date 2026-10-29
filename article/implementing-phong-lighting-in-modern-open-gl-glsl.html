@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Implementing Phong Lighting in Modern OpenGL GLSL - opengl</title>
+    <meta name="description" content="The Phong lighting model is a foundational illumination technique in computer graphics that approximates the interaction of light with surfaces by combining ambient, diffuse, and specular reflection components. Implementing this model in modern OpenGL req">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/implementing-phong-lighting-in-modern-open-gl-glsl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Implementing Phong Lighting in Modern OpenGL GLSL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/implementing-phong-lighting-in-modern-open-gl-glsl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The Phong lighting model is a foundational illumination technique in computer graphics that approximates the interaction of light with surfaces by combining ambient, diffuse, and specular reflection components. Implementing this model in modern OpenGL req" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="implementing-phong-lighting-in-modern-opengl-glsl">Implementing
+Phong Lighting in Modern OpenGL GLSL</h1>
+<p>The Phong lighting model is a foundational illumination technique in
+computer graphics that approximates the interaction of light with
+surfaces by combining ambient, diffuse, and specular reflection
+components. Implementing this model in modern OpenGL requires
+configuring vertex data, transforming spatial coordinates and normal
+vectors into a unified coordinate space (typically view space or world
+space), and calculating the reflection physics within a GLSL fragment
+shader. Following the steps below will take you from shader setup to a
+fully lit 3D surface.</p>
+<h3 id="step-1-prepare-spatial-and-material-uniforms">Step 1: Prepare
+Spatial and Material Uniforms</h3>
+<p>To calculate light interactions, the fragment shader requires
+geometric and photometric data. Pass the following inputs to your
+shaders:</p>
+<ul>
+<li><strong>Matrices:</strong> Model matrix, View matrix, Projection
+matrix, and the Normal matrix (the transpose of the inverse of the
+top-left 3x3 of the Model-View matrix) to correctly transform normal
+vectors under non-uniform scaling.</li>
+<li><strong>Light Properties:</strong> Light position (in world or view
+space), ambient color, diffuse color, and specular color.</li>
+<li><strong>Material Properties:</strong> Ambient reflectivity, diffuse
+reflectivity, specular reflectivity, and a shininess exponent (roughness
+factor).</li>
+</ul>
+<h3 id="step-2-implement-the-vertex-shader">Step 2: Implement the Vertex
+Shader</h3>
+<p>The vertex shader transforms object-space positions and normal
+vectors into the chosen reference space (view space is standard for
+numerical stability) and forwards them to the fragment shader.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 330 core</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span> <span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">in</span> <span class="dt">vec3</span> aPos<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span> <span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">1</span><span class="op">)</span> <span class="dt">in</span> <span class="dt">vec3</span> aNormal<span class="op">;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec3</span> FragPos<span class="op">;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec3</span> Normal<span class="op">;</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">mat4</span> model<span class="op">;</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">mat4</span> view<span class="op">;</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">mat4</span> projection<span class="op">;</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">mat3</span> normalMatrix<span class="op">;</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Transform vertex position into view space</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> viewPos <span class="op">=</span> view <span class="op">*</span> model <span class="op">*</span> <span class="dt">vec4</span><span class="op">(</span>aPos<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    FragPos <span class="op">=</span> <span class="dt">vec3</span><span class="op">(</span>viewPos<span class="op">);</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Transform surface normal into view space</span></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>    Normal <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span>normalMatrix <span class="op">*</span> aNormal<span class="op">);</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>    <span class="bu">gl_Position</span> <span class="op">=</span> projection <span class="op">*</span> viewPos<span class="op">;</span></span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="step-3-calculate-the-ambient-component">Step 3: Calculate the
+Ambient Component</h3>
+<p>Ambient lighting simulates indirect, scattered light present
+throughout an environment. It is computed as a constant factor
+multiplied by the light's color and the material's color:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> ambient <span class="op">=</span> lightAmbient <span class="op">*</span> materialAmbient<span class="op">;</span></span></code></pre></div>
+<h3 id="step-4-calculate-the-diffuse-component">Step 4: Calculate the
+Diffuse Component</h3>
+<p>Diffuse reflection represents directional light scattered equally in
+all directions from a rough surface (Lambertian reflection). It depends
+on the angle between the surface normal (<span
+class="math inline">\(N\)</span>) and the light direction vector (<span
+class="math inline">\(L\)</span>):</p>
+<ol type="1">
+<li>Normalize the incoming normal vector.</li>
+<li>Compute the normalized light direction vector pointing from the
+fragment to the light source.</li>
+<li>Calculate the dot product of <span class="math inline">\(N\)</span>
+and <span class="math inline">\(L\)</span>, clamped to zero using
+<code>max()</code> to prevent negative lighting on surfaces angled away
+from the light.</li>
+</ol>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> norm <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span>Normal<span class="op">);</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> lightDir <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span>lightPos <span class="op">-</span> FragPos<span class="op">);</span> <span class="co">// In view space</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> diff <span class="op">=</span> <span class="bu">max</span><span class="op">(</span><span class="bu">dot</span><span class="op">(</span>norm<span class="op">,</span> lightDir<span class="op">),</span> <span class="fl">0.0</span><span class="op">);</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> diffuse <span class="op">=</span> lightDiffuse <span class="op">*</span> <span class="op">(</span>diff <span class="op">*</span> materialDiffuse<span class="op">);</span></span></code></pre></div>
+<h3 id="step-5-calculate-the-specular-component">Step 5: Calculate the
+Specular Component</h3>
+<p>Specular reflection simulates the bright highlight seen on shiny
+surfaces. It depends on the angle between the viewer's line of sight
+(<span class="math inline">\(V\)</span>) and the direction of the
+reflected light ray (<span class="math inline">\(R\)</span>):</p>
+<ol type="1">
+<li>Calculate the view direction vector pointing from the fragment to
+the camera (in view space, the camera is at
+<code>vec3(0.0)</code>).</li>
+<li>Calculate the reflection vector using GLSL's built-in
+<code>reflect()</code> function, which requires the incident vector
+pointing from the light toward the fragment
+(<code>-lightDir</code>).</li>
+<li>Calculate the dot product of the view vector and the reflection
+vector, clamp it to zero, and raise it to the material's shininess
+exponent.</li>
+</ol>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> viewDir <span class="op">=</span> <span class="bu">normalize</span><span class="op">(-</span>FragPos<span class="op">);</span> <span class="co">// Camera is at origin in view space</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> reflectDir <span class="op">=</span> <span class="bu">reflect</span><span class="op">(-</span>lightDir<span class="op">,</span> norm<span class="op">);</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> spec <span class="op">=</span> <span class="bu">pow</span><span class="op">(</span><span class="bu">max</span><span class="op">(</span><span class="bu">dot</span><span class="op">(</span>viewDir<span class="op">,</span> reflectDir<span class="op">),</span> <span class="fl">0.0</span><span class="op">),</span> materialShininess<span class="op">);</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> specular <span class="op">=</span> lightSpecular <span class="op">*</span> <span class="op">(</span>spec <span class="op">*</span> materialSpecular<span class="op">);</span></span></code></pre></div>
+<h3 id="step-6-assemble-the-fragment-shader">Step 6: Assemble the
+Fragment Shader</h3>
+<p>Combine all three components to produce the final fragment color.</p>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 330 core</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="dt">in</span> <span class="dt">vec3</span> FragPos<span class="op">;</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="dt">in</span> <span class="dt">vec3</span> Normal<span class="op">;</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec4</span> FragColor<span class="op">;</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">vec3</span> lightPos<span class="op">;</span> <span class="co">// Must match coordinate space (view space)</span></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">vec3</span> lightAmbient<span class="op">;</span></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">vec3</span> lightDiffuse<span class="op">;</span></span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">vec3</span> lightSpecular<span class="op">;</span></span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">vec3</span> materialAmbient<span class="op">;</span></span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">vec3</span> materialDiffuse<span class="op">;</span></span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">vec3</span> materialSpecular<span class="op">;</span></span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">float</span> materialShininess<span class="op">;</span></span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span></span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Ambient</span></span>
+<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> ambient <span class="op">=</span> lightAmbient <span class="op">*</span> materialAmbient<span class="op">;</span></span>
+<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Diffuse</span></span>
+<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> norm <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span>Normal<span class="op">);</span></span>
+<span id="cb5-25"><a href="#cb5-25" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> lightDir <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span>lightPos <span class="op">-</span> FragPos<span class="op">);</span></span>
+<span id="cb5-26"><a href="#cb5-26" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> diff <span class="op">=</span> <span class="bu">max</span><span class="op">(</span><span class="bu">dot</span><span class="op">(</span>norm<span class="op">,</span> lightDir<span class="op">),</span> <span class="fl">0.0</span><span class="op">);</span></span>
+<span id="cb5-27"><a href="#cb5-27" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> diffuse <span class="op">=</span> lightDiffuse <span class="op">*</span> <span class="op">(</span>diff <span class="op">*</span> materialDiffuse<span class="op">);</span></span>
+<span id="cb5-28"><a href="#cb5-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-29"><a href="#cb5-29" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Specular</span></span>
+<span id="cb5-30"><a href="#cb5-30" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> viewDir <span class="op">=</span> <span class="bu">normalize</span><span class="op">(-</span>FragPos<span class="op">);</span></span>
+<span id="cb5-31"><a href="#cb5-31" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> reflectDir <span class="op">=</span> <span class="bu">reflect</span><span class="op">(-</span>lightDir<span class="op">,</span> norm<span class="op">);</span></span>
+<span id="cb5-32"><a href="#cb5-32" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> spec <span class="op">=</span> <span class="bu">pow</span><span class="op">(</span><span class="bu">max</span><span class="op">(</span><span class="bu">dot</span><span class="op">(</span>viewDir<span class="op">,</span> reflectDir<span class="op">),</span> <span class="fl">0.0</span><span class="op">),</span> materialShininess<span class="op">);</span></span>
+<span id="cb5-33"><a href="#cb5-33" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> specular <span class="op">=</span> lightSpecular <span class="op">*</span> <span class="op">(</span>spec <span class="op">*</span> materialSpecular<span class="op">);</span></span>
+<span id="cb5-34"><a href="#cb5-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-35"><a href="#cb5-35" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Final Color</span></span>
+<span id="cb5-36"><a href="#cb5-36" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> result <span class="op">=</span> ambient <span class="op">+</span> diffuse <span class="op">+</span> specular<span class="op">;</span></span>
+<span id="cb5-37"><a href="#cb5-37" aria-hidden="true" tabindex="-1"></a>    FragColor <span class="op">=</span> <span class="dt">vec4</span><span class="op">(</span>result<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb5-38"><a href="#cb5-38" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="step-7-verify-matrix-alignment-in-host-application">Step 7:
+Verify Matrix Alignment in Host Application</h3>
+<p>Ensure your OpenGL C++ host application generates and uploads the
+uniform variables accurately. The <code>normalMatrix</code> must be
+updated whenever the model or view matrix changes:</p>
+<div class="sourceCode" id="cb6"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>glm<span class="op">::</span>mat3 normalMatrix <span class="op">=</span> glm<span class="op">::</span>transpose<span class="op">(</span>glm<span class="op">::</span>inverse<span class="op">(</span>glm<span class="op">::</span>mat3<span class="op">(</span>view <span class="op">*</span> model<span class="op">)));</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>glUniformMatrix3fv<span class="op">(</span>normalMatrixLoc<span class="op">,</span> <span class="dv">1</span><span class="op">,</span> GL_FALSE<span class="op">,</span> glm<span class="op">::</span>value_ptr<span class="op">(</span>normalMatrix<span class="op">));</span></span></code></pre></div>
+<p>Additionally, transform the world-space light position into view
+space on the CPU before uploading
+(<code>glm::vec3(view * glm::vec4(worldLightPos, 1.0f))</code>) so that
+all calculations within the fragment shader share identical coordinate
+spaces.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/implementing-phong-lighting-in-modern-open-gl-glsl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

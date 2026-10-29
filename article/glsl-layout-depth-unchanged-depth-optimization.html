@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GLSL layout(depth_unchanged) Depth Optimization - opengl</title>
+    <meta name="description" content="The layout(depthunchanged) qualifier in GLSL tells the GPU driver that a fragment shader writing to glFragDepth will not alter the hardware-interpolated depth value. By guaranteeing this invariant, the OpenGL pipeline can keep hardware-level Early Depth T">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/glsl-layout-depth-unchanged-depth-optimization">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="GLSL layout(depth_unchanged) Depth Optimization - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/glsl-layout-depth-unchanged-depth-optimization" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The layout(depthunchanged) qualifier in GLSL tells the GPU driver that a fragment shader writing to glFragDepth will not alter the hardware-interpolated depth value. By guaranteeing this invariant, the OpenGL pipeline can keep hardware-level Early Depth T" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="glsl-layoutdepth_unchanged-depth-optimization">GLSL
+layout(depth_unchanged) Depth Optimization</h1>
+<p>The <code>layout(depth_unchanged)</code> qualifier in GLSL tells the
+GPU driver that a fragment shader writing to <code>gl_FragDepth</code>
+will not alter the hardware-interpolated depth value. By guaranteeing
+this invariant, the OpenGL pipeline can keep hardware-level Early Depth
+Testing (Early-Z) and Hierarchical-Z (Hi-Z) culling enabled. This
+prevents the rasterizer from de-optimizing the render pass, ensuring
+that occluded fragments are discarded before computationally expensive
+fragment shaders ever execute.</p>
+<h3 id="the-problem-fragment-depth-writes-disable-early-z">The Problem:
+Fragment Depth Writes Disable Early-Z</h3>
+<p>Under standard rendering pipelines, modern GPUs execute Early Depth
+Testing before fragment shading. If a fragment is hidden behind existing
+geometry, the hardware discards it immediately, saving significant GPU
+cycles, memory bandwidth, and execution resources.</p>
+<p>However, if a fragment shader explicitly writes to the built-in
+variable <code>gl_FragDepth</code>, the rasterizer faces an ambiguity:
+it cannot determine the fragment's final depth value prior to executing
+the shader code. Consequently, the GPU must disable Early-Z and defer
+depth testing until after the fragment shader finishes (Late-Z testing).
+This causes hidden, fully occluded fragments to run their entire shader
+workload before ultimately being rejected by the depth buffer.</p>
+<h3 id="how-layoutdepth_unchanged-restores-optimization">How
+<code>layout(depth_unchanged)</code> Restores Optimization</h3>
+<p>The <code>depth_unchanged</code> qualifier—part of the conservative
+depth extension integrated into core OpenGL—resolves this stall. It is
+declared in the fragment shader as follows:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span> <span class="op">(</span>depth_unchanged<span class="op">)</span> <span class="dt">out</span> <span class="dt">float</span> <span class="bu">gl_FragDepth</span><span class="op">;</span></span></code></pre></div>
+<p>This declaration guarantees to the compiler and rasterizer that any
+write to <code>gl_FragDepth</code> inside the shader will evaluate
+strictly to the original, fixed-function interpolated depth coordinate
+(<code>gl_FragCoord.z</code>).</p>
+<p>Because the pipeline knows in advance that the depth buffer value
+remains predictable, the hardware can perform several critical
+optimizations:</p>
+<ul>
+<li><strong>Early-Z Execution:</strong> The rasterizer safely tests
+fragments against the depth buffer before dispatching warps or
+wavefronts to execution units, immediately discarding occluded
+pixels.</li>
+<li><strong>Hierarchical-Z (Hi-Z) Preservation:</strong> The GPU retains
+low-resolution, tile-based depth representations that discard entire
+screen-space blocks of pixels at the coarse raster stage. Without this
+qualifier, coarse rejection is largely compromised when depth writes are
+present.</li>
+<li><strong>Double-Sided Depth Testing:</strong> Certain architectures
+run both Early-Z (to kill occluded pixels) and Late-Z (to write or
+confirm depth). Declaring the depth unchanged allows the hardware to
+completely bypass the late validation stage.</li>
+</ul>
+<h3 id="common-use-cases">Common Use Cases</h3>
+<p>While writing an unchanged depth may seem redundant,
+<code>layout(depth_unchanged)</code> is valuable in scenarios such
+as:</p>
+<ul>
+<li><strong>Conditional Discards with Depth Access:</strong> Shaders
+that read or assign depth based on control flow without altering the
+final value.</li>
+<li><strong>Uber-Shaders and Modular Codebases:</strong> Fragment
+shaders designed to output custom depth only in specific configurations
+or branches, allowing branches that maintain default depth to retain
+hardware acceleration without requiring a separate shader program.</li>
+<li><strong>Side-Effect Pipelines:</strong> Passes that utilize depth
+values for image-space operations or atomic storage counters while still
+maintaining traditional depth-buffer sorting behavior.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/glsl-layout-depth-unchanged-depth-optimization';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

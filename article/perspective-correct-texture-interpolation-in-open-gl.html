@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Perspective-Correct Texture Interpolation in OpenGL - opengl</title>
+    <meta name="description" content="This article explains the mathematical mechanics behind perspective-correct texture coordinate interpolation in OpenGL. In 3D computer graphics, applying standard linear interpolation to texture coordinates in 2D screen space causes visual distortion beca">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/perspective-correct-texture-interpolation-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Perspective-Correct Texture Interpolation in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/perspective-correct-texture-interpolation-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains the mathematical mechanics behind perspective-correct texture coordinate interpolation in OpenGL. In 3D computer graphics, applying standard linear interpolation to texture coordinates in 2D screen space causes visual distortion beca" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="perspective-correct-texture-interpolation-in-opengl">Perspective-Correct
+Texture Interpolation in OpenGL</h1>
+<p>This article explains the mathematical mechanics behind
+perspective-correct texture coordinate interpolation in OpenGL. In 3D
+computer graphics, applying standard linear interpolation to texture
+coordinates in 2D screen space causes visual distortion because
+perspective projection is non-linear. To maintain geometric accuracy,
+modern graphics pipelines like OpenGL project texture coordinates into
+homogeneous space, linearly interpolate the divided attributes along
+with the reciprocal of the clip-space <span
+class="math inline">\(w\)</span> coordinate, and reconstruct the true
+coordinate per fragment through a final division.</p>
+<h3 id="the-problem-with-affine-mapping">The Problem with Affine
+Mapping</h3>
+<p>When a 3D primitive is projected onto a 2D screen, the projection
+transformation divides camera-space coordinates by their depth
+component, <span class="math inline">\(Z\)</span>. If texture
+coordinates <span class="math inline">\((u, v)\)</span> are linearly
+interpolated directly across screen-space pixels using standard affine
+mapping:</p>
+<p><span class="math display">\[u(t) = (1 - t)u_0 + t u_1 \quad
+\text{where } t \in [0, 1]\]</span></p>
+<p>the texture appears warped and bent along polygon diagonals. This
+artifact occurs because equal step sizes across pixels on the 2D screen
+do not correspond to equal step sizes across the surface in 3D space due
+to perspective foreshortening.</p>
+<h3 id="the-linear-property-of-homogeneous-coordinates">The Linear
+Property of Homogeneous Coordinates</h3>
+<p>While an attribute <span class="math inline">\(A\)</span> does not
+vary linearly with respect to screen-space coordinates <span
+class="math inline">\((x_s, y_s)\)</span>, the perspective projection
+geometry ensures that the ratio of that attribute to the homogeneous
+clip-space depth, <span class="math inline">\(\frac{A}{w}\)</span>, does
+vary linearly across screen space. Similarly, the reciprocal of the
+depth value, <span class="math inline">\(\frac{1}{w}\)</span>, is also
+linear in screen space.</p>
+<p>In OpenGL, the clip-space coordinate produced by multiplying a vertex
+by the model-view-projection matrix is represented as:</p>
+<p><span class="math display">\[\mathbf{v}_{\text{clip}} =
+\begin{bmatrix} x_c \\ y_c \\ z_c \\ w_c \end{bmatrix}\]</span></p>
+<p>In a standard perspective projection matrix, <span
+class="math inline">\(w_c\)</span> is typically proportional to <span
+class="math inline">\(-Z_{\text{eye}}\)</span> (the distance from the
+camera).</p>
+<h3 id="mathematical-derivation-of-corrected-values">Mathematical
+Derivation of Corrected Values</h3>
+<p>Let two vertices on the screen have screen-space coordinates <span
+class="math inline">\(\mathbf{p}_0\)</span> and <span
+class="math inline">\(\mathbf{p}_1\)</span> with corresponding
+attributes <span class="math inline">\(u_0, u_1\)</span> and clip-space
+weights <span class="math inline">\(w_0, w_1\)</span>.</p>
+<p>For any screen-space fragment located at an interpolation factor
+<span class="math inline">\(s \in [0, 1]\)</span> between <span
+class="math inline">\(\mathbf{p}_0\)</span> and <span
+class="math inline">\(\mathbf{p}_1\)</span>:</p>
+<ol type="1">
+<li><p><strong>Interpolate the depth reciprocal:</strong> <span
+class="math display">\[\left(\frac{1}{w}\right)_s = (1 - s)
+\frac{1}{w_0} + s \frac{1}{w_1}\]</span></p></li>
+<li><p><strong>Interpolate the projected texture coordinate:</strong>
+<span class="math display">\[\left(\frac{u}{w}\right)_s = (1 - s)
+\frac{u_0}{w_0} + s \frac{u_1}{w_1}\]</span></p></li>
+<li><p><strong>Recover the perspective-correct coordinate:</strong>
+Divide the interpolated coordinate-depth ratio by the interpolated depth
+reciprocal to eliminate the homogeneous factor: <span
+class="math display">\[u_s =
+\frac{\left(\frac{u}{w}\right)_s}{\left(\frac{1}{w}\right)_s} = \frac{(1
+- s) \frac{u_0}{w_0} + s \frac{u_1}{w_1}}{(1 - s) \frac{1}{w_0} + s
+\frac{1}{w_1}}\]</span></p></li>
+</ol>
+<h3 id="triangle-interpolation-via-barycentric-coordinates">Triangle
+Interpolation via Barycentric Coordinates</h3>
+<p>During rasterization, OpenGL evaluates pixels using 2D screen-space
+barycentric coordinates <span class="math inline">\((\lambda_0,
+\lambda_1, \lambda_2)\)</span> such that <span
+class="math inline">\(\lambda_0 + \lambda_1 + \lambda_2 = 1\)</span>.
+The formulation extends to triangles as follows:</p>
+<p>First, the hardware rasterizer computes the interpolated attribute
+ratio and reciprocal <span class="math inline">\(w\)</span>:</p>
+<p><span class="math display">\[\left(\frac{u}{w}\right)_{\text{pixel}}
+= \sum_{i=0}^{2} \lambda_i \frac{u_i}{w_i}\]</span></p>
+<p><span class="math display">\[\left(\frac{1}{w}\right)_{\text{pixel}}
+= \sum_{i=0}^{2} \lambda_i \frac{1}{w_i}\]</span></p>
+<p>Finally, before passing the varying attribute to the fragment shader,
+the GPU computes the quotient:</p>
+<p><span class="math display">\[u_{\text{pixel}} = \frac{\sum_{i=0}^{2}
+\lambda_i \frac{u_i}{w_i}}{\sum_{i=0}^{2} \lambda_i
+\frac{1}{w_i}}\]</span></p>
+<p>This operation guarantees that attributes maintain uniform spacing on
+the original 3D primitive regardless of viewing angle or distance from
+the camera. In modern OpenGL (GLSL), this computation is performed
+automatically for variables declared with the default
+<code>smooth</code> interpolation qualifier.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/perspective-correct-texture-interpolation-in-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

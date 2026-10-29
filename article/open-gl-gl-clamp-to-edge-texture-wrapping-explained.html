@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL GL_CLAMP_TO_EDGE Texture Wrapping Explained - opengl</title>
+    <meta name="description" content="This article provides a direct overview of the GLCLAMPTOEDGE texture wrapping mode in OpenGL, detailing its core mechanism, practical applications, and importance in modern graphics rendering. You will learn how this mode processes texture coordinates out">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-gl-clamp-to-edge-texture-wrapping-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL GL_CLAMP_TO_EDGE Texture Wrapping Explained - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-gl-clamp-to-edge-texture-wrapping-explained" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article provides a direct overview of the GLCLAMPTOEDGE texture wrapping mode in OpenGL, detailing its core mechanism, practical applications, and importance in modern graphics rendering. You will learn how this mode processes texture coordinates out" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-gl_clamp_to_edge-texture-wrapping-explained">OpenGL
+GL_CLAMP_TO_EDGE Texture Wrapping Explained</h1>
+<p>This article provides a direct overview of the
+<code>GL_CLAMP_TO_EDGE</code> texture wrapping mode in OpenGL, detailing
+its core mechanism, practical applications, and importance in modern
+graphics rendering. You will learn how this mode processes texture
+coordinates outside the normalized range, how it prevents common
+sampling artifacts like edge bleeding, and how to implement it correctly
+in your rendering pipeline.</p>
+<h3 id="core-function-of-gl_clamp_to_edge">Core Function of
+GL_CLAMP_TO_EDGE</h3>
+<p>In OpenGL, texture coordinates typically range from <code>0.0</code>
+to <code>1.0</code>. When a shader attempts to sample a texture using
+coordinates outside this range (less than <code>0.0</code> or greater
+than <code>1.0</code>), the texture wrapping mode determines what color
+value is returned.</p>
+<p>The <code>GL_CLAMP_TO_EDGE</code> parameter forces coordinates to be
+clamped to the range <span class="math inline">\(\left[\frac{1}{2N}, 1 -
+\frac{1}{2N}\right]\)</span>, where <span
+class="math inline">\(N\)</span> is the size of the texture in the
+direction of clamping. In practice, this means any texture coordinate
+outside the <code>[0.0, 1.0]</code> boundary is clamped directly to the
+outermost row or column of texels. Instead of repeating the pattern or
+reading an external border color, OpenGL simply repeats the color of the
+boundary pixels indefinitely outward.</p>
+<h3 id="preventing-edge-bleeding-artifacts">Preventing Edge Bleeding
+Artifacts</h3>
+<p>The primary reason to use <code>GL_CLAMP_TO_EDGE</code> is to prevent
+texture filtering artifacts, commonly known as edge bleeding or haloing,
+when using linear interpolation (<code>GL_LINEAR</code>).</p>
+<p>When bilinear or trilinear filtering is active, OpenGL calculates the
+final color by averaging neighboring texels. If you use wrapping modes
+like <code>GL_REPEAT</code> or the deprecated <code>GL_CLAMP</code>,
+sampling near the boundary (coordinates close to <code>0.0</code> or
+<code>1.0</code>) causes the sampler to blend the edge pixels with
+either the border color or pixels from the opposite side of the
+texture.</p>
+<p><code>GL_CLAMP_TO_EDGE</code> eliminates this issue by ensuring that
+the interpolation never samples beyond the center of the edge texels.
+Common scenarios where this is essential include:</p>
+<ul>
+<li><strong>Skyboxes:</strong> Eliminates visible seam lines between
+adjacent cube faces.</li>
+<li><strong>Sprite Sheets and Atlases:</strong> Prevents adjacent
+sprites from bleeding into one another along transparency borders.</li>
+<li><strong>Non-repeating UI Elements and Text:</strong> Keeps borders
+crisp and prevents black or transparent fringes around icons and
+glyphs.</li>
+<li><strong>Post-processing Buffers:</strong> Ensures full-screen render
+passes (such as bloom or blur) do not introduce artifacts at the edges
+of the screen.</li>
+</ul>
+<h3 id="implementation-in-opengl">Implementation in OpenGL</h3>
+<p>You configure <code>GL_CLAMP_TO_EDGE</code> using the
+<code>glTexParameteri</code> or <code>glSamplerParameteri</code>
+function. It must be set independently for each texture coordinate axis:
+<span class="math inline">\(S\)</span> (horizontal), <span
+class="math inline">\(T\)</span> (vertical), and <span
+class="math inline">\(R\)</span> (depth for 3D textures).</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>glBindTexture<span class="op">(</span>GL_TEXTURE_2D<span class="op">,</span> textureID<span class="op">);</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="co">// Set clamping on the horizontal (S) and vertical (T) axes</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_2D<span class="op">,</span> GL_TEXTURE_WRAP_S<span class="op">,</span> GL_CLAMP_TO_EDGE<span class="op">);</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_2D<span class="op">,</span> GL_TEXTURE_WRAP_T<span class="op">,</span> GL_CLAMP_TO_EDGE<span class="op">);</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="co">// Typically paired with linear filtering</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_2D<span class="op">,</span> GL_TEXTURE_MIN_FILTER<span class="op">,</span> GL_LINEAR<span class="op">);</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_2D<span class="op">,</span> GL_TEXTURE_MAG_FILTER<span class="op">,</span> GL_LINEAR<span class="op">);</span></span></code></pre></div>
+<p>By clamping each axis to the edge, textures remain visually stable,
+artifact-free, and contained strictly within their defined pixel
+boundaries regardless of the coordinate values passed to the fragment
+shader.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/open-gl-gl-clamp-to-edge-texture-wrapping-explained';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

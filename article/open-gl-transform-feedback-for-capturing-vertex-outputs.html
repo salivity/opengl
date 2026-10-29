@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Transform Feedback for Capturing Vertex Outputs - opengl</title>
+    <meta name="description" content="Transform feedback in OpenGL allows developers to capture primitive and vertex data directly from the vertex, tessellation, or geometry processing stages into buffer objects before they reach the rasterizer. This article explains how OpenGL implements tra">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-transform-feedback-for-capturing-vertex-outputs">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Transform Feedback for Capturing Vertex Outputs - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-transform-feedback-for-capturing-vertex-outputs" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Transform feedback in OpenGL allows developers to capture primitive and vertex data directly from the vertex, tessellation, or geometry processing stages into buffer objects before they reach the rasterizer. This article explains how OpenGL implements tra" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-transform-feedback-for-capturing-vertex-outputs">OpenGL
+Transform Feedback for Capturing Vertex Outputs</h1>
+<p>Transform feedback in OpenGL allows developers to capture primitive
+and vertex data directly from the vertex, tessellation, or geometry
+processing stages into buffer objects before they reach the rasterizer.
+This article explains how OpenGL implements transform feedback, details
+how to disable screen rasterization entirely using native OpenGL states,
+and walks through the configuration of shaders, buffers, and execution
+commands required to harvest vertex data efficiently.</p>
+<h3 id="core-concept-of-transform-feedback">Core Concept of Transform
+Feedback</h3>
+<p>Normally, the OpenGL pipeline passes processed vertices from the
+vertex (or geometry) shader to the rasterizer, which generates fragments
+for the screen. Transform feedback diverts these processed primitives
+into one or more buffer objects
+(<code>GL_TRANSFORM_FEEDBACK_BUFFER</code>). This mechanism enables
+General-Purpose GPU (GPGPU) workflows, particle simulations, and dynamic
+geometry manipulation directly on the GPU without CPU readbacks.</p>
+<h3 id="disabling-screen-rendering-with-rasterizer-discard">Disabling
+Screen Rendering with Rasterizer Discard</h3>
+<p>To capture vertex outputs without rendering to the screen, OpenGL
+provides the <code>GL_RASTERIZER_DISCARD</code> state. When enabled, it
+cuts off the pipeline immediately after the last active
+pre-rasterization shader stage (vertex, tessellation, or geometry).</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>glEnable<span class="op">(</span>GL_RASTERIZER_DISCARD<span class="op">);</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="co">// Perform drawing commands to capture data</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>glDisable<span class="op">(</span>GL_RASTERIZER_DISCARD<span class="op">);</span></span></code></pre></div>
+<p>When <code>GL_RASTERIZER_DISCARD</code> is active:</p>
+<ul>
+<li>The rasterizer does not generate fragments.</li>
+<li>Fragment shaders are completely bypassed.</li>
+<li>Framebuffers and the screen remain untouched.</li>
+<li>Performance increases because pixel processing and depth/stencil
+testing are skipped.</li>
+</ul>
+<h3 id="configuring-shaders-for-capture">Configuring Shaders for
+Capture</h3>
+<p>Before linking the shader program, OpenGL must be instructed on which
+output variables (varyings) to capture. This is configured using
+<code>glTransformFeedbackVaryings</code>:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="dt">const</span> <span class="dt">char</span><span class="op">*</span> varyings<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span> <span class="st">&quot;outPosition&quot;</span><span class="op">,</span> <span class="st">&quot;outVelocity&quot;</span> <span class="op">};</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>glTransformFeedbackVaryings<span class="op">(</span>shaderProgram<span class="op">,</span> <span class="dv">2</span><span class="op">,</span> varyings<span class="op">,</span> GL_INTERLEAVED_ATTRIBS<span class="op">);</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>glLinkProgram<span class="op">(</span>shaderProgram<span class="op">);</span></span></code></pre></div>
+<p>Two capture modes exist:</p>
+<ol type="1">
+<li><strong><code>GL_INTERLEAVED_ATTRIBS</code></strong>: Writes all
+specified attributes consecutively into a single buffer object
+(<code>[pos, vel, pos, vel, ...]</code>).</li>
+<li><strong><code>GL_SEPARATE_ATTRIBS</code></strong>: Directs each
+attribute into its own distinct buffer object bound to separate binding
+points.</li>
+</ol>
+<h3 id="setting-up-buffers-and-transform-feedback-objects">Setting Up
+Buffers and Transform Feedback Objects</h3>
+<p>Transform Feedback Objects (TFOs) encapsulate the state of transform
+feedback buffer bindings, simplifying state management:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>GLuint tfo<span class="op">;</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>glGenTransformFeedbacks<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="op">&amp;</span>tfo<span class="op">);</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>glBindTransformFeedback<span class="op">(</span>GL_TRANSFORM_FEEDBACK<span class="op">,</span> tfo<span class="op">);</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>GLuint tbo<span class="op">;</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>glGenBuffers<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="op">&amp;</span>tbo<span class="op">);</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>glBindBuffer<span class="op">(</span>GL_TRANSFORM_FEEDBACK_BUFFER<span class="op">,</span> tbo<span class="op">);</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>glBufferData<span class="op">(</span>GL_TRANSFORM_FEEDBACK_BUFFER<span class="op">,</span> bufferSize<span class="op">,</span> NULL<span class="op">,</span> GL_STATIC_READ<span class="op">);</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="co">// Bind buffer to index 0 for capturing</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>glBindBufferBase<span class="op">(</span>GL_TRANSFORM_FEEDBACK_BUFFER<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> tbo<span class="op">);</span></span></code></pre></div>
+<h3 id="execution-flow">Execution Flow</h3>
+<p>To capture the data during a draw call:</p>
+<ol type="1">
+<li><p><strong>Activate the Program and Bind Feedback
+Objects</strong>:</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode c"><code class="sourceCode c"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>glUseProgram<span class="op">(</span>shaderProgram<span class="op">);</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>glBindTransformFeedback<span class="op">(</span>GL_TRANSFORM_FEEDBACK<span class="op">,</span> tfo<span class="op">);</span></span></code></pre></div></li>
+<li><p><strong>Enable Rasterizer Discard</strong>:</p>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode c"><code class="sourceCode c"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>glEnable<span class="op">(</span>GL_RASTERIZER_DISCARD<span class="op">);</span></span></code></pre></div></li>
+<li><p><strong>Begin Transform Feedback</strong>: Specify the primitive
+type being captured (<code>GL_POINTS</code>, <code>GL_LINES</code>, or
+<code>GL_TRIANGLES</code>). The output of the preceding shader stage
+must match this primitive topology.</p>
+<div class="sourceCode" id="cb6"><pre
+class="sourceCode c"><code class="sourceCode c"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>glBeginTransformFeedback<span class="op">(</span>GL_POINTS<span class="op">);</span></span></code></pre></div></li>
+<li><p><strong>Issue Draw Command</strong>:</p>
+<div class="sourceCode" id="cb7"><pre
+class="sourceCode c"><code class="sourceCode c"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>glDrawArrays<span class="op">(</span>GL_POINTS<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> vertexCount<span class="op">);</span></span></code></pre></div></li>
+<li><p><strong>End Feedback and Restore Pipeline</strong>:</p>
+<div class="sourceCode" id="cb8"><pre
+class="sourceCode c"><code class="sourceCode c"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>glEndTransformFeedback<span class="op">();</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>glDisable<span class="op">(</span>GL_RASTERIZER_DISCARD<span class="op">);</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>glBindTransformFeedback<span class="op">(</span>GL_TRANSFORM_FEEDBACK<span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span></code></pre></div></li>
+</ol>
+<h3 id="utilizing-the-captured-data">Utilizing the Captured Data</h3>
+<p>Once the feedback process ends, the buffer contains the computed
+outputs. This data can be:</p>
+<ul>
+<li>Read back to the CPU via <code>glGetBufferSubData</code> or
+<code>glMapBufferRange</code>.</li>
+<li>Kept on the GPU to serve as vertex inputs for subsequent draw passes
+using <code>glDrawTransformFeedback</code> or standard
+<code>glDrawArrays</code> calls.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/open-gl-transform-feedback-for-capturing-vertex-outputs';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

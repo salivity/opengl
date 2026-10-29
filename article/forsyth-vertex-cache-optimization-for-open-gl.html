@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Forsyth Vertex Cache Optimization for OpenGL - opengl</title>
+    <meta name="description" content="The Forsyth vertex cache algorithm optimizes 3D mesh rendering by reordering index buffers to maximize the hit rate of a graphics processing unit’s (GPU) post-transform vertex cache. By prioritizing triangles containing recently transformed vertices and v">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/forsyth-vertex-cache-optimization-for-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Forsyth Vertex Cache Optimization for OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/forsyth-vertex-cache-optimization-for-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The Forsyth vertex cache algorithm optimizes 3D mesh rendering by reordering index buffers to maximize the hit rate of a graphics processing unit’s (GPU) post-transform vertex cache. By prioritizing triangles containing recently transformed vertices and v" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="forsyth-vertex-cache-optimization-for-opengl">Forsyth Vertex
+Cache Optimization for OpenGL</h1>
+<p>The Forsyth vertex cache algorithm optimizes 3D mesh rendering by
+reordering index buffers to maximize the hit rate of a graphics
+processing unit’s (GPU) post-transform vertex cache. By prioritizing
+triangles containing recently transformed vertices and vertices
+belonging to few remaining faces, the algorithm significantly reduces
+redundant vertex shader invocations during OpenGL draw calls such as
+<code>glDrawElements</code>. This article explains the mechanics of
+post-transform vertex caches, the scoring heuristics behind the Forsyth
+algorithm, and how this optimization directly improves rendering
+throughput in OpenGL.</p>
+<h3 id="the-post-transform-vertex-cache">The Post-Transform Vertex
+Cache</h3>
+<p>Modern GPUs utilize a fixed-capacity, post-transform vertex cache
+(typically operating with a Least Recently Used (LRU) or FIFO policy,
+holding roughly 16 to 64 vertices). When OpenGL processes indexed
+primitive rendering—such as indexed triangle lists—the vertex fetch
+hardware checks this cache before executing the vertex shader:</p>
+<ol type="1">
+<li><strong>Cache Hit:</strong> If an incoming vertex index has already
+been transformed and resides in the cache, the GPU skips vertex shader
+execution entirely and reuses the cached output attributes.</li>
+<li><strong>Cache Miss:</strong> If the vertex is not present, the
+vertex shader executes, the result is written to the cache, and older
+entries may be evicted.</li>
+</ol>
+<p>The performance of an indexed draw call is measured by the Average
+Cache Miss Ratio (ACMR), defined as the total number of vertex shader
+invocations divided by the total number of triangles. For an unoptimized
+mesh, ACMR often approaches 3.0 (each triangle misses all three
+vertices). A fully optimized manifold mesh can approach the theoretical
+lower limit of approximately 0.5.</p>
+<h3 id="the-forsyth-scoring-heuristic">The Forsyth Scoring
+Heuristic</h3>
+<p>Developed by Tom Forsyth, this algorithm simulates a local LRU vertex
+cache to evaluate and sort triangles. Instead of global path searches,
+it uses a greedy approach that assigns dynamic scores to vertices and
+selects the best candidate triangle at each step.</p>
+<p>A vertex's total score is the sum of two distinct calculations:</p>
+<h4 id="1-cache-position-score">1. Cache Position Score</h4>
+<p>Vertices currently inside the simulated cache receive a score based
+on their position. Vertices accessed very recently receive high scores,
+reflecting the high probability of a cache hit:</p>
+<ul>
+<li>If a vertex was used in the most recent triangle (index 0 to 2), it
+receives a fixed maximum boost.</li>
+<li>If it resides deeper in the cache, the score drops off using an
+exponential decay function:
+<code>score = (1 - (cache_index - 3) / (cache_size - 3)) ^ power</code>.</li>
+<li>If the vertex is not in the cache, its cache score is zero.</li>
+</ul>
+<h4 id="2-valence-score">2. Valence Score</h4>
+<p>Valence refers to the number of remaining, unrendered triangles that
+share a given vertex. Vertices with lower valence are prioritized using
+a power function: <code>score = valence ^ (-power)</code>.</p>
+<p>This design avoids leaving behind "stranded" or "orphaned" vertices.
+When a vertex is down to its last remaining triangle, completing that
+triangle frees the vertex permanently, ensuring it does not re-enter the
+cache at a later time.</p>
+<h3 id="the-selection-and-emitting-loop">The Selection and Emitting
+Loop</h3>
+<ol type="1">
+<li><strong>Score Calculation:</strong> The algorithm computes scores
+for all active vertices and sums the three vertex scores for each
+candidate triangle to determine each triangle's score.</li>
+<li><strong>Triangle Emission:</strong> The triangle with the highest
+score is appended to the optimized index buffer.</li>
+<li><strong>State Update:</strong>
+<ul>
+<li>The emitted triangle's vertices are inserted into the simulated LRU
+cache.</li>
+<li>The valence (unrendered triangle count) of each used vertex is
+decremented.</li>
+<li>Scores are updated only for the affected vertices and their
+neighboring triangles, maintaining linear <span
+class="math inline">\(O(N)\)</span> execution time.</li>
+</ul></li>
+<li><strong>Iteration:</strong> The process repeats until all triangles
+are emitted. If the cache runs dry of unrendered candidates, the
+algorithm falls back to the remaining triangle with the highest score
+elsewhere in the mesh.</li>
+</ol>
+<h3 id="integration-with-opengl-draw-passes">Integration with OpenGL
+Draw Passes</h3>
+<p>The Forsyth algorithm acts strictly as an offline or
+asset-conditioning preprocessing step. It outputs an updated element
+array (<code>GL_ELEMENT_ARRAY_BUFFER</code>) without altering the
+geometry or vertex attribute buffer (<code>GL_ARRAY_BUFFER</code>).</p>
+<p>When passing the reordered index array to OpenGL:</p>
+<ul>
+<li>Functions like <code>glDrawElements</code> or
+<code>glDrawRangeElements</code> process consecutive indices that
+repeatedly reference recently loaded vertices.</li>
+<li>Pipeline stalls waiting on vertex shader execution stages are
+minimized.</li>
+<li>Memory bandwidth across the bus is reduced, benefiting both desktop
+architectures with complex vertex shaders and mobile GPUs using
+tile-based deferred rendering (TBDR).</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/forsyth-vertex-cache-optimization-for-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

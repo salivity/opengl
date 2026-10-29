@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Latency Hiding vs Bandwidth Saturation in OpenGL Compute - opengl</title>
+    <meta name="description" content="High-throughput GPU programming in OpenGL requires balancing compute instructions and memory operations to extract maximum hardware performance. While both latency hiding and bandwidth saturation dictate execution efficiency in OpenGL compute shaders (GLC">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/latency-hiding-vs-bandwidth-saturation-in-open-gl-compute">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Latency Hiding vs Bandwidth Saturation in OpenGL Compute - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/latency-hiding-vs-bandwidth-saturation-in-open-gl-compute" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="High-throughput GPU programming in OpenGL requires balancing compute instructions and memory operations to extract maximum hardware performance. While both latency hiding and bandwidth saturation dictate execution efficiency in OpenGL compute shaders (GLC" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="latency-hiding-vs-bandwidth-saturation-in-opengl-compute">Latency
+Hiding vs Bandwidth Saturation in OpenGL Compute</h1>
+<p>High-throughput GPU programming in OpenGL requires balancing compute
+instructions and memory operations to extract maximum hardware
+performance. While both latency hiding and bandwidth saturation dictate
+execution efficiency in OpenGL compute shaders
+(<code>GL_COMPUTE_SHADER</code>), they address fundamentally different
+bottlenecks in the GPU pipeline. Latency hiding is a scheduling strategy
+designed to mask execution delays by switching between active
+workgroups, whereas bandwidth saturation represents the physical
+utilization limit of the GPU's memory bus. Differentiating between these
+two concepts is essential for profiling shader performance, tuning
+workgroup sizes, and resolving memory-bound or instruction-bound
+bottlenecks.</p>
+<h2 id="understanding-latency-hiding">Understanding Latency Hiding</h2>
+<p>Latency refers to the time—measured in clock cycles—it takes for a
+requested operation to complete. In an OpenGL compute shader, latency
+predominantly arises from memory reads and writes (such as accessing
+Shader Storage Buffer Objects (SSBOs) or texture sampling) and complex
+mathematical operations. Fetching data from global VRAM can cost
+hundreds of GPU clock cycles.</p>
+<p>GPUs manage this delay through hardware-level concurrency rather than
+deep CPU-style caching. When a collection of invocations (a warp on
+NVIDIA or a wavefront on AMD) requests data from an SSBO, the hardware
+thread scheduler immediately puts that warp to sleep and
+context-switches to an alternate warp that is ready to execute
+arithmetic operations.</p>
+<p>Latency hiding is successful when the GPU maintains sufficient active
+invocations—referred to as high occupancy—so that the compute units
+(ALUs) are never idle while waiting for memory requests to return.
+Effective latency hiding requires:</p>
+<ul>
+<li>Sufficient work-item concurrency (defined by
+<code>gl_WorkGroupSize</code> and total dispatch size).</li>
+<li>Minimal register pressure per invocation to prevent eviction of
+concurrent warps.</li>
+<li>Balanced use of shared memory (<code>shared</code> keyword) to avoid
+restricting the number of active workgroups per compute unit.</li>
+</ul>
+<h2 id="understanding-bandwidth-saturation">Understanding Bandwidth
+Saturation</h2>
+<p>Bandwidth is the maximum rate at which data can be physically
+transferred between the GPU's processing cores and its memory hierarchy
+(e.g., GDDR6, HBM, or L2 cache), typically measured in gigabytes per
+second (GB/s).</p>
+<p>Bandwidth saturation occurs when the volume of data requested by all
+running compute invocations matches or exceeds the theoretical
+throughput of the memory bus. Once the memory bus is 100% saturated, the
+memory subsystem cannot deliver data any faster, regardless of how many
+threads are waiting.</p>
+<p>In OpenGL compute, bandwidth saturation typically occurs when shaders
+have a low arithmetic intensity—meaning they perform very few
+mathematical operations per byte of data read from an SSBO or image. At
+this point, the application becomes hard-bound by memory bandwidth, and
+compute execution units inevitably stall because the physical
+interconnect cannot transport the data quickly enough.</p>
+<h2 id="the-core-differences">The Core Differences</h2>
+<p>The distinction between latency hiding and bandwidth saturation lies
+in the nature of the bottleneck:</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Characteristic</th>
+<th style="text-align: left;">Latency Hiding</th>
+<th style="text-align: left;">Bandwidth Saturation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>Nature of Problem</strong></td>
+<td style="text-align: left;">Temporal (waiting for an operation to
+complete)</td>
+<td style="text-align: left;">Volumetric (carrying capacity of the data
+bus)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Limiting Factor</strong></td>
+<td style="text-align: left;">Pipeline depth, memory distance, thread
+occupancy</td>
+<td style="text-align: left;">Physical bus width, memory clock speeds
+(GB/s)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Resolution Method</strong></td>
+<td style="text-align: left;">Increase concurrent threads, lower
+register/shared memory pressure</td>
+<td style="text-align: left;">Reduce data footprint, increase arithmetic
+intensity, improve caching</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>ALU State</strong></td>
+<td style="text-align: left;">Stalled only if there are no ready warps
+to switch to</td>
+<td style="text-align: left;">Stalled because memory pipelines cannot
+supply required data</td>
+</tr>
+</tbody>
+</table>
+<p>Latency hiding solves the problem of <em>delay</em>, not
+<em>volume</em>. If an algorithm requests 1 TB/s of data across an
+interface that physically maxes out at 500 GB/s, having thousands of
+active threads to hide latency will not improve throughput. Instead,
+those threads will simply accumulate in the scheduler's queue, waiting
+on saturated memory channels.</p>
+<h2 id="optimizing-for-both-in-opengl-compute">Optimizing for Both in
+OpenGL Compute</h2>
+<p>Achieving maximum compute throughput requires addressing both
+constraints in tandem:</p>
+<ol type="1">
+<li><strong>Ensure Sufficient Occupancy to Hide Latency:</strong>
+Configure <code>layout (local_size_x, ...)</code> to multiples of the
+target hardware's warp or wavefront size (typically 32 or 64). Profile
+the shader to ensure registers per thread do not limit active workgroup
+slots on the Streaming Multiprocessor (SM) or Compute Unit (CU).</li>
+<li><strong>Maximize Memory Coalescing:</strong> Ensure that consecutive
+invocations in a workgroup read from consecutive SSBO addresses.
+Uncoalesced access breaks a single transaction into multiple memory
+requests, rapidly saturating the memory bus without increasing useful
+payload delivery.</li>
+<li><strong>Increase Arithmetic Intensity to Avoid Saturation:</strong>
+When a shader is bandwidth-saturated, reduce memory round-trips.
+Compress buffer structures (e.g., using <code>packed</code>, 16-bit
+floats, or normalized integers), utilize local shared memory
+(<code>shared</code>) as an explicit user-managed cache for re-used
+data, and prefer computing values procedurally over fetching precomputed
+lookups from memory.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/latency-hiding-vs-bandwidth-saturation-in-open-gl-compute';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

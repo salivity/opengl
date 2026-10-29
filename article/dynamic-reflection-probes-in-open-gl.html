@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Reflection Probes in OpenGL - opengl</title>
+    <meta name="description" content="Reflection probes are spatial anchor points used in real-time computer graphics to capture local specular lighting and environmental reflections, dramatically improving realism compared to a single global skybox. This article details the mechanics of refl">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/dynamic-reflection-probes-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Dynamic Reflection Probes in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/dynamic-reflection-probes-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Reflection probes are spatial anchor points used in real-time computer graphics to capture local specular lighting and environmental reflections, dramatically improving realism compared to a single global skybox. This article details the mechanics of refl" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamic-reflection-probes-in-opengl">Dynamic Reflection Probes
+in OpenGL</h1>
+<p>Reflection probes are spatial anchor points used in real-time
+computer graphics to capture local specular lighting and environmental
+reflections, dramatically improving realism compared to a single global
+skybox. This article details the mechanics of reflection probes within
+Physically Based Rendering (PBR) workflows and outlines how to
+dynamically update their radiance inputs in modern OpenGL using
+Framebuffer Objects (FBOs), cubemap rendering passes, and mipmapped
+roughness filtering.</p>
+<h2 id="what-are-reflection-probes">What Are Reflection Probes?</h2>
+<p>A reflection probe is an invisible point in a 3D scene that captures
+a 360-degree view of its surroundings into a cubemap texture. In
+standard Image-Based Lighting (IBL), using a single distant environment
+map causes reflections on local indoor geometry to appear spatially
+disconnected. Reflection probes solve this by capturing localized light
+information:</p>
+<ul>
+<li><strong>Local Capture:</strong> Probes sit at defined coordinates
+and capture local geometry and lighting.</li>
+<li><strong>Bounding Volumes:</strong> Probes use spheres or
+axis-aligned bounding boxes (AABBs) to define their influence zone and
+blend boundaries.</li>
+<li><strong>Parallax Correction:</strong> Using box projection or sphere
+projection algorithms, the probe adjusts the reflection vector based on
+the scene bounds to ensure reflections accurately reflect local surfaces
+rather than appearing infinitely far away.</li>
+</ul>
+<h2 id="dynamically-updating-radiance-inputs-in-opengl">Dynamically
+Updating Radiance Inputs in OpenGL</h2>
+<p>While static scenes precompute probe cubemaps, dynamic
+scenes—featuring moving geometry, varying light conditions, or day-night
+cycles—require real-time radiance updates. In OpenGL, updating dynamic
+radiance inputs involves three core steps: cubemap allocation,
+multi-angle scene capture, and pre-filtering for roughness.</p>
+<h3 id="1-cubemap-and-framebuffer-setup">1. Cubemap and Framebuffer
+Setup</h3>
+<p>To render into a cubemap dynamically, allocate a
+<code>GL_TEXTURE_CUBE_MAP</code> with mipmaps enabled to support various
+surface roughness levels, then link it to an FBO.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>GLuint cubemapTexture<span class="op">;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>glGenTextures<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="op">&amp;</span>cubemapTexture<span class="op">);</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>glBindTexture<span class="op">(</span>GL_TEXTURE_CUBE_MAP<span class="op">,</span> cubemapTexture<span class="op">);</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="op">(</span><span class="dt">unsigned</span> <span class="dt">int</span> i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> <span class="dv">6</span><span class="op">;</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    glTexImage2D<span class="op">(</span>GL_TEXTURE_CUBE_MAP_POSITIVE_X <span class="op">+</span> i<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> GL_RGB16F<span class="op">,</span> </span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>                 resolution<span class="op">,</span> resolution<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> GL_RGB<span class="op">,</span> GL_FLOAT<span class="op">,</span> <span class="kw">nullptr</span><span class="op">);</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_CUBE_MAP<span class="op">,</span> GL_TEXTURE_MIN_FILTER<span class="op">,</span> GL_LINEAR_MIPMAP_LINEAR<span class="op">);</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_CUBE_MAP<span class="op">,</span> GL_TEXTURE_MAG_FILTER<span class="op">,</span> GL_LINEAR<span class="op">);</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_CUBE_MAP<span class="op">,</span> GL_TEXTURE_WRAP_S<span class="op">,</span> GL_CLAMP_TO_EDGE<span class="op">);</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_CUBE_MAP<span class="op">,</span> GL_TEXTURE_WRAP_T<span class="op">,</span> GL_CLAMP_TO_EDGE<span class="op">);</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_CUBE_MAP<span class="op">,</span> GL_TEXTURE_WRAP_R<span class="op">,</span> GL_CLAMP_TO_EDGE<span class="op">);</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>glGenerateMipmap<span class="op">(</span>GL_TEXTURE_CUBE_MAP<span class="op">);</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>GLuint captureFBO<span class="op">,</span> captureRBO<span class="op">;</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>glGenFramebuffers<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="op">&amp;</span>captureFBO<span class="op">);</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>glGenRenderbuffers<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="op">&amp;</span>captureRBO<span class="op">);</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>glBindFramebuffer<span class="op">(</span>GL_FRAMEBUFFER<span class="op">,</span> captureFBO<span class="op">);</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>glBindRenderbuffer<span class="op">(</span>GL_RENDERBUFFER<span class="op">,</span> captureRBO<span class="op">);</span></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>glRenderbufferStorage<span class="op">(</span>GL_RENDERBUFFER<span class="op">,</span> GL_DEPTH_COMPONENT24<span class="op">,</span> resolution<span class="op">,</span> resolution<span class="op">);</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>glFramebufferRenderbuffer<span class="op">(</span>GL_FRAMEBUFFER<span class="op">,</span> GL_DEPTH_ATTACHMENT<span class="op">,</span> GL_RENDERBUFFER<span class="op">,</span> captureRBO<span class="op">);</span></span></code></pre></div>
+<h3 id="2-rendering-the-six-cubemap-faces">2. Rendering the Six Cubemap
+Faces</h3>
+<p>Set up a 90-degree field-of-view (FOV) projection matrix with an
+aspect ratio of 1:1. From the probe's world position, construct six view
+matrices oriented along the primary axes: <span
+class="math inline">\(+X, -X, +Y, -Y, +Z,\)</span> and <span
+class="math inline">\(-Z\)</span>.</p>
+<p>Loop through each face, attaching the target cubemap face to the FBO
+color attachment, and render the scene:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>glm<span class="op">::</span>mat4 captureProjection <span class="op">=</span> glm<span class="op">::</span>perspective<span class="op">(</span>glm<span class="op">::</span>radians<span class="op">(</span><span class="fl">90.0</span><span class="bu">f</span><span class="op">),</span> <span class="fl">1.0</span><span class="bu">f</span><span class="op">,</span> <span class="fl">0.1</span><span class="bu">f</span><span class="op">,</span> <span class="fl">100.0</span><span class="bu">f</span><span class="op">);</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>glm<span class="op">::</span>mat4 captureViews<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>   glm<span class="op">::</span>lookAt<span class="op">(</span>probePos<span class="op">,</span> probePos <span class="op">+</span> glm<span class="op">::</span>vec3<span class="op">(</span> <span class="dv">1</span><span class="op">,</span>  <span class="dv">0</span><span class="op">,</span>  <span class="dv">0</span><span class="op">),</span> glm<span class="op">::</span>vec3<span class="op">(</span><span class="dv">0</span><span class="op">,</span> <span class="op">-</span><span class="dv">1</span><span class="op">,</span>  <span class="dv">0</span><span class="op">)),</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>   glm<span class="op">::</span>lookAt<span class="op">(</span>probePos<span class="op">,</span> probePos <span class="op">+</span> glm<span class="op">::</span>vec3<span class="op">(-</span><span class="dv">1</span><span class="op">,</span>  <span class="dv">0</span><span class="op">,</span>  <span class="dv">0</span><span class="op">),</span> glm<span class="op">::</span>vec3<span class="op">(</span><span class="dv">0</span><span class="op">,</span> <span class="op">-</span><span class="dv">1</span><span class="op">,</span>  <span class="dv">0</span><span class="op">)),</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>   glm<span class="op">::</span>lookAt<span class="op">(</span>probePos<span class="op">,</span> probePos <span class="op">+</span> glm<span class="op">::</span>vec3<span class="op">(</span> <span class="dv">0</span><span class="op">,</span>  <span class="dv">1</span><span class="op">,</span>  <span class="dv">0</span><span class="op">),</span> glm<span class="op">::</span>vec3<span class="op">(</span><span class="dv">0</span><span class="op">,</span>  <span class="dv">0</span><span class="op">,</span>  <span class="dv">1</span><span class="op">)),</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>   glm<span class="op">::</span>lookAt<span class="op">(</span>probePos<span class="op">,</span> probePos <span class="op">+</span> glm<span class="op">::</span>vec3<span class="op">(</span> <span class="dv">0</span><span class="op">,</span> <span class="op">-</span><span class="dv">1</span><span class="op">,</span>  <span class="dv">0</span><span class="op">),</span> glm<span class="op">::</span>vec3<span class="op">(</span><span class="dv">0</span><span class="op">,</span>  <span class="dv">0</span><span class="op">,</span> <span class="op">-</span><span class="dv">1</span><span class="op">)),</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>   glm<span class="op">::</span>lookAt<span class="op">(</span>probePos<span class="op">,</span> probePos <span class="op">+</span> glm<span class="op">::</span>vec3<span class="op">(</span> <span class="dv">0</span><span class="op">,</span>  <span class="dv">0</span><span class="op">,</span>  <span class="dv">1</span><span class="op">),</span> glm<span class="op">::</span>vec3<span class="op">(</span><span class="dv">0</span><span class="op">,</span> <span class="op">-</span><span class="dv">1</span><span class="op">,</span>  <span class="dv">0</span><span class="op">)),</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>   glm<span class="op">::</span>lookAt<span class="op">(</span>probePos<span class="op">,</span> probePos <span class="op">+</span> glm<span class="op">::</span>vec3<span class="op">(</span> <span class="dv">0</span><span class="op">,</span>  <span class="dv">0</span><span class="op">,</span> <span class="op">-</span><span class="dv">1</span><span class="op">),</span> glm<span class="op">::</span>vec3<span class="op">(</span><span class="dv">0</span><span class="op">,</span> <span class="op">-</span><span class="dv">1</span><span class="op">,</span>  <span class="dv">0</span><span class="op">))</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>glViewport<span class="op">(</span><span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">,</span> resolution<span class="op">,</span> resolution<span class="op">);</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>glBindFramebuffer<span class="op">(</span>GL_FRAMEBUFFER<span class="op">,</span> captureFBO<span class="op">);</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="op">(</span><span class="dt">unsigned</span> <span class="dt">int</span> i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> <span class="dv">6</span><span class="op">;</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>    glFramebufferTexture2D<span class="op">(</span>GL_FRAMEBUFFER<span class="op">,</span> GL_COLOR_ATTACHMENT0<span class="op">,</span> </span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>                           GL_TEXTURE_CUBE_MAP_POSITIVE_X <span class="op">+</span> i<span class="op">,</span> cubemapTexture<span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>    glClear<span class="op">(</span>GL_COLOR_BUFFER_BIT <span class="op">|</span> GL_DEPTH_BUFFER_BIT<span class="op">);</span></span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>    RenderScene<span class="op">(</span>captureViews<span class="op">[</span>i<span class="op">],</span> captureProjection<span class="op">);</span></span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p><em>Note: Alternatively, you can use layered rendering via a Geometry
+Shader or the <code>GL_AMD_vertex_shader_layer</code> /
+<code>GL_NV_viewport_array2</code> extensions to draw all six faces in a
+single draw call.</em></p>
+<h3 id="3-updating-the-radiance-input-filtering">3. Updating the
+Radiance Input (Filtering)</h3>
+<p>Raw cubemaps only provide perfect mirror reflections. In standard
+PBR, the Split-Sum approximation requires the radiance map to be
+pre-filtered across multiple roughness levels stored within the
+cubemap's mipmap chain.</p>
+<p>For dynamic updates, recalculating this every frame can be demanding.
+Two main approaches update this radiance data:</p>
+<ol type="1">
+<li><strong>Hardware Mipmap Generation (Approximation):</strong> Calling
+<code>glGenerateMipmap(GL_TEXTURE_CUBE_MAP)</code> generates standard
+downsampled mipmaps. While physically inaccurate compared to a
+GGX-weighted convolution, fetching lower mipmaps for rougher materials
+provides an inexpensive pseudo-blur suitable for high-performance
+budgets.</li>
+<li><strong>Compute Shader Convolution:</strong> Dispatch an OpenGL
+compute shader across the cubemap's mip levels. The compute shader
+executes a Monte Carlo integration with Importance Sampling using the
+GGX Normal Distribution Function (NDF), writing the blurred radiance
+results directly into specific mipmap levels using
+<code>imageStore</code>.</li>
+</ol>
+<h2 id="optimization-strategies-for-real-time-updates">Optimization
+Strategies for Real-Time Updates</h2>
+<p>Re-rendering the scene six times introduces significant draw call
+overhead. To maintain interactive frame rates in OpenGL:</p>
+<ul>
+<li><strong>Time-Slicing:</strong> Instead of capturing all six faces
+every frame, update a single face per frame. The entire probe updates
+completely every six frames.</li>
+<li><strong>Low Resolutions:</strong> Allocate low-resolution textures
+for dynamic probes (e.g., <span class="math inline">\(128 \times
+128\)</span> or <span class="math inline">\(256 \times 256\)</span>), as
+specular reflections rarely require high-frequency geometric
+detail.</li>
+<li><strong>Culling and LODs:</strong> When rendering probe passes,
+disable post-processing, cull small decorative objects, and force meshes
+to render with lower Levels of Detail (LODs).</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/dynamic-reflection-probes-in-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

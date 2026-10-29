@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Double Precision with glVertexAttribLPointer - opengl</title>
+    <meta name="description" content="Rendering massive virtual environments—such as planetary-scale terrain, geospatial visualizers, or astronomical simulations—requires precision beyond the standard 32-bit floating-point limits. OpenGL natively supports 64-bit floating-point vertex attribut">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/double-precision-with-gl-vertex-attrib-l-pointer">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Double Precision with glVertexAttribLPointer - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/double-precision-with-gl-vertex-attrib-l-pointer" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Rendering massive virtual environments—such as planetary-scale terrain, geospatial visualizers, or astronomical simulations—requires precision beyond the standard 32-bit floating-point limits. OpenGL natively supports 64-bit floating-point vertex attribut" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="double-precision-with-glvertexattriblpointer">Double Precision
+with glVertexAttribLPointer</h1>
+<p>Rendering massive virtual environments—such as planetary-scale
+terrain, geospatial visualizers, or astronomical simulations—requires
+precision beyond the standard 32-bit floating-point limits. OpenGL
+natively supports 64-bit floating-point vertex attributes via
+<code>glVertexAttribLPointer</code>, a function introduced in OpenGL 4.1
+(and through the <code>ARB_vertex_attrib_64bit</code> extension). This
+article explains how <code>glVertexAttribLPointer</code> integrates
+double-precision attributes into the modern OpenGL pipeline, how memory
+layout and shader variables align, and the architectural trade-offs
+involved in using 64-bit data on the GPU.</p>
+<h3 id="the-problem-with-standard-vertex-attribute-pointers">The Problem
+with Standard Vertex Attribute Pointers</h3>
+<p>Traditional vertex pipelines rely on
+<code>glVertexAttribPointer</code>. Even if you pass
+<code>GL_DOUBLE</code> as the type parameter to
+<code>glVertexAttribPointer</code>, the OpenGL specification mandates
+that the driver normalizes or casts those 64-bit values down to 32-bit
+single-precision floats (<code>float</code>, <code>vec2</code>,
+<code>vec3</code>, <code>vec4</code>) before they reach the vertex
+shader stage.</p>
+<p>To preserve actual 64-bit double-precision data (<code>double</code>,
+<code>dvec2</code>, <code>dvec3</code>, <code>dvec4</code>) inside the
+shader without loss of precision, OpenGL provides
+<code>glVertexAttribLPointer</code> (where the "L" signifies
+<code>long double</code> / 64-bit float support).</p>
+<h3 id="function-signature-and-parameters">Function Signature and
+Parameters</h3>
+<p>The signature for <code>glVertexAttribLPointer</code> is:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> glVertexAttribLPointer<span class="op">(</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    GLuint index<span class="op">,</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    GLint size<span class="op">,</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    GLenum type<span class="op">,</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    GLsizei stride<span class="op">,</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">const</span> <span class="dt">void</span> <span class="op">*</span>pointer</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="op">);</span></span></code></pre></div>
+<ul>
+<li><strong><code>index</code></strong>: Specifies the generic vertex
+attribute index to be modified.</li>
+<li><strong><code>size</code></strong>: The number of components per
+vertex attribute (must be 1, 2, 3, or 4).</li>
+<li><strong><code>type</code></strong>: The data type of each component.
+This must be <code>GL_DOUBLE</code>.</li>
+<li><strong><code>stride</code></strong>: The byte offset between
+consecutive generic vertex attributes. If set to 0, attributes are
+assumed to be tightly packed.</li>
+<li><strong><code>pointer</code></strong>: The offset of the first
+component of the first generic vertex attribute in the buffer currently
+bound to <code>GL_ARRAY_BUFFER</code>.</li>
+</ul>
+<p>Unlike <code>glVertexAttribPointer</code>, there is no
+<code>normalized</code> parameter because double-precision attributes
+cannot be mapped or normalized to integer ranges; they are uploaded as
+raw IEEE 754 64-bit floats.</p>
+<h3 id="integration-into-the-vertex-pipeline">Integration into the
+Vertex Pipeline</h3>
+<p>Integrating 64-bit vertex data into your rendering pipeline involves
+three primary steps: buffer population, attribute binding, and shader
+declaration.</p>
+<h4 id="1-buffer-configuration-cpu-and-vbo">1. Buffer Configuration (CPU
+and VBO)</h4>
+<p>Store coordinates as <code>double</code> types in your client array
+or struct:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> Vertex64 <span class="op">{</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">double</span> position<span class="op">[</span><span class="dv">3</span><span class="op">];</span> <span class="co">// dvec3</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span>  texCoords<span class="op">[</span><span class="dv">2</span><span class="op">];</span> <span class="co">// standard vec2</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
+<p>Bind your Vertex Buffer Object (VBO) and upload the data using
+<code>glBufferData</code> or <code>glNamedBufferStorage</code> using
+total byte sizes calculated with <code>sizeof(double)</code>.</p>
+<h4 id="2-attribute-pointer-configuration">2. Attribute Pointer
+Configuration</h4>
+<p>When defining the Vertex Array Object (VAO), target your attribute
+location using <code>glVertexAttribLPointer</code>:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Bind VAO and VBO</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>glBindVertexArray<span class="op">(</span>vao<span class="op">);</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>glBindBuffer<span class="op">(</span>GL_ARRAY_BUFFER<span class="op">,</span> vbo<span class="op">);</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="co">// Position (Location 0, dvec3)</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>glEnableVertexAttribArray<span class="op">(</span><span class="dv">0</span><span class="op">);</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>glVertexAttribLPointer<span class="op">(</span><span class="dv">0</span><span class="op">,</span> <span class="dv">3</span><span class="op">,</span> GL_DOUBLE<span class="op">,</span> <span class="kw">sizeof</span><span class="op">(</span>Vertex64<span class="op">),</span> <span class="op">(</span><span class="dt">void</span><span class="op">*)</span>offsetof<span class="op">(</span>Vertex64<span class="op">,</span> position<span class="op">));</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="co">// Texture Coordinates (Location 1, vec2)</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>glEnableVertexAttribArray<span class="op">(</span><span class="dv">1</span><span class="op">);</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>glVertexAttribPointer<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="dv">2</span><span class="op">,</span> GL_FLOAT<span class="op">,</span> GL_FALSE<span class="op">,</span> <span class="kw">sizeof</span><span class="op">(</span>Vertex64<span class="op">),</span> <span class="op">(</span><span class="dt">void</span><span class="op">*)</span>offsetof<span class="op">(</span>Vertex64<span class="op">,</span> texCoords<span class="op">));</span></span></code></pre></div>
+<h4 id="3-shading-language-integration-glsl">3. Shading Language
+Integration (GLSL)</h4>
+<p>In the vertex shader (requiring <code>#version 400 core</code> or
+higher), consume the attribute with matching 64-bit types:</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 450 core</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span> <span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">in</span> <span class="dt">dvec3</span> inPosition<span class="op">;</span> <span class="co">// Matches glVertexAttribLPointer</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span> <span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">1</span><span class="op">)</span> <span class="dt">in</span> <span class="dt">vec2</span> inTexCoord<span class="op">;</span>  <span class="co">// Matches standard glVertexAttribPointer</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">dmat4</span> uModelViewMatrix<span class="op">;</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">mat4</span> uProjectionMatrix<span class="op">;</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec2</span> fragTexCoord<span class="op">;</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Perform model-view transformation in 64-bit precision</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>    <span class="dt">dvec4</span> viewPos <span class="op">=</span> uModelViewMatrix <span class="op">*</span> <span class="dt">dvec4</span><span class="op">(</span>inPosition<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Convert to single precision for clip-space projection</span></span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>    <span class="bu">gl_Position</span> <span class="op">=</span> uProjectionMatrix <span class="op">*</span> <span class="dt">vec4</span><span class="op">(</span>viewPos<span class="op">);</span></span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>    fragTexCoord <span class="op">=</span> inTexCoord<span class="op">;</span></span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="attribute-location-slot-consumption">Attribute Location Slot
+Consumption</h3>
+<p>Hardware registers typically allocate space in 32-bit increments.
+Standard attributes (<code>vec4</code>) consume one 4-component 32-bit
+slot. Because 64-bit types are twice the width:</p>
+<ul>
+<li><code>double</code> and <code>dvec2</code> consume
+<strong>one</strong> attribute location.</li>
+<li><code>dvec3</code> and <code>dvec4</code> consume
+<strong>two</strong> attribute locations.</li>
+</ul>
+<p>If you declare a
+<code>layout (location = 0) in dvec3 inPosition;</code>, it occupies
+both location 0 and location 1. The subsequent attribute (such as
+texture coordinates or normals) must be explicitly assigned to
+<code>location = 2</code> or higher to avoid overlapping bindings.</p>
+<h3 id="performance-and-architectural-considerations">Performance and
+Architectural Considerations</h3>
+<p>While <code>glVertexAttribLPointer</code> resolves coordinate jitter
+and floating-point roundoff issues at extreme distances, it carries
+distinct hardware costs:</p>
+<ul>
+<li><strong>Memory Bandwidth:</strong> Vertex data sizes double,
+reducing cache efficiency and increasing GPU memory bus load.</li>
+<li><strong>ALU Throughput:</strong> Most consumer-grade GPUs prioritize
+FP32 operations. FP64 performance can be throttled to 1/16, 1/32, or
+1/64 of single-precision compute rates depending on architecture.</li>
+<li><strong>Hybrid Workflows:</strong> The standard practice is to use
+64-bit attributes for world-space calculations, subtract a 64-bit camera
+position to obtain a Relative-To-Eye (RTE) coordinate, and cast the
+result down to standard 32-bit <code>vec3</code> before passing data
+downstream to the rasterizer.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/double-precision-with-gl-vertex-attrib-l-pointer';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

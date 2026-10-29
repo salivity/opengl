@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Understanding and Fixing Z-Fighting in OpenGL - opengl</title>
+    <meta name="description" content="Z-fighting is a visual artifact that occurs when two or more surfaces share nearly identical depth values, causing them to flicker as the graphics hardware struggles to determine which surface is in front. This article explains the underlying mathematical">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/understanding-and-fixing-z-fighting-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Understanding and Fixing Z-Fighting in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/understanding-and-fixing-z-fighting-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Z-fighting is a visual artifact that occurs when two or more surfaces share nearly identical depth values, causing them to flicker as the graphics hardware struggles to determine which surface is in front. This article explains the underlying mathematical" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="understanding-and-fixing-z-fighting-in-opengl">Understanding and
+Fixing Z-Fighting in OpenGL</h1>
+<p>Z-fighting is a visual artifact that occurs when two or more surfaces
+share nearly identical depth values, causing them to flicker as the
+graphics hardware struggles to determine which surface is in front. This
+article explains the underlying mathematical and hardware causes of
+z-fighting in OpenGL, details the role of non-linear depth precision in
+standard perspective projections, and demonstrates how properly
+configuring the camera frustum's near clipping plane effectively
+mitigates the issue.</p>
+<h3 id="what-causes-z-fighting">What Causes Z-Fighting?</h3>
+<p>Z-fighting stems from the finite precision of the depth buffer
+(Z-buffer), typically 16-bit, 24-bit, or 32-bit. When the GPU rasterizes
+primitives, it computes an interpolated depth value for each fragment
+and compares it against the value stored in the depth buffer to resolve
+visibility.</p>
+<p>When coplanar or nearly coplanar polygons overlap in screen space,
+their calculated depth values can be practically identical. Due to
+floating-point rounding errors and interpolation inaccuracies across
+pixels, some fragments of Polygon A are evaluated as closer than Polygon
+B, while adjacent fragments evaluate the opposite way. As the camera
+moves or objects rotate, these precision variations change
+frame-by-frame, producing severe visual flickering.</p>
+<h3 id="non-linear-depth-distribution-in-opengl">Non-Linear Depth
+Distribution in OpenGL</h3>
+<p>In OpenGL, a standard perspective projection matrix maps eye-space
+depth values (<span class="math inline">\(z_e\)</span>) to normalized
+device coordinates (<span class="math inline">\(z_{ndc}\)</span>), which
+range from <span class="math inline">\(-1.0\)</span> to <span
+class="math inline">\(1.0\)</span> (or <span
+class="math inline">\(0.0\)</span> to <span
+class="math inline">\(1.0\)</span> in clip space). This transformation
+is inherently non-linear because depth is divided by the camera-space
+<span class="math inline">\(w\)</span>-coordinate (which is proportional
+to <span class="math inline">\(-z_e\)</span>).</p>
+<p>The resulting depth value is proportional to <span
+class="math inline">\(\frac{1}{z_e}\)</span>. Because of this reciprocal
+relationship:</p>
+<ul>
+<li>A massive portion of available depth buffer precision is allocated
+to regions immediately adjacent to the near clipping plane (<span
+class="math inline">\(n\)</span>).</li>
+<li>Very little precision remains for the vast majority of the viewable
+scene stretching out toward the far clipping plane (<span
+class="math inline">\(f\)</span>).</li>
+</ul>
+<p>For example, with a near plane at <span
+class="math inline">\(0.01\)</span> and a far plane at <span
+class="math inline">\(1000.0\)</span>, more than half of the distinct
+depth buffer values are consumed within the first few units of the
+camera, leaving almost no precision to distinguish overlapping geometry
+situated dozens or hundreds of units away.</p>
+<h3 id="mitigating-z-fighting-with-the-near-clipping-plane">Mitigating
+Z-Fighting with the Near Clipping Plane</h3>
+<p>Adjusting the camera frustum's near plane is the single most
+effective way to eliminate z-fighting without changing rendering
+architecture or depth buffer bit-depth.</p>
+<p>The precision distribution across the frustum is governed heavily by
+the ratio <span class="math inline">\(\frac{f}{n}\)</span>. Reducing
+this ratio distributes depth precision more evenly across the scene.
+While lowering <span class="math inline">\(f\)</span> helps, increasing
+<span class="math inline">\(n\)</span> has an exponentially greater
+impact because precision drops sharply as <span
+class="math inline">\(n\)</span> approaches zero.</p>
+<h4 id="best-practices-for-frustum-configuration">Best Practices for
+Frustum Configuration</h4>
+<ol type="1">
+<li><strong>Push the Near Plane Outward:</strong> Keep <span
+class="math inline">\(n\)</span> as large as possible without clipping
+objects positioned close to the camera. Increasing <span
+class="math inline">\(n\)</span> from <span
+class="math inline">\(0.01\)</span> to <span
+class="math inline">\(1.0\)</span> reclaims orders of magnitude of depth
+resolution across medium and long distances.</li>
+<li><strong>Minimize the Far-to-Near Ratio:</strong> Aim to keep the
+<span class="math inline">\(\frac{f}{n}\)</span> ratio under <span
+class="math inline">\(10^4\)</span> or <span
+class="math inline">\(10^5\)</span> when using a standard 24-bit integer
+depth buffer.</li>
+<li><strong>Avoid Default Minimal Values:</strong> Setting <span
+class="math inline">\(n = 0.001\)</span> to prevent clipping often ruins
+depth fidelity across the entire scene. Instead, set <span
+class="math inline">\(n\)</span> dynamically based on scene geometry or
+player scale (e.g., <span class="math inline">\(0.1\)</span> or <span
+class="math inline">\(0.5\)</span> in real-world scale units).</li>
+</ol>
+<h3 id="additional-mitigations">Additional Mitigations</h3>
+<p>If increasing the near plane causes unwanted clipping of foreground
+objects, consider these complementary strategies:</p>
+<ul>
+<li><strong><code>glPolygonOffset</code>:</strong> Adds a constant and
+slope-dependent bias to fragment depth values, allowing coplanar decals
+or overlays to render predictably in front of base geometry.</li>
+<li><strong>Floating-Point Depth Buffers:</strong> Using a 32-bit
+floating-point buffer (<code>GL_DEPTH_COMPONENT32F</code>) provides
+higher dynamic range than integer depth buffers.</li>
+<li><strong>Reversed-Z Buffering:</strong> Pairing a floating-point
+depth buffer with inverted clip planes (<span
+class="math inline">\(n\)</span> mapped to <span
+class="math inline">\(1.0\)</span> and <span
+class="math inline">\(f\)</span> mapped to <span
+class="math inline">\(0.0\)</span>) creates a nearly uniform precision
+distribution throughout the frustum, virtually eliminating
+distance-based z-fighting.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/understanding-and-fixing-z-fighting-in-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

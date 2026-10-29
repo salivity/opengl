@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Layered Framebuffers for Cubemap Rendering in OpenGL - opengl</title>
+    <meta name="description" content="Layered framebuffers in OpenGL enable developers to render to all six faces of a cubemap simultaneously in a single draw call, eliminating the CPU overhead of binding individual faces sequentially. This article explains the architecture of layered renderi">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/layered-framebuffers-for-cubemap-rendering-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Layered Framebuffers for Cubemap Rendering in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/layered-framebuffers-for-cubemap-rendering-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Layered framebuffers in OpenGL enable developers to render to all six faces of a cubemap simultaneously in a single draw call, eliminating the CPU overhead of binding individual faces sequentially. This article explains the architecture of layered renderi" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="layered-framebuffers-for-cubemap-rendering-in-opengl">Layered
+Framebuffers for Cubemap Rendering in OpenGL</h1>
+<p>Layered framebuffers in OpenGL enable developers to render to all six
+faces of a cubemap simultaneously in a single draw call, eliminating the
+CPU overhead of binding individual faces sequentially. This article
+explains the architecture of layered rendering, how to attach an entire
+cubemap texture to a framebuffer object (FBO), and how to leverage the
+OpenGL shading pipeline using the built-in <code>gl_Layer</code>
+variable to route geometry to individual cube faces dynamically.</p>
+<h3 id="traditional-vs-layered-cubemap-rendering">Traditional vs.
+Layered Cubemap Rendering</h3>
+<p>In a conventional rendering loop, rendering a dynamic cubemap (such
+as for point light shadow mapping or real-time environment reflections)
+requires six distinct passes. For each face, the CPU must invoke
+<code>glFramebufferTexture2D</code> to bind the specific cubemap target
+face (e.g., <code>GL_TEXTURE_CUBE_MAP_POSITIVE_X</code>), re-bind
+uniforms, and issue a draw call. This introduces significant
+state-change overhead on the CPU.</p>
+<p>Layered rendering removes these repeated state changes. By attaching
+the entire cubemap as a layered texture attachment, the GPU issues one
+draw call per mesh, duplicating and directing geometry to the
+appropriate cubemap layers entirely in hardware.</p>
+<h3 id="configuring-the-layered-framebuffer">Configuring the Layered
+Framebuffer</h3>
+<p>To support layered rendering, the cubemap must be attached to the FBO
+as a whole using <code>glFramebufferTexture</code> rather than the
+standard face-specific <code>glFramebufferTexture2D</code>.</p>
+<ol type="1">
+<li><p><strong>Allocate the Cubemap Texture:</strong> Create a standard
+<code>GL_TEXTURE_CUBE_MAP</code> and allocate storage across all six
+faces:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>GLuint cubemap<span class="op">;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>glGenTextures<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="op">&amp;</span>cubemap<span class="op">);</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>glBindTexture<span class="op">(</span>GL_TEXTURE_CUBE_MAP<span class="op">,</span> cubemap<span class="op">);</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="op">(</span>GLuint i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> <span class="dv">6</span><span class="op">;</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    glTexImage2D<span class="op">(</span>GL_TEXTURE_CUBE_MAP_POSITIVE_X <span class="op">+</span> i<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> GL_DEPTH_COMPONENT<span class="op">,</span> </span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>                SHADOW_WIDTH<span class="op">,</span> SHADOW_HEIGHT<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> GL_DEPTH_COMPONENT<span class="op">,</span> GL_FLOAT<span class="op">,</span> NULL<span class="op">);</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_CUBE_MAP<span class="op">,</span> GL_TEXTURE_MIN_FILTER<span class="op">,</span> GL_NEAREST<span class="op">);</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_CUBE_MAP<span class="op">,</span> GL_TEXTURE_MAG_FILTER<span class="op">,</span> GL_NEAREST<span class="op">);</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_CUBE_MAP<span class="op">,</span> GL_TEXTURE_WRAP_S<span class="op">,</span> GL_CLAMP_TO_EDGE<span class="op">);</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_CUBE_MAP<span class="op">,</span> GL_TEXTURE_WRAP_T<span class="op">,</span> GL_CLAMP_TO_EDGE<span class="op">);</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_CUBE_MAP<span class="op">,</span> GL_TEXTURE_WRAP_R<span class="op">,</span> GL_CLAMP_TO_EDGE<span class="op">);</span></span></code></pre></div></li>
+<li><p><strong>Attach the Cubemap to the FBO:</strong> Use
+<code>glFramebufferTexture</code> to bind the entire texture
+array/cubemap directly to the attachment point:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>GLuint fbo<span class="op">;</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>glGenFramebuffers<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="op">&amp;</span>fbo<span class="op">);</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>glBindFramebuffer<span class="op">(</span>GL_FRAMEBUFFER<span class="op">,</span> fbo<span class="op">);</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>glFramebufferTexture<span class="op">(</span>GL_FRAMEBUFFER<span class="op">,</span> GL_DEPTH_ATTACHMENT<span class="op">,</span> cubemap<span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="co">// Disable color buffer reads/writes if rendering only depth</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>glDrawBuffer<span class="op">(</span>GL_NONE<span class="op">);</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>glReadBuffer<span class="op">(</span>GL_NONE<span class="op">);</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="op">(</span>glCheckFramebufferStatus<span class="op">(</span>GL_FRAMEBUFFER<span class="op">)</span> <span class="op">!=</span> GL_FRAMEBUFFER_COMPLETE<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Handle incomplete framebuffer error</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>glBindFramebuffer<span class="op">(</span>GL_FRAMEBUFFER<span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span></code></pre></div></li>
+</ol>
+<h3 id="directing-primitives-with-the-geometry-shader">Directing
+Primitives with the Geometry Shader</h3>
+<p>Once the framebuffer attachment is layered, the pipeline requires a
+mechanism to specify which layer receives each primitive. The primary
+method is utilizing a Geometry Shader (GS) and the built-in variable
+<code>gl_Layer</code>.</p>
+<p>The cubemap faces correspond directly to layer indices <span
+class="math inline">\(0\)</span> through <span
+class="math inline">\(5\)</span>:</p>
+<ul>
+<li><strong>Layer 0:</strong> <code>+X</code></li>
+<li><strong>Layer 1:</strong> <code>-X</code></li>
+<li><strong>Layer 2:</strong> <code>+Y</code></li>
+<li><strong>Layer 3:</strong> <code>-Y</code></li>
+<li><strong>Layer 4:</strong> <code>+Z</code></li>
+<li><strong>Layer 5:</strong> <code>-Z</code></li>
+</ul>
+<h4 id="shader-implementation">Shader Implementation</h4>
+<ol type="1">
+<li><p><strong>Vertex Shader:</strong> The vertex shader operates in
+world space, passing untransformed or world-space vertices directly to
+the geometry shader without projecting them:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 330 core</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span> <span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">in</span> <span class="dt">vec3</span> aPos<span class="op">;</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">mat4</span> model<span class="op">;</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    <span class="bu">gl_Position</span> <span class="op">=</span> model <span class="op">*</span> <span class="dt">vec4</span><span class="op">(</span>aPos<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div></li>
+<li><p><strong>Geometry Shader:</strong> The geometry shader accepts
+incoming triangles and duplicates them six times. In each iteration, it
+sets <code>gl_Layer</code> to the target face index and applies that
+face's view-projection matrix:</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 330 core</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span> <span class="op">(</span><span class="dt">triangles</span><span class="op">)</span> <span class="dt">in</span><span class="op">;</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span> <span class="op">(</span><span class="dt">triangle_strip</span><span class="op">,</span> <span class="dt">max_vertices</span> <span class="op">=</span> <span class="dv">18</span><span class="op">)</span> <span class="dt">out</span><span class="op">;</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">mat4</span> shadowMatrices<span class="op">[</span><span class="dv">6</span><span class="op">];</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec4</span> FragPos<span class="op">;</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    <span class="kw">for</span> <span class="op">(</span><span class="dt">int</span> face <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> face <span class="op">&lt;</span> <span class="dv">6</span><span class="op">;</span> <span class="op">++</span>face<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>        <span class="bu">gl_Layer</span> <span class="op">=</span> face<span class="op">;</span> <span class="co">// Directs primitive to this cubemap face</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>        <span class="kw">for</span> <span class="op">(</span><span class="dt">int</span> i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> <span class="dv">3</span><span class="op">;</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>            FragPos <span class="op">=</span> <span class="va">gl_in</span><span class="op">[</span>i<span class="op">].</span><span class="fu">gl_Position</span><span class="op">;</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>            <span class="bu">gl_Position</span> <span class="op">=</span> shadowMatrices<span class="op">[</span>face<span class="op">]</span> <span class="op">*</span> FragPos<span class="op">;</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>            <span class="bu">EmitVertex</span><span class="op">();</span></span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>        <span class="bu">EndPrimitive</span><span class="op">();</span></span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div></li>
+<li><p><strong>Fragment Shader:</strong> The fragment shader processes
+fragments written to the respective layer. The hardware implicitly
+manages layer routing; no special layer handling is required in the
+fragment stage unless dynamic branching based on face orientation is
+desired.</p></li>
+</ol>
+<h3 id="executing-the-render-pass">Executing the Render Pass</h3>
+<p>To render the cubemap:</p>
+<ol type="1">
+<li>Bind the layered FBO:
+<code>glBindFramebuffer(GL_FRAMEBUFFER, fbo)</code>.</li>
+<li>Set the viewport to match the dimensions of a single cubemap face:
+<code>glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT)</code>.</li>
+<li>Clear the attachments (<code>glClear(GL_DEPTH_BUFFER_BIT)</code>).
+This clears all six faces at once.</li>
+<li>Pass the six camera matrices (90-degree field-of-view projections
+combined with look-at orientations toward each axis) to the geometry
+shader's uniform array.</li>
+<li>Issue the draw call once per model (<code>glDrawElements</code> or
+<code>glDrawArrays</code>).</li>
+</ol>
+<h3 id="modern-alternative-direct-vertex-shader-layer-assignment">Modern
+Alternative: Direct Vertex Shader Layer Assignment</h3>
+<p>While geometry shaders are standard across OpenGL 3.3+, they can
+introduce a performance bottleneck due to primitive amplification. In
+OpenGL 4.5 (or via the <code>GL_AMD_vertex_shader_layer</code> and
+<code>GL_ARB_shader_viewport_layer_array</code> extensions),
+<code>gl_Layer</code> can be written directly within the Vertex
+Shader.</p>
+<p>When combined with instanced rendering
+(<code>glDrawElementsInstanced</code> using an instance count of 6), the
+vertex shader sets <code>gl_Layer = gl_InstanceID</code>, avoiding the
+geometry shader entirely and achieving maximum GPU throughput.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/layered-framebuffers-for-cubemap-rendering-in-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

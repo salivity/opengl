@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Frustum Culling in OpenGL: CPU Calculation Guide - opengl</title>
+    <meta name="description" content="Frustum culling is an optimization technique that removes 3D objects outside the camera&#39;s field of view before they are rendered, saving significant computational resources. This guide explains the core concepts of frustum culling and details how to extra">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/frustum-culling-in-open-gl-cpu-calculation-guide">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Frustum Culling in OpenGL: CPU Calculation Guide - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/frustum-culling-in-open-gl-cpu-calculation-guide" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Frustum culling is an optimization technique that removes 3D objects outside the camera&#39;s field of view before they are rendered, saving significant computational resources. This guide explains the core concepts of frustum culling and details how to extra" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="frustum-culling-in-opengl-cpu-calculation-guide">Frustum Culling
+in OpenGL: CPU Calculation Guide</h1>
+<p>Frustum culling is an optimization technique that removes 3D objects
+outside the camera's field of view before they are rendered, saving
+significant computational resources. This guide explains the core
+concepts of frustum culling and details how to extract camera frustum
+planes from view-projection matrices, test bounding volumes on the CPU,
+and filter out invisible geometry prior to dispatching OpenGL draw
+commands.</p>
+<h2 id="understanding-the-view-frustum">Understanding the View
+Frustum</h2>
+<p>A viewing frustum is a geometric pyramid with its apex sliced off,
+representing the region of world space visible to the camera. It is
+defined by six clipping planes: Near, Far, Left, Right, Top, and
+Bottom.</p>
+<p>When a scene contains thousands of objects, submitting every mesh to
+OpenGL via <code>glDrawElements</code> or <code>glDrawArrays</code>
+introduces massive CPU driver overhead and wastes GPU vertex processing
+cycles on geometry that will never appear on screen. Performing frustum
+culling on the CPU allows you to discard non-visible objects completely,
+avoiding draw call overhead and state changes.</p>
+<h2
+id="extracting-frustum-planes-from-the-view-projection-matrix">Extracting
+Frustum Planes from the View-Projection Matrix</h2>
+<p>A plane in 3D space is defined by the algebraic equation:</p>
+<p><span class="math display">\[Ax + By + Cz + D = 0\]</span></p>
+<p>Where <span class="math inline">\((A, B, C)\)</span> represents the
+normal vector of the plane and <span class="math inline">\(D\)</span>
+represents the signed distance from the origin.</p>
+<p>Using the Gribb-Hartmann method, the six frustum planes can be
+extracted directly from the combined View-Projection matrix (<span
+class="math inline">\(M = \text{Projection} \times
+\text{View}\)</span>). Given row vectors of matrix <span
+class="math inline">\(M\)</span> denoted as <span
+class="math inline">\(row_0, row_1, row_2, row_3\)</span>:</p>
+<ul>
+<li><strong>Left Plane:</strong> <span class="math inline">\(row_3 +
+row_0\)</span></li>
+<li><strong>Right Plane:</strong> <span class="math inline">\(row_3 -
+row_0\)</span></li>
+<li><strong>Bottom Plane:</strong> <span class="math inline">\(row_3 +
+row_1\)</span></li>
+<li><strong>Top Plane:</strong> <span class="math inline">\(row_3 -
+row_1\)</span></li>
+<li><strong>Near Plane:</strong> <span class="math inline">\(row_3 +
+row_2\)</span></li>
+<li><strong>Far Plane:</strong> <span class="math inline">\(row_3 -
+row_2\)</span></li>
+</ul>
+<p>After calculating each plane's <span class="math inline">\((A, B, C,
+D)\)</span> coefficients, normalize them by dividing all four components
+by the length of the normal vector:</p>
+<p><span class="math display">\[\text{Length} = \sqrt{A^2 + B^2 +
+C^2}\]</span> <span class="math display">\[A&#39; =
+\frac{A}{\text{Length}}, \quad B&#39; = \frac{B}{\text{Length}}, \quad
+C&#39; = \frac{C}{\text{Length}}, \quad D&#39; =
+\frac{D}{\text{Length}}\]</span></p>
+<p>Normalization ensures that evaluating the plane equation for any
+point <span class="math inline">\((x, y, z)\)</span> yields the true
+signed Euclidean distance to that plane.</p>
+<h2 id="defining-bounding-volumes">Defining Bounding Volumes</h2>
+<p>Testing every vertex of a mesh against the six planes on the CPU is
+computationally prohibitive. Instead, wrap objects in simplified
+bounding volumes:</p>
+<ol type="1">
+<li><strong>Bounding Sphere:</strong> Defined by a center point <span
+class="math inline">\(C\)</span> and a radius <span
+class="math inline">\(R\)</span>.</li>
+<li><strong>Axis-Aligned Bounding Box (AABB):</strong> Defined by a
+center point <span class="math inline">\(C\)</span> and half-extents
+vector <span class="math inline">\(E = (e_x, e_y, e_z)\)</span>, or
+minimum and maximum corner points.</li>
+</ol>
+<h2 id="performing-intersection-tests">Performing Intersection
+Tests</h2>
+<p>To determine if an object is inside the frustum, test its bounding
+volume against all six normalized planes. If the volume lies completely
+behind any single plane, it is outside the frustum and culled.</p>
+<h3 id="bounding-sphere-test">Bounding Sphere Test</h3>
+<p>Compute the signed distance from the sphere's center <span
+class="math inline">\((C_x, C_y, C_z)\)</span> to the plane:</p>
+<p><span class="math display">\[\text{Distance} = A \cdot C_x + B \cdot
+C_y + C \cdot C_z + D\]</span></p>
+<ul>
+<li>If <span class="math inline">\(\text{Distance} &lt; -R\)</span> for
+any of the six planes, the sphere is outside the frustum.</li>
+<li>If <span class="math inline">\(\text{Distance} \ge -R\)</span> for
+all six planes, the sphere is inside or intersecting the frustum.</li>
+</ul>
+<h3 id="axis-aligned-bounding-box-aabb-test">Axis-Aligned Bounding Box
+(AABB) Test</h3>
+<p>For an AABB with center <span class="math inline">\(C\)</span> and
+extents <span class="math inline">\(E\)</span>, compute the projected
+radius <span class="math inline">\(r\)</span> along the plane's
+normal:</p>
+<p><span class="math display">\[r = e_x \cdot |A| + e_y \cdot |B| + e_z
+\cdot |C|\]</span> <span class="math display">\[\text{Distance} = A
+\cdot C_x + B \cdot C_y + C \cdot C_z + D\]</span></p>
+<ul>
+<li>If <span class="math inline">\(\text{Distance} &lt; -r\)</span> for
+any plane, the box is completely outside.</li>
+<li>If <span class="math inline">\(\text{Distance} \ge -r\)</span>
+across all planes, the box is visible.</li>
+</ul>
+<h2 id="integrating-cpu-culling-into-the-opengl-pipeline">Integrating
+CPU Culling into the OpenGL Pipeline</h2>
+<p>CPU culling takes place immediately before rendering commands are
+recorded:</p>
+<ol type="1">
+<li><strong>Update Camera:</strong> Recalculate view and projection
+matrices upon camera movement.</li>
+<li><strong>Extract Planes:</strong> Compute and normalize the six
+frustum planes from the updated matrix.</li>
+<li><strong>Traverse Scene Objects:</strong> Iterate through your
+renderable entities.
+<ul>
+<li>Transform the object's local bounding volume into world space using
+its model matrix.</li>
+<li>Execute the intersection test against the six planes.</li>
+</ul></li>
+<li><strong>Issue Draw Calls:</strong> Only append visible objects to
+your active render list or directly invoke their respective OpenGL
+functions (<code>glBindVertexArray</code>, <code>glUniform*</code>,
+<code>glDrawElements</code>).</li>
+</ol>
+<p>By filtering invisible geometry on the CPU, you ensure that the GPU
+only processes primitives that contribute to the final rendered
+frame.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/frustum-culling-in-open-gl-cpu-calculation-guide';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

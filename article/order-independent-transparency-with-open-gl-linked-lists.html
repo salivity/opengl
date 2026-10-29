@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Order-Independent Transparency with OpenGL Linked Lists - opengl</title>
+    <meta name="description" content="Order-Independent Transparency (OIT) solves the long-standing computer graphics challenge of rendering overlapping transparent surfaces correctly without pre-sorting geometry on the CPU. This article explains the fundamentals of OIT, why traditional blend">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/order-independent-transparency-with-open-gl-linked-lists">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Order-Independent Transparency with OpenGL Linked Lists - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/order-independent-transparency-with-open-gl-linked-lists" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Order-Independent Transparency (OIT) solves the long-standing computer graphics challenge of rendering overlapping transparent surfaces correctly without pre-sorting geometry on the CPU. This article explains the fundamentals of OIT, why traditional blend" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="order-independent-transparency-with-opengl-linked-lists">Order-Independent
+Transparency with OpenGL Linked Lists</h1>
+<p>Order-Independent Transparency (OIT) solves the long-standing
+computer graphics challenge of rendering overlapping transparent
+surfaces correctly without pre-sorting geometry on the CPU. This article
+explains the fundamentals of OIT, why traditional blending falls short,
+and how to implement a robust, modern OIT solution in OpenGL using
+per-pixel linked lists powered by Atomic Counters and Shader Storage
+Buffer Objects (SSBOs).</p>
+<h2 id="the-transparency-problem-in-real-time-graphics">The Transparency
+Problem in Real-Time Graphics</h2>
+<p>Standard 3D rendering uses a depth buffer (Z-buffer) to ensure closer
+opaque objects occlude farther ones. However, transparent rendering
+relies on the "over" compositing operator, which is non-commutative. For
+the blending math to produce physically correct results, transparent
+fragments must be blended strictly from back to front:</p>
+<p><span class="math display">\[\text{Final Color} =
+\text{Color}_{\text{source}} \times \alpha + \text{Color}_{\text{dest}}
+\times (1 - \alpha)\]</span></p>
+<p>With standard rendering pipelines, achieving this requires sorting
+all transparent meshes or polygons by their distance from the camera on
+the CPU before issuing draw calls. This CPU-side approach suffers from
+several critical flaws:</p>
+<ul>
+<li>It cannot resolve intersecting transparent primitives.</li>
+<li>It fails with non-convex or self-intersecting meshes.</li>
+<li>It incurs a massive CPU performance overhead when handling dense
+geometry.</li>
+</ul>
+<h2 id="what-is-order-independent-transparency">What is
+Order-Independent Transparency?</h2>
+<p>Order-Independent Transparency decouples rendering order from
+rasterization order. Instead of sorting entire triangles beforehand, OIT
+captures all fragment contributions at every individual pixel and sorts
+them directly on the GPU before computing the final composite color.</p>
+<p>Several techniques exist for OIT, including depth peeling and
+weighted blended approximations. However, <strong>per-pixel linked
+lists</strong> provide an exact, ground-truth solution by dynamically
+capturing and storing every overlapping fragment on a per-pixel
+basis.</p>
+<h2 id="achieving-oit-with-per-pixel-linked-lists-in-opengl">Achieving
+OIT with Per-Pixel Linked Lists in OpenGL</h2>
+<p>Implementing per-pixel linked lists in OpenGL requires modern
+features (OpenGL 4.3+), specifically Shader Storage Buffer Objects
+(SSBOs), atomic operations, and image load/store.</p>
+<p>The technique operates across two primary rendering passes: the
+<strong>Capture Pass</strong> and the <strong>Resolve Pass</strong>.</p>
+<h3 id="1-required-gpu-buffers">1. Required GPU Buffers</h3>
+<p>Three main GPU data structures are necessary to construct the
+per-pixel linked lists:</p>
+<ul>
+<li><strong>Head-Pointer Texture:</strong> A 2D texture
+(<code>GL_R32UI</code>) matching the screen resolution. Each texel
+stores the index of the first fragment node for that specific pixel,
+initialized to a null value (<code>0xFFFFFFFF</code>) at the start of
+each frame.</li>
+<li><strong>Atomic Counter:</strong> A single 32-bit unsigned integer
+(or an atomic variable in an SSBO) that assigns a unique, globally
+incrementing index to every generated transparent fragment.</li>
+<li><strong>Node Buffer (SSBO):</strong> A large, linear array of
+fragment nodes. Each node stores:
+<ul>
+<li><code>vec4 color</code>: The fragment's color and alpha.</li>
+<li><code>float depth</code>: The fragment's depth value for
+sorting.</li>
+<li><code>uint next</code>: The index of the next node in the pixel's
+linked list.</li>
+</ul></li>
+</ul>
+<h3 id="2-pass-1-the-capture-pass">2. Pass 1: The Capture Pass</h3>
+<p>During this pass, transparent geometry is drawn with depth writes
+disabled (<code>glDepthMask(GL_FALSE)</code>), but depth testing enabled
+(<code>GL_LESS</code>). This ensures fragments hidden behind opaque
+objects are culled early.</p>
+<p>In the fragment shader:</p>
+<ol type="1">
+<li>Increment the atomic counter using <code>atomicAdd</code> to reserve
+a unique slot in the Node Buffer.</li>
+<li>Read the current head pointer index from the Head-Pointer Texture
+for the fragment's pixel coordinates.</li>
+<li>Update the Head-Pointer Texture with the newly allocated index using
+<code>imageAtomicExchange</code>.</li>
+<li>Write the fragment's color, depth, and the previous head index into
+the Node Buffer at the reserved slot.</li>
+</ol>
+<p>This effectively prepends the new fragment to the pixel's linked list
+in global GPU memory.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Fragment Shader (Capture Pass)</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">binding</span> <span class="op">=</span> <span class="dv">0</span><span class="op">,</span> r32ui<span class="op">)</span> <span class="kw">uniform</span> <span class="dt">uimage2D</span> headPointerImage<span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">binding</span> <span class="op">=</span> <span class="dv">1</span><span class="op">,</span> <span class="dt">offset</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="kw">uniform</span> <span class="dt">atomic_uint</span> nodeCounter<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> Node <span class="op">{</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> color<span class="op">;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> depth<span class="op">;</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint</span> next<span class="op">;</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">std430</span><span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="kw">buffer</span> NodeBuffer <span class="op">{</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    Node nodes<span class="op">[];</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint</span> nodeIndex <span class="op">=</span> <span class="bu">atomicCounterIncrement</span><span class="op">(</span>nodeCounter<span class="op">);</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Guard against buffer overflow</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> <span class="op">(</span>nodeIndex <span class="op">&gt;=</span> MAX_NODES<span class="op">)</span> <span class="kw">return</span><span class="op">;</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>    <span class="dt">ivec2</span> pixelCoord <span class="op">=</span> <span class="dt">ivec2</span><span class="op">(</span><span class="bu">gl_FragCoord</span><span class="op">.</span><span class="fu">xy</span><span class="op">);</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint</span> prevHead <span class="op">=</span> <span class="bu">imageAtomicExchange</span><span class="op">(</span>headPointerImage<span class="op">,</span> pixelCoord<span class="op">,</span> nodeIndex<span class="op">);</span></span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a>    nodes<span class="op">[</span>nodeIndex<span class="op">].</span><span class="fu">color</span> <span class="op">=</span> calculatedColor<span class="op">;</span></span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>    nodes<span class="op">[</span>nodeIndex<span class="op">].</span><span class="fu">depth</span> <span class="op">=</span> <span class="bu">gl_FragCoord</span><span class="op">.</span><span class="fu">z</span><span class="op">;</span></span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>    nodes<span class="op">[</span>nodeIndex<span class="op">].</span><span class="fu">next</span> <span class="op">=</span> prevHead<span class="op">;</span></span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="3-pass-2-the-resolve-pass">3. Pass 2: The Resolve Pass</h3>
+<p>Once all transparent objects are captured, a full-screen quad is
+rendered to read the linked lists, sort the fragments, and composite
+them onto the framebuffer.</p>
+<p>In the resolve fragment shader:</p>
+<ol type="1">
+<li>Sample the Head-Pointer Texture to find the start of the pixel's
+linked list.</li>
+<li>Traverse the list by following the <code>next</code> pointers,
+copying all nodes for that pixel into a fixed-size local array in shader
+memory.</li>
+<li>Sort the local array based on depth (typically using a simple
+sorting algorithm like insertion sort, which performs well on small
+arrays).</li>
+<li>Blend the sorted fragments back-to-front using standard alpha
+blending equations.</li>
+<li>Output the final blended color to the screen.</li>
+</ol>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Fragment Shader (Resolve Pass)</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="pp">#define MAX_LOCAL_FRAGS 16</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">ivec2</span> pixelCoord <span class="op">=</span> <span class="dt">ivec2</span><span class="op">(</span><span class="bu">gl_FragCoord</span><span class="op">.</span><span class="fu">xy</span><span class="op">);</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint</span> nodeIndex <span class="op">=</span> <span class="bu">imageLoad</span><span class="op">(</span>headPointerImage<span class="op">,</span> pixelCoord<span class="op">).</span><span class="fu">r</span><span class="op">;</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    Node localFrags<span class="op">[</span>MAX_LOCAL_FRAGS<span class="op">];</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> count <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Traverse the linked list</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>    <span class="kw">while</span> <span class="op">(</span>nodeIndex <span class="op">!=</span> <span class="bn">0xFFFFFFFF</span> <span class="op">&amp;&amp;</span> count <span class="op">&lt;</span> MAX_LOCAL_FRAGS<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>        localFrags<span class="op">[</span>count<span class="op">]</span> <span class="op">=</span> nodes<span class="op">[</span>nodeIndex<span class="op">];</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>        nodeIndex <span class="op">=</span> nodes<span class="op">[</span>nodeIndex<span class="op">].</span><span class="fu">next</span><span class="op">;</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>        count<span class="op">++;</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Sort fragments back-to-front (Insertion Sort)</span></span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>    <span class="kw">for</span> <span class="op">(</span><span class="dt">int</span> i <span class="op">=</span> <span class="dv">1</span><span class="op">;</span> i <span class="op">&lt;</span> count<span class="op">;</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>        Node key <span class="op">=</span> localFrags<span class="op">[</span>i<span class="op">];</span></span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a>        <span class="dt">int</span> j <span class="op">=</span> i <span class="op">-</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a>        <span class="kw">while</span> <span class="op">(</span>j <span class="op">&gt;=</span> <span class="dv">0</span> <span class="op">&amp;&amp;</span> localFrags<span class="op">[</span>j<span class="op">].</span><span class="fu">depth</span> <span class="op">&lt;</span> key<span class="op">.</span><span class="fu">depth</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a>            localFrags<span class="op">[</span>j <span class="op">+</span> <span class="dv">1</span><span class="op">]</span> <span class="op">=</span> localFrags<span class="op">[</span>j<span class="op">];</span></span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a>            j<span class="op">--;</span></span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a>        localFrags<span class="op">[</span>j <span class="op">+</span> <span class="dv">1</span><span class="op">]</span> <span class="op">=</span> key<span class="op">;</span></span>
+<span id="cb2-27"><a href="#cb2-27" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb2-28"><a href="#cb2-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-29"><a href="#cb2-29" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Blend fragments</span></span>
+<span id="cb2-30"><a href="#cb2-30" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> finalColor <span class="op">=</span> <span class="dt">vec4</span><span class="op">(</span><span class="fl">0.0</span><span class="op">);</span></span>
+<span id="cb2-31"><a href="#cb2-31" aria-hidden="true" tabindex="-1"></a>    <span class="kw">for</span> <span class="op">(</span><span class="dt">int</span> i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> count<span class="op">;</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-32"><a href="#cb2-32" aria-hidden="true" tabindex="-1"></a>        finalColor <span class="op">=</span> <span class="bu">mix</span><span class="op">(</span>finalColor<span class="op">,</span> localFrags<span class="op">[</span>i<span class="op">].</span><span class="fu">color</span><span class="op">,</span> localFrags<span class="op">[</span>i<span class="op">].</span><span class="fu">color</span><span class="op">.</span><span class="fu">a</span><span class="op">);</span></span>
+<span id="cb2-33"><a href="#cb2-33" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb2-34"><a href="#cb2-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-35"><a href="#cb2-35" aria-hidden="true" tabindex="-1"></a>    fragColor <span class="op">=</span> finalColor<span class="op">;</span></span>
+<span id="cb2-36"><a href="#cb2-36" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h2 id="performance-and-memory-considerations">Performance and Memory
+Considerations</h2>
+<p>Per-pixel linked lists yield perfectly blended, artifact-free
+transparency, but they require careful resource management:</p>
+<ul>
+<li><strong>Memory Allocation:</strong> The Node Buffer must be large
+enough to accommodate the worst-case scenario of overlapping fragments
+across the entire viewport. If the buffer is exhausted, newer fragments
+are dropped, causing rendering artifacts.</li>
+<li><strong>Memory Bandwidth:</strong> Heavy scenes with high depth
+complexity generate hundreds of atomic operations and incoherent memory
+accesses, which can bottleneck GPU memory controllers.</li>
+<li><strong>Register Pressure:</strong> Sorting many fragments locally
+in the resolve pass requires high register allocation, potentially
+limiting GPU warp/wavefront occupancy. Capping the maximum sortable
+fragments per pixel balances visual fidelity and performance.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/order-independent-transparency-with-open-gl-linked-lists';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

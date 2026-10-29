@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Volatile Keyword and Register Caching in GLSL - opengl</title>
+    <meta name="description" content="In OpenGL compute and fragment pipelines, the GPU compiler optimizes performance by keeping frequently accessed memory values in local thread registers instead of repeatedly accessing global memory. When multiple shader invocations access shared resources">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/volatile-keyword-and-register-caching-in-glsl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Volatile Keyword and Register Caching in GLSL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/volatile-keyword-and-register-caching-in-glsl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In OpenGL compute and fragment pipelines, the GPU compiler optimizes performance by keeping frequently accessed memory values in local thread registers instead of repeatedly accessing global memory. When multiple shader invocations access shared resources" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="volatile-keyword-and-register-caching-in-glsl">Volatile Keyword
+and Register Caching in GLSL</h1>
+<p>In OpenGL compute and fragment pipelines, the GPU compiler optimizes
+performance by keeping frequently accessed memory values in local thread
+registers instead of repeatedly accessing global memory. When multiple
+shader invocations access shared resources such as Shader Storage Buffer
+Objects (SSBOs), this optimization causes threads to read stale data
+cached in registers. The <code>volatile</code> memory qualifier prevents
+this unwanted register caching by instructing the shader compiler that
+the underlying memory can change asynchronously outside the control of
+the local invocation, forcing direct memory transactions on every read
+and write.</p>
+<h2 id="the-role-of-register-caching-in-shader-compilers">The Role of
+Register Caching in Shader Compilers</h2>
+<p>GPU registers offer the lowest-latency, highest-bandwidth storage
+available on graphics hardware. In contrast, global GPU memory (VRAM)
+and hardware cache hierarchies introduce significantly higher latency.
+Because of this performance gap, optimizing GLSL compilers assume by
+default that variables in memory are accessed only by the current
+execution thread unless specified otherwise.</p>
+<p>When a shader reads a member of a buffer structure multiple times
+within a block or a loop, the compiler performs optimizations such as
+loop-invariant code motion or common subexpression elimination. It
+fetches the value from memory once, places it into a hardware register,
+and continuously reads from that register. Similarly, multiple writes to
+a memory location may be deferred and batched into a register, with only
+the final value being flushed to memory—or intermediate writes
+eliminated entirely as "dead stores."</p>
+<h2 id="the-concurrency-problem-in-shared-structures">The Concurrency
+Problem in Shared Structures</h2>
+<p>Register caching breaks synchronization patterns across concurrent
+GPU threads. For example, if Invocation A polls a shared flag in an SSBO
+to wait for Invocation B to finish a task, the compiler may transform
+the polling loop:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Without volatile:</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">while</span> <span class="op">(</span>sharedData<span class="op">.</span><span class="fu">flag</span> <span class="op">==</span> <span class="dv">0</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Waiting for another thread to update flag</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>Because the compiler does not see the local invocation mutating
+<code>sharedData.flag</code>, it loads the value of <code>flag</code>
+into a local register once before the loop begins. Even if Invocation B
+writes <code>1</code> to <code>sharedData.flag</code> in global memory,
+Invocation A will read only its own register copy, resulting in an
+infinite loop or a GPU hang.</p>
+<h2 id="how-the-volatile-keyword-modifies-compiler-behavior">How the
+<code>volatile</code> Keyword Modifies Compiler Behavior</h2>
+<p>Applying the <code>volatile</code> qualifier to an SSBO or an image
+variable directly alters the compiler's intermediate representation and
+final assembly code generation:</p>
+<ol type="1">
+<li><strong>Suppression of Register Reuse:</strong> The compiler is
+prohibited from optimizing subsequent reads of a <code>volatile</code>
+variable by referencing a previously populated register. Every single
+read expression maps to an explicit load instruction issued to the
+memory system.</li>
+<li><strong>Prevention of Dead Store Elimination:</strong> Every write
+to a <code>volatile</code> variable must result in an explicit store
+instruction emitted to the memory hierarchy, ensuring that updates are
+immediately dispatched rather than kept solely in registers.</li>
+<li><strong>Preservation of Access Frequency:</strong> The compiler will
+not coalesce or omit read/write operations on the assumption that the
+value has not changed.</li>
+</ol>
+<p>By marking the shared structure as <code>volatile</code>, the polling
+thread is forced to issue a fresh memory load instruction on every
+iteration of the loop, ensuring it can observe writes made by other
+invocations.</p>
+<h2 id="volatile-vs-memory-barriers"><code>volatile</code> vs. Memory
+Barriers</h2>
+<p>While <code>volatile</code> resolves compiler-level register caching,
+it does not manage hardware-level cache coherence or memory access
+ordering.</p>
+<ul>
+<li><strong><code>volatile</code></strong> handles the
+<em>compiler</em>: It dictates that memory load and store instructions
+must physically be generated in the compiled shader binary instead of
+using registers.</li>
+<li><strong><code>memoryBarrier()</code> functions</strong> handle the
+<em>hardware</em>: They force GPU execution units to commit pending
+writes to hardware caches and invalidate stale cache lines, ensuring
+that data is visible across different workgroups and execution
+units.</li>
+</ul>
+<p>To achieve correct inter-thread communication in OpenGL,
+<code>volatile</code> must be used in conjunction with memory barriers
+(<code>memoryBarrierBuffer()</code>, <code>groupMemoryBarrier()</code>,
+etc.). The <code>volatile</code> qualifier guarantees the compiler emits
+the read/write instructions, while the memory barrier guarantees that
+the GPU hardware executes those operations in the correct order and
+flushes them through the memory hierarchy.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/volatile-keyword-and-register-caching-in-glsl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

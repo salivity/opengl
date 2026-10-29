@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fragment Shader Interlock and Raster Order in OpenGL - opengl</title>
+    <meta name="description" content="Fragment shader interlock is an OpenGL synchronization mechanism that provides hardware-level guarantees for serialized execution of overlapping fragments in primitive submission order. This article explains how fragment shader interlock functions, how it">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/fragment-shader-interlock-and-raster-order-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Fragment Shader Interlock and Raster Order in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/fragment-shader-interlock-and-raster-order-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Fragment shader interlock is an OpenGL synchronization mechanism that provides hardware-level guarantees for serialized execution of overlapping fragments in primitive submission order. This article explains how fragment shader interlock functions, how it" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="fragment-shader-interlock-and-raster-order-in-opengl">Fragment
+Shader Interlock and Raster Order in OpenGL</h1>
+<p>Fragment shader interlock is an OpenGL synchronization mechanism that
+provides hardware-level guarantees for serialized execution of
+overlapping fragments in primitive submission order. This article
+explains how fragment shader interlock functions, how it maps to the
+Rasterizer Ordered View (ROV) concept found in other graphics APIs, and
+how developers can utilize it in OpenGL to safely perform programmable
+blending and avoid data races without relying on complex multi-pass
+algorithms.</p>
+<h3 id="the-concurrency-problem-in-fragment-shading">The Concurrency
+Problem in Fragment Shading</h3>
+<p>Modern GPUs execute thousands of fragment shader invocations
+concurrently. When multiple primitives overlap the same screen
+coordinates, their respective fragment shaders run in an undefined order
+unless passed through the fixed-function blending pipeline.</p>
+<p>If a developer attempts programmable blending, custom framebuffers,
+or structures like Order-Independent Transparency (OIT) via Shader
+Storage Buffer Objects (SSBOs) or image load/store operations, standard
+parallel execution creates data races. Standard atomic operations solve
+race conditions for basic math, but they do not enforce sequential
+execution or preserve primitive rasterization order.</p>
+<h3 id="what-is-fragment-shader-interlock">What is Fragment Shader
+Interlock?</h3>
+<p>Fragment shader interlock, introduced via extensions such as
+<code>GL_ARB_fragment_shader_interlock</code> (as well as
+vendor-specific extensions from Intel and NVIDIA), allows developers to
+designate a critical section within a fragment shader.</p>
+<p>When an invocation reaches this critical section, the GPU guarantees
+that no other fragment shader invocation covering the same pixel or
+sample can execute that critical section concurrently. Furthermore, when
+ordered interlock is specified, the hardware guarantees that overlapping
+invocations enter the critical section strictly in API primitive
+submission order.</p>
+<h3 id="how-it-delivers-raster-order-view-rov-guarantees">How It
+Delivers Raster Order View (ROV) Guarantees</h3>
+<p>In DirectX 11.3 and 12, the hardware capability that serializes
+access to unordered access views (UAVs) based on rasterization order is
+known as Rasterizer Ordered Views (ROVs).</p>
+<p>OpenGL’s fragment shader interlock provides the exact same guarantee
+using GLSL layout qualifiers and synchronization intrinsics:</p>
+<ol type="1">
+<li><p><strong>Ordering Modes:</strong> OpenGL allows developers to
+declare the granularity and ordering rules of the critical section at
+the top of the shader:</p>
+<ul>
+<li><code>layout(pixel_interlock_ordered) in;</code> enforces that
+fragments covering the same <span class="math inline">\((x, y)\)</span>
+screen pixel execute in primitive submission order.</li>
+<li><code>layout(sample_interlock_ordered) in;</code> enforces
+serialization per multisample anti-aliasing (MSAA) sample rather than
+per pixel.</li>
+<li>Unordered variants (<code>pixel_interlock_unordered</code>) enforce
+mutual exclusion without enforcing rasterization order, similar to a
+mutex.</li>
+</ul></li>
+<li><p><strong>Demarcating the Critical Section:</strong> Inside
+<code>main()</code>, the code enters and exits the serialized zone using
+two intrinsic functions:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">beginInvocationInterlockARB</span><span class="op">();</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="co">// Critical section: safely read, modify, and write memory</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="dt">vec4</span> current <span class="op">=</span> <span class="bu">imageLoad</span><span class="op">(</span>customTarget<span class="op">,</span> coords<span class="op">);</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="dt">vec4</span> blended <span class="op">=</span> <span class="fu">customBlend</span><span class="op">(</span>current<span class="op">,</span> incomingColor<span class="op">);</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="bu">imageStore</span><span class="op">(</span>customTarget<span class="op">,</span> coords<span class="op">,</span> blended<span class="op">);</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="fu">endInvocationInterlockARB</span><span class="op">();</span></span></code></pre></div></li>
+<li><p><strong>Memory Synchronization:</strong> Inside the interlock
+boundary, memory accesses to images or SSBOs behave deterministically.
+Memory written by a previously submitted primitive at the same pixel
+location is guaranteed to be visible to the subsequent primitive
+entering the interlock block.</p></li>
+</ol>
+<h3 id="practical-applications">Practical Applications</h3>
+<p>By providing ROV semantics directly inside GLSL, fragment shader
+interlock eliminates the need for sorting stages or multi-pass rendering
+in several advanced techniques:</p>
+<ul>
+<li><strong>Single-Pass Order-Independent Transparency (OIT):</strong>
+Fragment fragments can be inserted into per-pixel linked lists or
+blended into a single buffer deterministically without depth-sorting
+overhead.</li>
+<li><strong>Custom Programmable Blending:</strong> Enables mathematical
+blend modes that are unsupported by the fixed-function blending hardware
+(such as non-separable blend modes or HDR tone mapping directly in the
+blend stage).</li>
+<li><strong>Software Depth and Stencil Emulation:</strong> Allows
+developers to implement custom early-Z or complex stencil testing
+directly within storage buffers.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/fragment-shader-interlock-and-raster-order-in-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

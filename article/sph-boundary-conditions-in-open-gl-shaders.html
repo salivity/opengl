@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SPH Boundary Conditions in OpenGL Shaders - opengl</title>
+    <meta name="description" content="Simulating Smoothed-Particle Hydrodynamics (SPH) in OpenGL compute shaders requires robust boundary condition handling to prevent particle tunneling, maintain numerical stability, and enforce realistic fluid behavior. Because shaders update particle state">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/sph-boundary-conditions-in-open-gl-shaders">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="SPH Boundary Conditions in OpenGL Shaders - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/sph-boundary-conditions-in-open-gl-shaders" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Simulating Smoothed-Particle Hydrodynamics (SPH) in OpenGL compute shaders requires robust boundary condition handling to prevent particle tunneling, maintain numerical stability, and enforce realistic fluid behavior. Because shaders update particle state" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="sph-boundary-conditions-in-opengl-shaders">SPH Boundary
+Conditions in OpenGL Shaders</h1>
+<p>Simulating Smoothed-Particle Hydrodynamics (SPH) in OpenGL compute
+shaders requires robust boundary condition handling to prevent particle
+tunneling, maintain numerical stability, and enforce realistic fluid
+behavior. Because shaders update particle states concurrently at
+discrete time steps, boundary enforcement must explicitly resolve
+spatial limits, velocity responses, and neighbor-support deficiencies.
+This guide outlines the mandatory boundary checks required within the
+integration and pressure-solve passes of an OpenGL SPH pipeline.</p>
+<h3 id="domain-extent-clamping-aabb-checks">Domain Extent Clamping (AABB
+Checks)</h3>
+<p>The most fundamental check confines particles within the simulation's
+Axis-Aligned Bounding Box (AABB). At the end of the numerical
+integration step (such as Euler or Verlet integration), the shader must
+evaluate whether the updated position vector exceeds the minimum or
+maximum domain bounds:</p>
+<ul>
+<li><strong>Position Projection:</strong> If <code>position.xyz</code>
+exceeds <code>boxMax.xyz</code> or falls below <code>boxMin.xyz</code>,
+the position must be clamped to the boundary minus an epsilon offset to
+prevent out-of-bounds indexing in spatial hash grids.</li>
+<li><strong>Sign Inversion:</strong> The corresponding velocity
+component along the breached axis must be reversed.</li>
+</ul>
+<h3 id="surface-penetration-and-normal-resolution">Surface Penetration
+and Normal Resolution</h3>
+<p>For arbitrary boundaries or complex static geometry, standard box
+checks are insufficient. The shader must evaluate signed distance
+functions (SDFs) or plane equations to detect penetration:</p>
+<ul>
+<li><strong>Distance Evaluation:</strong> The shader must compute the
+signed distance <span class="math inline">\(d = \mathbf{n} \cdot
+(\mathbf{x} - \mathbf{p})\)</span> where <span
+class="math inline">\(\mathbf{n}\)</span> is the boundary normal and
+<span class="math inline">\(\mathbf{p}\)</span> is a point on the
+surface. If <span class="math inline">\(d &lt; r\)</span> (where <span
+class="math inline">\(r\)</span> is the particle smoothing radius),
+collision resolution triggers.</li>
+<li><strong>Contact Projection:</strong> The particle’s position must be
+explicitly repositioned outside the boundary along the normal vector:
+<span class="math inline">\(\mathbf{x}_{\text{corrected}} = \mathbf{x} +
+(\text{penetration\_depth}) \mathbf{n}\)</span>.</li>
+</ul>
+<h3 id="velocity-dampening-and-friction">Velocity Dampening and
+Friction</h3>
+<p>Inverting velocity without energy dissipation quickly destabilizes an
+SPH simulation. A mandatory post-collision velocity update decomposes
+the particle's velocity vector <span
+class="math inline">\(\mathbf{v}\)</span> into normal (<span
+class="math inline">\(\mathbf{v}_n\)</span>) and tangential (<span
+class="math inline">\(\mathbf{v}_t\)</span>) components:</p>
+<ul>
+<li><strong>Normal Restitution:</strong> The normal velocity must be
+scaled by a coefficient of restitution <span class="math inline">\(c_r
+\in [0, 1]\)</span>: <span class="math inline">\(\mathbf{v}_n&#39; =
+-c_r \mathbf{v}_n\)</span>.</li>
+<li><strong>Tangential Friction:</strong> To simulate boundary friction
+(no-slip or free-slip conditions), the tangential velocity must be
+attenuated using a friction coefficient <span
+class="math inline">\(\mu\)</span>: <span
+class="math inline">\(\mathbf{v}_t&#39; = (1 - \mu)
+\mathbf{v}_t\)</span>.</li>
+<li><strong>Final Assembly:</strong> The shader writes the recombined
+velocity <span class="math inline">\(\mathbf{v}&#39; = \mathbf{v}_n&#39;
++ \mathbf{v}_t&#39;\)</span> back to the buffer.</li>
+</ul>
+<h3 id="tunneling-prevention-cfl-condition-guard">Tunneling Prevention
+(CFL Condition Guard)</h3>
+<p>High-velocity particles can pass entirely through boundary volumes
+within a single shader dispatch if their displacement per step exceeds
+the boundary thickness or the SPH smoothing radius <span
+class="math inline">\(h\)</span>.</p>
+<ul>
+<li><strong>Maximum Displacement Check:</strong> The shader must verify
+that <span class="math inline">\(\|\mathbf{v}\| \Delta t \le \alpha
+h\)</span>, where <span class="math inline">\(\alpha\)</span> is
+typically between <span class="math inline">\(0.1\)</span> and <span
+class="math inline">\(0.4\)</span> according to the
+Courant-Friedrichs-Lewy (CFL) condition.</li>
+<li><strong>Ray-Casting Fallback:</strong> If adaptive sub-stepping is
+omitted to maintain frame rates, the shader must perform continuous
+collision detection (CCD) via a ray-cast from the previous position
+<span class="math inline">\(\mathbf{x}_{t}\)</span> to the candidate
+position <span class="math inline">\(\mathbf{x}_{t+\Delta t}\)</span>,
+halting the particle at the first intersection point.</li>
+</ul>
+<h3 id="boundary-deficiency-and-repulsion-forces">Boundary Deficiency
+and Repulsion Forces</h3>
+<p>Because SPH relies on a symmetric kernel support domain, particles
+near a wall lack fluid neighbors on the exterior side. This truncation
+leads to severe particle clustering along boundaries (particle sticking)
+due to erroneous pressure calculations. To offset this, shaders must
+implement one of the following mandatory checks during the
+force-computation pass:</p>
+<ul>
+<li><strong>Repulsive Boundary Potential:</strong> Apply a repulsive
+force, such as the Monaghan-Kajtar penalty force, whenever the distance
+<span class="math inline">\(d\)</span> to a boundary falls below the
+smoothing length <span class="math inline">\(h\)</span>. The force
+magnitude scales inversely with distance to counteract fluid pressure
+driving particles into the wall.</li>
+<li><strong>Frozen/Dummy Particle Contribution:</strong> If using
+boundary particles stored in a buffer, the compute shader must include
+these static particles in the standard density summation and pressure
+force loops, setting their velocity to zero or computing an artificial
+mirrored velocity to correctly satisfy the no-slip condition.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/sph-boundary-conditions-in-open-gl-shaders';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

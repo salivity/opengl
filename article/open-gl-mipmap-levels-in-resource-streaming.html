@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Mipmap Levels in Resource Streaming - opengl</title>
+    <meta name="description" content="In OpenGL texture streaming architectures, configuring the mipmap base and maximum levels plays a vital role in managing dynamic Level of Detail (LOD), maintaining texture completeness, and optimizing GPU memory allocation. By constraining the hardware sa">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-mipmap-levels-in-resource-streaming">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Mipmap Levels in Resource Streaming - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-mipmap-levels-in-resource-streaming" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In OpenGL texture streaming architectures, configuring the mipmap base and maximum levels plays a vital role in managing dynamic Level of Detail (LOD), maintaining texture completeness, and optimizing GPU memory allocation. By constraining the hardware sa" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-mipmap-levels-in-resource-streaming">OpenGL Mipmap Levels
+in Resource Streaming</h1>
+<p>In OpenGL texture streaming architectures, configuring the mipmap
+base and maximum levels plays a vital role in managing dynamic Level of
+Detail (LOD), maintaining texture completeness, and optimizing GPU
+memory allocation. By constraining the hardware sampler to a defined
+subset of the mipmap chain using <code>GL_TEXTURE_BASE_LEVEL</code> and
+<code>GL_TEXTURE_MAX_LEVEL</code>, rendering engines can safely load,
+display, and stream high-resolution mip levels asynchronously without
+triggering visual artifacts, GPU stalls, or invalid memory accesses.</p>
+<h3 id="understanding-base-and-max-levels">Understanding Base and Max
+Levels</h3>
+<p>OpenGL textures rely on an array of progressively downscaled images
+known as mipmaps, where level 0 represents the highest resolution and
+higher numerical levels represent progressively lower resolutions. By
+default, the OpenGL sampler assumes a full mip chain starting from level
+0 up to level 1000 (or the maximum mip level supported).</p>
+<p>Using <code>glTexParameteri</code>, developers can explicitly
+override these bounds:</p>
+<ul>
+<li><strong><code>GL_TEXTURE_BASE_LEVEL</code></strong>: Defines the
+lowest numerical index (the highest resolution) the GPU is permitted to
+sample.</li>
+<li><strong><code>GL_TEXTURE_MAX_LEVEL</code></strong>: Defines the
+highest numerical index (the lowest resolution) the GPU is permitted to
+sample.</li>
+</ul>
+<h3
+id="ensuring-texture-completeness-during-asynchronous-loading">Ensuring
+Texture Completeness During Asynchronous Loading</h3>
+<p>A primary challenge in texture streaming is "texture completeness." A
+standard mipmapped texture in OpenGL is considered incomplete—and will
+sample as solid black—if any level within the defined range is missing
+or has inconsistent dimensions.</p>
+<p>When streaming assets over a network or from slow disk storage,
+high-resolution mips (level 0 or level 1) are rarely available
+immediately. By setting <code>GL_TEXTURE_BASE_LEVEL</code> to a higher
+index (such as level 4), the engine informs the GPU that the current
+highest-resolution mip is level 4. This establishes texture completeness
+immediately with only a fraction of the full texture payload loaded,
+allowing the engine to display a low-resolution placeholder without
+rendering errors while larger mips load in the background.</p>
+<h3 id="progressive-level-of-detail-lod-updates">Progressive Level of
+Detail (LOD) Updates</h3>
+<p>As the background streaming thread loads higher-resolution mip data
+from storage into host memory, the engine uploads these buffers to the
+GPU using commands like <code>glTexSubImage2D</code>.</p>
+<p>The update process typically follows this pattern:</p>
+<ol type="1">
+<li><strong>Initial State</strong>: Levels 3 through 7 are allocated and
+populated. <code>GL_TEXTURE_BASE_LEVEL</code> is set to 3.</li>
+<li><strong>Streaming In</strong>: The engine asynchronously reads level
+2 from disk and uploads it to the existing texture object.</li>
+<li><strong>Boundary Adjustment</strong>: Once level 2 is fully
+committed to GPU memory, the engine updates
+<code>GL_TEXTURE_BASE_LEVEL</code> to 2.</li>
+<li><strong>Hardware Adaptation</strong>: The GPU sampler immediately
+integrates the new resolution into its filtering logic on subsequent
+draw calls, providing a smooth transition to higher visual
+fidelity.</li>
+</ol>
+<h3 id="memory-footprint-and-bandwidth-management">Memory Footprint and
+Bandwidth Management</h3>
+<p>Restricting the mip boundaries prevents the GPU from attempting to
+access unallocated or unevicted memory. In constrained environments,
+engines can dynamically prune memory by releasing high-resolution mips,
+raising the <code>GL_TEXTURE_BASE_LEVEL</code>, and freeing the
+corresponding GPU memory or marking sparse texture pages as
+uncommitted.</p>
+<p>Simultaneously, <code>GL_TEXTURE_MAX_LEVEL</code> allows developers
+to discard the lowest-resolution, single-pixel mips if they provide
+negligible visual benefit or if memory alignment constraints make them
+inefficient to store.</p>
+<p>By actively controlling the base and maximum mipmap levels, an OpenGL
+streaming system ensures predictable memory consumption, prevents
+pipeline stalls, and provides continuous visual feedback during dynamic
+scene transitions.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/open-gl-mipmap-levels-in-resource-streaming';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

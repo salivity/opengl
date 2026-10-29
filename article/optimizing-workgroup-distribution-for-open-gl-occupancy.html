@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Optimizing Workgroup Distribution for OpenGL Occupancy - opengl</title>
+    <meta name="description" content="Maximizing hardware occupancy in desktop OpenGL compute shaders requires aligning local workgroup dimensions and global dispatch sizes with underlying GPU architectures. Desktop GPUs from NVIDIA and AMD rely on fine-grained thread scheduling to hide memor">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/optimizing-workgroup-distribution-for-open-gl-occupancy">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Optimizing Workgroup Distribution for OpenGL Occupancy - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/optimizing-workgroup-distribution-for-open-gl-occupancy" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Maximizing hardware occupancy in desktop OpenGL compute shaders requires aligning local workgroup dimensions and global dispatch sizes with underlying GPU architectures. Desktop GPUs from NVIDIA and AMD rely on fine-grained thread scheduling to hide memor" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="optimizing-workgroup-distribution-for-opengl-occupancy">Optimizing
+Workgroup Distribution for OpenGL Occupancy</h1>
+<p>Maximizing hardware occupancy in desktop OpenGL compute shaders
+requires aligning local workgroup dimensions and global dispatch sizes
+with underlying GPU architectures. Desktop GPUs from NVIDIA and AMD rely
+on fine-grained thread scheduling to hide memory latency, making the
+balance between workgroup size, SIMD lockstep execution, register
+allocation, and shared memory usage critical. This article outlines the
+optimal workgroup distribution patterns, architectural constraints, and
+dimensional configurations necessary to keep desktop compute units fully
+saturated.</p>
+<h3 id="simd-alignment-and-the-baseline-workgroup-size">SIMD Alignment
+and the Baseline Workgroup Size</h3>
+<p>Desktop GPUs execute compute instructions in lockstep groups called
+warps (32 threads on NVIDIA) or wavefronts (32 or 64 threads on AMD). A
+workgroup's total invocation count
+(<code>local_size_x * local_size_y * local_size_z</code>) must always be
+an exact multiple of the hardware execution width. Failing to align with
+this boundary forces the hardware to schedule inactive threads, wasting
+execution slots.</p>
+<p>For modern desktop hardware:</p>
+<ul>
+<li><strong>NVIDIA:</strong> Warps are strictly 32 threads.</li>
+<li><strong>AMD (RDNA / GCN):</strong> Wavefronts operate at either 32
+threads (default on RDNA) or 64 threads (GCN and RDNA Wave64 mode).</li>
+</ul>
+<p>The empirical sweet spot for general-purpose compute shaders across
+both vendors is <strong>128 to 256 invocations per workgroup</strong>
+(e.g., <code>layout(local_size_x = 128)</code> or
+<code>layout(local_size_x = 256)</code>). Workgroups smaller than 64
+threads often fail to provide enough active threads to saturate the
+streaming multiprocessors (SMs) or dual compute units (DCUs).
+Conversely, groups exceeding 512 or reaching the OpenGL maximum of 1024
+threads heavily restrict the scheduler's ability to interleave multiple
+workgroups on a single compute unit.</p>
+<h3 id="dimensional-distribution-patterns">Dimensional Distribution
+Patterns</h3>
+<p>The dimensional layout of the workgroup should reflect the spatial
+locality of the data being accessed to maximize L1/L2 cache hit rates
+and ensure coalesced memory transactions.</p>
+<h4 id="1d-data-linear-buffers-and-structured-buffers">1D Data (Linear
+Buffers and Structured Buffers)</h4>
+<ul>
+<li><strong>Configuration:</strong> <code>(128, 1, 1)</code> or
+<code>(256, 1, 1)</code></li>
+<li><strong>Use Case:</strong> Array transformations, particle physics,
+stream compaction.</li>
+<li><strong>Pattern:</strong> Adjacent threads read contiguous memory
+addresses. The global invocation index
+(<code>gl_GlobalInvocationID.x</code>) directly maps to linear memory
+offsets, enabling single-transaction memory bursts.</li>
+</ul>
+<h4 id="2d-data-textures-and-image-processing">2D Data (Textures and
+Image Processing)</h4>
+<ul>
+<li><strong>Configuration:</strong> <code>(16, 16, 1)</code> [256
+threads] or <code>(8, 8, 1)</code> [64 threads]</li>
+<li><strong>Use Case:</strong> Post-processing, G-buffer generation,
+image filtering.</li>
+<li><strong>Pattern:</strong> Square or near-square tiles maximize 2D
+cache locality. When reading a texel neighborhood (such as in a Gaussian
+blur or bilateral filter), nearby threads read neighboring pixels that
+likely reside in the same cache lines. Avoid non-square extremes like
+<code>(256, 1, 1)</code> for 2D tasks, as they degrade spatial cache
+reuse along the Y-axis.</li>
+</ul>
+<h4 id="3d-data-volumetric-grids-and-voxelization">3D Data (Volumetric
+Grids and Voxelization)</h4>
+<ul>
+<li><strong>Configuration:</strong> <code>(8, 8, 4)</code> [256 threads]
+or <code>(4, 4, 4)</code> [64 threads]</li>
+<li><strong>Use Case:</strong> Fluid dynamics, 3D medical imaging,
+volume rendering.</li>
+<li><strong>Pattern:</strong> Align the largest dimension along the axis
+of contiguous memory storage (typically X) to preserve spatial locality
+while keeping thread counts within the 128–256 range.</li>
+</ul>
+<h3 id="managing-hardware-occupancy-limits">Managing Hardware Occupancy
+Limits</h3>
+<p>Achieving high theoretical occupancy does not guarantee maximum
+performance if resources are over-allocated. Hardware occupancy is
+bounded by three hardware resources:</p>
+<ol type="1">
+<li><strong>Register Allocation:</strong> Every variable declared in a
+compute shader consumes general-purpose registers (VGPRs). Desktop GPUs
+allocate registers per thread from a fixed hardware pool. If a shader
+requires too many registers, the GPU reduces the number of concurrent
+active warps/wavefronts it can host, lowering occupancy. Keep shader
+logic modular and minimize variable lifespans to prevent register
+spilling.</li>
+<li><strong>Shared Memory (<code>shared</code> Variables):</strong>
+OpenGL shared memory is allocated per workgroup from the compute unit’s
+on-chip memory. If a workgroup requests 32 KB of shared memory on a unit
+with 64 KB total, only two workgroups can run concurrently on that unit,
+regardless of thread count. Size your shared memory structures so
+multiple workgroups can fit on each compute unit simultaneously.</li>
+<li><strong>Workgroup Granularity:</strong> Multiple smaller workgroups
+(e.g., 128 threads) are generally easier for the GPU scheduler to
+distribute across compute units than fewer, massive workgroups (e.g.,
+1024 threads). This granularity prevents execution bubbles when
+workgroups finish at uneven intervals.</li>
+</ol>
+<h3 id="dispatch-sizing">Dispatch Sizing</h3>
+<p>When issuing
+<code>glDispatchCompute(num_groups_x, num_groups_y, num_groups_z)</code>,
+the dispatch grid must cover the entire dataset without leaving trailing
+idle workloads.</p>
+<p>Calculate dispatch dimensions using ceiling division:</p>
+<pre class="text"><code>num_groups_x = (data_width + local_size_x - 1) / local_size_x;
+num_groups_y = (data_height + local_size_y - 1) / local_size_y;</code></pre>
+<p>Inside the compute shader, always guard against out-of-bounds
+execution:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">if</span> <span class="op">(</span><span class="bu">gl_GlobalInvocationID</span><span class="op">.</span><span class="fu">x</span> <span class="op">&gt;=</span> u_DataWidth <span class="op">||</span> <span class="bu">gl_GlobalInvocationID</span><span class="op">.</span><span class="fu">y</span> <span class="op">&gt;=</span> u_DataHeight<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span><span class="op">;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>To maintain optimal throughput, total dispatch sizes should yield
+thousands of total workgroups, ensuring all physical multiprocessors
+across the desktop GPU are uniformly loaded and capable of hiding
+latency through active warp swapping.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/optimizing-workgroup-distribution-for-open-gl-occupancy';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

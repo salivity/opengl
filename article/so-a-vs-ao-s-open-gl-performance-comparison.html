@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SoA vs AoS OpenGL Performance Comparison - opengl</title>
+    <meta name="description" content="Choosing between Structure-of-Arrays (SoA) and Array-of-Structures (AoS) memory layouts in OpenGL fundamentally dictates how data travels from system memory to the GPU core. This article compares how both layouts interact with GPU cache lines, vertex fetc">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/so-a-vs-ao-s-open-gl-performance-comparison">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="SoA vs AoS OpenGL Performance Comparison - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/so-a-vs-ao-s-open-gl-performance-comparison" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Choosing between Structure-of-Arrays (SoA) and Array-of-Structures (AoS) memory layouts in OpenGL fundamentally dictates how data travels from system memory to the GPU core. This article compares how both layouts interact with GPU cache lines, vertex fetc" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="soa-vs-aos-opengl-performance-comparison">SoA vs AoS OpenGL
+Performance Comparison</h1>
+<p>Choosing between Structure-of-Arrays (SoA) and Array-of-Structures
+(AoS) memory layouts in OpenGL fundamentally dictates how data travels
+from system memory to the GPU core. This article compares how both
+layouts interact with GPU cache lines, vertex fetch hardware, and
+compute shaders, explaining the performance trade-offs of each approach
+in modern graphics pipelines.</p>
+<h3 id="understanding-the-layouts-in-opengl">Understanding the Layouts
+in OpenGL</h3>
+<p>In an <strong>Array-of-Structures (AoS)</strong> format, all
+attributes for a single element are grouped together contiguously. In
+standard OpenGL vertex buffer objects (VBOs), this is known as
+interleaved vertex data:</p>
+<p><code>[Pos, Normal, UV], [Pos, Normal, UV], [Pos, Normal, UV]</code></p>
+<p>In a <strong>Structure-of-Arrays (SoA)</strong> format, each
+attribute is stored in its own contiguous array across all elements. In
+OpenGL, this translates to either using multiple separate VBOs or
+binding distinct offsets within a single large buffer:</p>
+<p><code>[Pos, Pos, Pos], [Normal, Normal, Normal], [UV, UV, UV]</code></p>
+<h3 id="vertex-shader-performance-and-attribute-fetching">Vertex Shader
+Performance and Attribute Fetching</h3>
+<p>For standard geometry rendering where a vertex shader consumes every
+declared attribute (e.g., position, normal, tangent, and texture
+coordinates), <strong>AoS generally outperforms SoA</strong>.</p>
+<p>When the GPU vertex fetch stage loads data, it reads from memory in
+fixed cache-line chunks (typically 32 to 128 bytes). With AoS, pulling
+one vertex pulls all of its associated attributes into the cache
+simultaneously. This maximizes spatial locality and keeps the GPU memory
+controller’s active read streams to a minimum.</p>
+<p>Using pure SoA during a full-attribute draw call forces the memory
+controller to manage multiple concurrent memory streams—one for each
+bound attribute buffer. This can saturate cache lines with future data
+that might be evicted before it is consumed, leading to cache thrashing
+and increased memory latency.</p>
+<h3 id="the-depth-prepass-and-shadow-pass-exception">The Depth-Prepass
+and Shadow Pass Exception</h3>
+<p>The dynamic changes dramatically when shaders only read a subset of
+the available vertex attributes, such as in depth pre-passes, shadow map
+generation, or physics collision detection.</p>
+<p>In an AoS layout, if the GPU only needs vertex positions, it still
+fetches the entire interleaved struct into the cache. The normals,
+tangents, and UVs are loaded across the bus and immediately discarded,
+wasting up to 70–80% of available memory bandwidth.</p>
+<p>In an SoA layout, the depth pass binds only the position array.
+Memory bandwidth utilization approaches 100%, and cache lines contain
+purely relevant data. In bandwidth-constrained scenes with heavy shadow
+mapping, switching positions to an isolated array yields substantial
+performance improvements.</p>
+<h3 id="compute-shaders-and-memory-coalescing">Compute Shaders and
+Memory Coalescing</h3>
+<p>In OpenGL Compute Shaders (using Shader Storage Buffer Objects or
+SSBOs), the preference decisively shifts toward
+<strong>SoA</strong>.</p>
+<p>GPUs execute compute threads in warps (NVIDIA, 32 threads) or
+wavefronts (AMD, 64 threads) using SIMD (Single Instruction, Multiple
+Data) architecture. Memory transactions are most efficient when threads
+in a warp access consecutive memory addresses simultaneously—a mechanism
+called memory coalescing.</p>
+<ul>
+<li><strong>SoA:</strong> Thread 0 accesses index 0, Thread 1 accesses
+index 1, and so forth. The memory controller merges these accesses into
+a single continuous transaction.</li>
+<li><strong>AoS:</strong> Thread 0 accesses index 0 (bytes 0–31), Thread
+1 accesses index 1 (bytes 32–63), creating large strides between reads.
+The hardware must issue multiple memory transactions to fulfill the
+request, degrading throughput unless the entire structure size perfectly
+aligns with vector data types like <code>vec4</code>.</li>
+</ul>
+<h3 id="dynamic-buffer-updates">Dynamic Buffer Updates</h3>
+<p>SoA offers distinct performance benefits when vertex data is updated
+dynamically from the CPU or a transform feedback/compute pass:</p>
+<ul>
+<li>Updating a single attribute (such as animated texture coordinates or
+blend shapes) in AoS requires either mapping the entire buffer and
+striding writes—which ruins CPU cache efficiency—or updating unneeded
+static data alongside dynamic data.</li>
+<li>With SoA, only the target attribute buffer needs to be mapped,
+uploaded, or orphaned via <code>glBufferSubData</code>, minimizing
+CPU-to-GPU transfer sizes.</li>
+</ul>
+<h3 id="recommended-hybrid-strategy">Recommended Hybrid Strategy</h3>
+<p>Rather than adopting a pure AoS or pure SoA pipeline, modern OpenGL
+architectures benefit most from a hybrid layout:</p>
+<ol type="1">
+<li><strong>Positions as a dedicated stream (SoA style):</strong> Keep
+<code>vec3 position</code> data in its own separate buffer or contiguous
+offset to optimize depth passes, shadow passes, and early-Z
+culling.</li>
+<li><strong>Interleaved secondary attributes (AoS style):</strong> Group
+normals, tangents, UVs, and colors into an interleaved array, as these
+are virtually always consumed together during main shading passes.</li>
+<li><strong>SSBOs in Compute Shaders:</strong> Store persistent compute
+data in SoA layout to ensure uniform memory coalescing across all
+hardware threads.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/so-a-vs-ao-s-open-gl-performance-comparison';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

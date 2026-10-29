@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Understanding ATVR: OpenGL Vertex Efficiency - opengl</title>
+    <meta name="description" content="Vertex shader efficiency in modern OpenGL rendering pipelines is primarily evaluated using post-transform cache metrics, with the Average Transform to Vertex Ratio (ATVR) serving as the key indicator. This article explores what ATVR is, how it measures ve">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/understanding-atvr-open-gl-vertex-efficiency">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Understanding ATVR: OpenGL Vertex Efficiency - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/understanding-atvr-open-gl-vertex-efficiency" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Vertex shader efficiency in modern OpenGL rendering pipelines is primarily evaluated using post-transform cache metrics, with the Average Transform to Vertex Ratio (ATVR) serving as the key indicator. This article explores what ATVR is, how it measures ve" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="understanding-atvr-opengl-vertex-efficiency">Understanding ATVR:
+OpenGL Vertex Efficiency</h1>
+<p>Vertex shader efficiency in modern OpenGL rendering pipelines is
+primarily evaluated using post-transform cache metrics, with the Average
+Transform to Vertex Ratio (ATVR) serving as the key indicator. This
+article explores what ATVR is, how it measures vertex reuse in hardware,
+how it compares to the related Average Cache Miss Ratio (ACMR), and the
+methods developers use to optimize index buffers to maximize rendering
+throughput.</p>
+<h3 id="what-is-the-average-transform-to-vertex-ratio-atvr">What is the
+Average Transform to Vertex Ratio (ATVR)?</h3>
+<p>The Average Transform to Vertex Ratio (ATVR) is a rendering
+performance metric that measures how many times, on average, a single
+unique vertex is processed by the vertex shader. It quantifies the
+efficiency of the Post-Transform Vertex Cache (FIFO or LRU cache) during
+indexed draw calls (such as <code>glDrawElements</code>).</p>
+<p>Mathematically, ATVR is defined as:</p>
+<p><span class="math display">\[\text{ATVR} = \frac{\text{Total Vertex
+Shader Invocations}}{\text{Total Unique Vertices}}\]</span></p>
+<p>In an ideal, fully optimized scenario, every vertex in a mesh is
+transformed only once and stored in the post-transform cache for reuse
+across adjacent triangles. Therefore:</p>
+<ul>
+<li><strong>Ideal ATVR:</strong> 1.0 (each unique vertex is transformed
+exactly once).</li>
+<li><strong>Poor ATVR:</strong> &gt; 1.0 (indicates frequent cache
+misses, causing identical vertices to be recalculated repeatedly).</li>
+</ul>
+<h3 id="atvr-vs-acmr">ATVR vs. ACMR</h3>
+<p>While ATVR measures transforms relative to unique vertices, it is
+frequently analyzed alongside the <strong>Average Cache Miss Ratio
+(ACMR)</strong>:</p>
+<ul>
+<li><strong>ACMR:</strong> <span class="math inline">\(\frac{\text{Total
+Vertex Shader Invocations}}{\text{Total Triangles}}\)</span></li>
+<li>For a closed triangular mesh, the theoretical minimum ACMR
+approaches <strong>0.5</strong>, because each triangle has 3 vertices,
+but adjacent triangles share edges. If optimal cache reuse is achieved,
+you need roughly 0.5 transforms per triangle.</li>
+<li><strong>ATVR</strong> focuses strictly on redundancy relative to
+mesh topology: an ATVR of 1.0 means zero redundant vertex transforms,
+regardless of triangle count.</li>
+</ul>
+<h3 id="why-atvr-matters-in-opengl">Why ATVR Matters in OpenGL</h3>
+<p>Modern GPUs utilize a post-transform cache that temporarily stores
+the output of recently executed vertex shaders. When an index in an
+element buffer is read:</p>
+<ol type="1">
+<li>The GPU checks if the vertex index is present in the post-transform
+cache.</li>
+<li>If it is a <strong>cache hit</strong>, the cached output is passed
+directly to primitive assembly and rasterization, bypassing the vertex
+shader.</li>
+<li>If it is a <strong>cache miss</strong>, the vertex shader executes,
+and the result is stored in the cache, potentially evicting older
+entries.</li>
+</ol>
+<p>A high ATVR wastes GPU execution units on redundant matrix
+transformations, lighting calculations, and skinning logic, making
+rendering vertex-bound.</p>
+<h3 id="optimizing-meshes-for-low-atvr">Optimizing Meshes for Low
+ATVR</h3>
+<p>To drive the ATVR toward 1.0 and minimize cache misses in OpenGL,
+triangle index buffers must be reordered to preserve spatial
+locality:</p>
+<ul>
+<li><strong>Forsyth's Algorithm:</strong> A widely used vertex cache
+optimization algorithm that scores vertices based on cache position and
+valence, reordering triangle lists to maximize reuse.</li>
+<li><strong>Tipsify:</strong> An alternative linear-time optimization
+algorithm designed to optimize geometry for modern FIFO-based vertex
+caches.</li>
+<li><strong>Open-Source Tools:</strong> Libraries like
+<code>meshoptimizer</code> or DirectXMesh can be integrated into 3D
+asset pipelines to sort index and vertex buffers before loading them
+into OpenGL buffer objects (<code>GL_ELEMENT_ARRAY_BUFFER</code>).</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/understanding-atvr-open-gl-vertex-efficiency';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How SSBOs Provide Read-Write Storage in OpenGL - opengl</title>
+    <meta name="description" content="This article explains how Shader Storage Buffer Objects (SSBOs) function within OpenGL to grant shaders direct read and write access to GPU memory. It explores the architectural differences between SSBOs and older buffer types like Uniform Buffer Objects,">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-ssb-os-provide-read-write-storage-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How SSBOs Provide Read-Write Storage in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-ssb-os-provide-read-write-storage-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how Shader Storage Buffer Objects (SSBOs) function within OpenGL to grant shaders direct read and write access to GPU memory. It explores the architectural differences between SSBOs and older buffer types like Uniform Buffer Objects," />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-ssbos-provide-read-write-storage-in-opengl">How SSBOs
+Provide Read-Write Storage in OpenGL</h1>
+<p>This article explains how Shader Storage Buffer Objects (SSBOs)
+function within OpenGL to grant shaders direct read and write access to
+GPU memory. It explores the architectural differences between SSBOs and
+older buffer types like Uniform Buffer Objects, covers the GLSL syntax
+required to declare and mutate buffer data, examines synchronization and
+atomic operations necessary for thread safety, and demonstrates the
+host-side OpenGL workflow for creating and binding these buffers.</p>
+<h2 id="what-are-shader-storage-buffer-objects">What Are Shader Storage
+Buffer Objects?</h2>
+<p>Introduced in OpenGL 4.3 (and available in OpenGL ES 3.1), Shader
+Storage Buffer Objects (SSBOs) are buffer objects that allow shaders to
+read from and write to arbitrary GPU memory. Prior to SSBOs, shaders
+typically received non-texture data through Uniform Buffer Objects
+(UBOs). While UBOs are optimized for constant, read-only data with
+frequent updates from the CPU, they are limited by a small maximum
+size—guaranteed to be at least 16 KB, but rarely exceeding 64 KB.</p>
+<p>SSBOs lift these restrictions by supporting allocations that can
+scale to hundreds of megabytes or several gigabytes, constrained only by
+device VRAM. Crucially, they enable bidirectional data flow: shaders can
+read values, execute calculations, and write the updated state back to
+the buffer directly on the GPU.</p>
+<h2 id="declaring-ssbos-in-glsl">Declaring SSBOs in GLSL</h2>
+<p>In OpenGL Shading Language (GLSL), an SSBO is defined using the
+<code>buffer</code> keyword instead of <code>uniform</code>. This
+keyword signals the compiler that the block’s memory is mutable.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 430 core</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">std430</span><span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="kw">buffer</span> ParticleData <span class="op">{</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> positions<span class="op">[];</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint</span> <span class="dt">index</span> <span class="op">=</span> <span class="bu">gl_GlobalInvocationID</span><span class="op">.</span><span class="fu">x</span><span class="op">;</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Read operation</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> currentPos <span class="op">=</span> positions<span class="op">[</span><span class="dt">index</span><span class="op">];</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Modify data</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>    currentPos<span class="op">.</span><span class="fu">y</span> <span class="op">+=</span> <span class="fl">0.1</span><span class="op">;</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Write operation</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>    positions<span class="op">[</span><span class="dt">index</span><span class="op">]</span> <span class="op">=</span> currentPos<span class="op">;</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="memory-layout-std430">Memory Layout: std430</h3>
+<p>SSBOs usually use the <code>std430</code> layout qualifier, unlike
+UBOs which use <code>std140</code>. The <code>std430</code> standard
+offers more compact packing rules for arrays: array elements of scalar
+or vector types (such as <code>float</code>, <code>vec2</code>, and
+<code>vec4</code>) adhere directly to their native base alignment rather
+than being padded out to 16 bytes. Additionally, SSBOs support unsized
+arrays as the last member of a struct block, permitting dynamic array
+lengths determined at runtime by the bound buffer’s size.</p>
+<h3 id="memory-access-qualifiers">Memory Access Qualifiers</h3>
+<p>By default, an SSBO block is accessible for both reading and writing.
+However, developers can optimize compiler performance and memory caching
+by using access qualifiers:</p>
+<ul>
+<li><code>readonly</code>: Restricts the shader to reading data,
+allowing the driver to leverage read-only caches.</li>
+<li><code>writeonly</code>: Restricts the shader to outputting data,
+which disables the caching of read operations and avoids unnecessary
+cache coherency traffic.</li>
+<li><code>coherent</code>: Ensures that writes from one shader
+invocation are immediately visible to other invocations without waiting
+for execution barrier boundaries.</li>
+</ul>
+<h2 id="concurrency-atomics-and-memory-barriers">Concurrency, Atomics,
+and Memory Barriers</h2>
+<p>Because modern GPUs execute thousands of shader invocations
+simultaneously across compute, vertex, and fragment stages, simultaneous
+writes to the same memory location can create race conditions and data
+hazards.</p>
+<h3 id="atomic-operations">Atomic Operations</h3>
+<p>To manage concurrent writes to shared SSBO fields, GLSL provides
+atomic functions. These operations guarantee that read-modify-write
+sequences are performed without interference from other execution
+threads:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">std430</span><span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">1</span><span class="op">)</span> <span class="kw">buffer</span> CounterBuffer <span class="op">{</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint</span> totalParticles<span class="op">;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Safely increment a global counter across multiple invocations</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint</span> myID <span class="op">=</span> <span class="bu">atomicAdd</span><span class="op">(</span>totalParticles<span class="op">,</span> <span class="dv">1</span><span class="op">);</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>Supported atomic functions include <code>atomicAdd</code>,
+<code>atomicMin</code>, <code>atomicMax</code>, <code>atomicAnd</code>,
+<code>atomicOr</code>, <code>atomicXor</code>,
+<code>atomicExchange</code>, and <code>atomicCompSwap</code>.</p>
+<h3 id="memory-synchronization">Memory Synchronization</h3>
+<p>Writing to an SSBO does not automatically flush cache lines for
+subsequent stages or host-side CPU operations. Memory barriers must be
+used to preserve ordering:</p>
+<ol type="1">
+<li><strong>Inside GLSL</strong>: The function
+<code>memoryBarrierBuffer()</code> blocks execution until all explicit
+buffer writes initiated by the calling invocation are complete.</li>
+<li><strong>On the CPU (Host API)</strong>: The function
+<code>glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT)</code> informs the
+driver that subsequent commands (such as draw calls, dispatch commands,
+or host mapping) must wait until all pending SSBO writes are finalized
+in memory.</li>
+</ol>
+<h2 id="opengl-host-implementation">OpenGL Host Implementation</h2>
+<p>Allocating and binding an SSBO follows standard OpenGL buffer
+management patterns using the target
+<code>GL_SHADER_STORAGE_BUFFER</code>.</p>
+<h3 id="1-creation-and-allocation">1. Creation and Allocation</h3>
+<div class="sourceCode" id="cb3"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>GLuint ssbo<span class="op">;</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>glGenBuffers<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="op">&amp;</span>ssbo<span class="op">);</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>glBindBuffer<span class="op">(</span>GL_SHADER_STORAGE_BUFFER<span class="op">,</span> ssbo<span class="op">);</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="co">// Allocate space for 100,000 vec4 items</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>GLsizeiptr bufferSize <span class="op">=</span> <span class="dv">100000</span> <span class="op">*</span> <span class="kw">sizeof</span><span class="op">(</span><span class="dt">float</span><span class="op">)</span> <span class="op">*</span> <span class="dv">4</span><span class="op">;</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>glBufferData<span class="op">(</span>GL_SHADER_STORAGE_BUFFER<span class="op">,</span> bufferSize<span class="op">,</span> NULL<span class="op">,</span> GL_DYNAMIC_DRAW<span class="op">);</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>glBindBuffer<span class="op">(</span>GL_SHADER_STORAGE_BUFFER<span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span></code></pre></div>
+<h3 id="2-binding-to-a-pipeline">2. Binding to a Pipeline</h3>
+<p>To link the GPU buffer to the shader's binding point, use
+<code>glBindBufferBase</code> or <code>glBindBufferRange</code>:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Binds the SSBO to binding point 0 (matching layout(binding = 0) in GLSL)</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>glBindBufferBase<span class="op">(</span>GL_SHADER_STORAGE_BUFFER<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> ssbo<span class="op">);</span></span></code></pre></div>
+<h3 id="3-reading-data-back">3. Reading Data Back</h3>
+<p>After dispatching compute workloads or draw calls, the CPU can read
+the mutated data directly by mapping the buffer or retrieving its
+contents:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Ensure all shader writes are complete</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>glMemoryBarrier<span class="op">(</span>GL_BUFFER_UPDATE_BARRIER_BIT <span class="op">|</span> GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT<span class="op">);</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>glBindBuffer<span class="op">(</span>GL_SHADER_STORAGE_BUFFER<span class="op">,</span> ssbo<span class="op">);</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span><span class="op">*</span> ptr <span class="op">=</span> glMapBuffer<span class="op">(</span>GL_SHADER_STORAGE_BUFFER<span class="op">,</span> GL_READ_ONLY<span class="op">);</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="co">// Read processed data from ptr...</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>glUnmapBuffer<span class="op">(</span>GL_SHADER_STORAGE_BUFFER<span class="op">);</span></span></code></pre></div>
+<p>By decoupling storage capacity from the uniform pipeline and
+supporting bidirectional memory access patterns alongside fine-grained
+synchronization primitives, SSBOs serve as the primary mechanism for
+General-Purpose GPU (GPGPU) compute, physics engines, and GPU-driven
+rendering algorithms in OpenGL.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/how-ssb-os-provide-read-write-storage-in-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inspect OpenGL Program Pipeline Compilation Logs - opengl</title>
+    <meta name="description" content="Debugging a failing OpenGL program pipeline requires inspecting messages from both the individual separable shader programs and the overarching pipeline container, as well as enabling driver-level debug callbacks. Because Program Pipeline Objects (PPOs) l">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/inspect-open-gl-program-pipeline-compilation-logs">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Inspect OpenGL Program Pipeline Compilation Logs - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/inspect-open-gl-program-pipeline-compilation-logs" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Debugging a failing OpenGL program pipeline requires inspecting messages from both the individual separable shader programs and the overarching pipeline container, as well as enabling driver-level debug callbacks. Because Program Pipeline Objects (PPOs) l" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="inspect-opengl-program-pipeline-compilation-logs">Inspect OpenGL
+Program Pipeline Compilation Logs</h1>
+<p>Debugging a failing OpenGL program pipeline requires inspecting
+messages from both the individual separable shader programs and the
+overarching pipeline container, as well as enabling driver-level debug
+callbacks. Because Program Pipeline Objects (PPOs) link separable stages
+dynamically at runtime rather than during a single monolithic link step,
+compilation and validation errors must be gathered using specialized API
+queries. This guide explains how to extract detailed driver logs using
+<code>glGetProgramPipelineInfoLog</code>, inspect stage-specific link
+errors, validate the pipeline configuration, and configure the OpenGL
+Debug Output API to capture real-time driver warnings.</p>
+<h3 id="1-retrieve-the-program-pipeline-info-log">1. Retrieve the
+Program Pipeline Info Log</h3>
+<p>While individual stages have their own logs, the program pipeline
+itself maintains an info log that captures interface mismatches and
+validation failures between stages.</p>
+<p>To query the pipeline log:</p>
+<ol type="1">
+<li>Validate the pipeline state by calling
+<code>glValidateProgramPipeline(pipelineId)</code>.</li>
+<li>Check the validation status using
+<code>glGetProgramPipelineiv</code> with the
+<code>GL_VALIDATE_STATUS</code> parameter.</li>
+<li>Retrieve the log length with <code>GL_INFO_LOG_LENGTH</code>.</li>
+<li>Fetch the log contents using
+<code>glGetProgramPipelineInfoLog</code>.</li>
+</ol>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>GLint status <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>glValidateProgramPipeline<span class="op">(</span>pipelineId<span class="op">);</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>glGetProgramPipelineiv<span class="op">(</span>pipelineId<span class="op">,</span> GL_VALIDATE_STATUS<span class="op">,</span> <span class="op">&amp;</span>status<span class="op">);</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>GLint logLength <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>glGetProgramPipelineiv<span class="op">(</span>pipelineId<span class="op">,</span> GL_INFO_LOG_LENGTH<span class="op">,</span> <span class="op">&amp;</span>logLength<span class="op">);</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="op">(</span>logLength <span class="op">&gt;</span> <span class="dv">1</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    std<span class="op">::</span>vector<span class="op">&lt;</span>GLchar<span class="op">&gt;</span> log<span class="op">(</span>logLength<span class="op">);</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    glGetProgramPipelineInfoLog<span class="op">(</span>pipelineId<span class="op">,</span> logLength<span class="op">,</span> NULL<span class="op">,</span> log<span class="op">.</span>data<span class="op">());</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Print or log the message: log.data()</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="2-inspect-individual-separable-shader-programs">2. Inspect
+Individual Separable Shader Programs</h3>
+<p>Program pipelines do not compile shader source code directly; they
+bind separable programs created via <code>glCreateShaderProgramv</code>
+or standard programs compiled with <code>GL_PROGRAM_SEPARABLE</code> set
+to <code>GL_TRUE</code>. If an individual stage fails to compile or
+link, the pipeline will fail silently or display incomplete
+diagnostics.</p>
+<p>Always verify the status of every separable program bound to the
+pipeline:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>GLint linked <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>glGetProgramiv<span class="op">(</span>programId<span class="op">,</span> GL_LINK_STATUS<span class="op">,</span> <span class="op">&amp;</span>linked<span class="op">);</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="op">(!</span>linked<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    GLint logLength <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    glGetProgramiv<span class="op">(</span>programId<span class="op">,</span> GL_INFO_LOG_LENGTH<span class="op">,</span> <span class="op">&amp;</span>logLength<span class="op">);</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span>logLength <span class="op">&gt;</span> <span class="dv">1</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>        std<span class="op">::</span>vector<span class="op">&lt;</span>GLchar<span class="op">&gt;</span> log<span class="op">(</span>logLength<span class="op">);</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>        glGetProgramInfoLog<span class="op">(</span>programId<span class="op">,</span> logLength<span class="op">,</span> NULL<span class="op">,</span> log<span class="op">.</span>data<span class="op">());</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>        <span class="co">// Print or log the individual program failure: log.data()</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="3-enable-opengl-debug-output">3. Enable OpenGL Debug Output</h3>
+<p>Many graphics drivers (such as NVIDIA and AMD) emit detailed internal
+compiler warnings, performance caveats, and binding failure details
+directly to the OpenGL Debug Output stream rather than the standard
+program info log.</p>
+<p>To capture these internal driver messages:</p>
+<ol type="1">
+<li>Request a debug context when creating your OpenGL context (via GLFW,
+SDL, or platform-native flags).</li>
+<li>Enable synchronous debug output to trap driver errors directly on
+the call stack:</li>
+</ol>
+<div class="sourceCode" id="cb3"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>glEnable<span class="op">(</span>GL_DEBUG_OUTPUT<span class="op">);</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>glEnable<span class="op">(</span>GL_DEBUG_OUTPUT_SYNCHRONOUS<span class="op">);</span></span></code></pre></div>
+<ol start="3" type="1">
+<li>Register a debug message callback:</li>
+</ol>
+<div class="sourceCode" id="cb4"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> GLAPIENTRY MessageCallback<span class="op">(</span>GLenum source<span class="op">,</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>                                GLenum type<span class="op">,</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>                                GLuint id<span class="op">,</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>                                GLenum severity<span class="op">,</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>                                GLsizei length<span class="op">,</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>                                <span class="dt">const</span> GLchar<span class="op">*</span> message<span class="op">,</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>                                <span class="dt">const</span> <span class="dt">void</span><span class="op">*</span> userParam<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Filter by type (e.g., GL_DEBUG_TYPE_ERROR, GL_DEBUG_TYPE_PORTABILITY)</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    <span class="co">// or inspect all driver compilation warnings</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    fprintf<span class="op">(</span>stderr<span class="op">,</span> <span class="st">&quot;GL CALLBACK: </span><span class="sc">%s</span><span class="st"> type = 0x</span><span class="sc">%x</span><span class="st">, severity = 0x</span><span class="sc">%x</span><span class="st">, message = </span><span class="sc">%s\n</span><span class="st">&quot;</span><span class="op">,</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>            <span class="op">(</span>type <span class="op">==</span> GL_DEBUG_TYPE_ERROR <span class="op">?</span> <span class="st">&quot;** GL ERROR **&quot;</span> <span class="op">:</span> <span class="st">&quot;&quot;</span><span class="op">),</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>            type<span class="op">,</span> severity<span class="op">,</span> message<span class="op">);</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a><span class="co">// Register the callback</span></span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>glDebugMessageCallback<span class="op">(</span>MessageCallback<span class="op">,</span> <span class="kw">nullptr</span><span class="op">);</span></span></code></pre></div>
+<h3 id="4-check-for-common-pipeline-pitfalls">4. Check for Common
+Pipeline Pitfalls</h3>
+<p>If driver logs show missing bindings or validation failures without
+detailed syntax errors, verify the following configuration points:</p>
+<ul>
+<li><strong>Explicit Interface Matching:</strong> Separable programs
+cannot optimize cross-stage varying variables across compilation units.
+Ensure inputs and outputs between stages use matching
+<code>layout(location = X)</code> qualifiers or exact matching variable
+names and types.</li>
+<li><strong>Redeclaring Built-in Blocks:</strong> If using geometry,
+tessellation, or multiple separable stages interacting with
+<code>gl_Position</code>, redeclare the <code>gl_PerVertex</code> block
+consistently across stages as required by the GLSL separable shader
+specification.</li>
+<li><strong>Active Program Stages:</strong> Ensure the stages passed to
+<code>glUseProgramStages</code> properly match the stages compiled into
+the program (<code>GL_VERTEX_SHADER_BIT</code>,
+<code>GL_FRAGMENT_SHADER_BIT</code>, etc.).</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/inspect-open-gl-program-pipeline-compilation-logs';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

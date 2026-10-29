@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Two-Pass Blur in OpenGL Using Framebuffer Objects - opengl</title>
+    <meta name="description" content="This article explains how to optimize image blurring in OpenGL by separating a 2D Gaussian blur into two sequential 1D passes—horizontal and vertical—using Framebuffer Objects (FBOs). It covers the mathematical motivation behind separable filtering, the a">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/two-pass-blur-in-open-gl-using-framebuffer-objects">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Two-Pass Blur in OpenGL Using Framebuffer Objects - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/two-pass-blur-in-open-gl-using-framebuffer-objects" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how to optimize image blurring in OpenGL by separating a 2D Gaussian blur into two sequential 1D passes—horizontal and vertical—using Framebuffer Objects (FBOs). It covers the mathematical motivation behind separable filtering, the a" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="two-pass-blur-in-opengl-using-framebuffer-objects">Two-Pass Blur
+in OpenGL Using Framebuffer Objects</h1>
+<p>This article explains how to optimize image blurring in OpenGL by
+separating a 2D Gaussian blur into two sequential 1D passes—horizontal
+and vertical—using Framebuffer Objects (FBOs). It covers the
+mathematical motivation behind separable filtering, the architecture of
+ping-pong FBOs, and the step-by-step rendering process required to
+implement this technique efficiently in a graphics pipeline.</p>
+<h3 id="the-separability-advantage">The Separability Advantage</h3>
+<p>A standard 2D Gaussian blur applies a convolution matrix across an
+<span class="math inline">\(N \times N\)</span> area for every pixel,
+requiring <span class="math inline">\(N^2\)</span> texture fetches per
+pixel. For an 11×11 kernel, that equates to 121 texture samples per
+pixel.</p>
+<p>Because the 2D Gaussian function is mathematically separable, it can
+be decomposed into two independent 1D distributions:</p>
+<p><span class="math display">\[G(x, y) = G(x) \times G(y)\]</span></p>
+<p>By filtering along the horizontal axis first and then along the
+vertical axis, the sampling complexity drops from <span
+class="math inline">\(O(N^2)\)</span> to <span
+class="math inline">\(O(2N)\)</span>. For an 11×11 kernel, this reduces
+texture fetches from 121 down to 22 per pixel, yielding a massive
+performance improvement without altering the mathematical result.</p>
+<h3 id="fbo-setup-ping-pong-buffering">FBO Setup: Ping-Pong
+Buffering</h3>
+<p>To separate the blur, OpenGL cannot read from and write to the same
+texture simultaneously. You must use two Framebuffer Objects (FBOs)
+configured in a "ping-pong" arrangement to hold intermediate rendering
+results.</p>
+<ol type="1">
+<li><strong>Create Two FBOs and Textures</strong>: Generate two FBO
+handles and two 2D textures matching the dimensions of the render target
+(or a downscaled resolution for a bloom pass).</li>
+<li><strong>Attach Textures</strong>: Attach one texture to each FBO
+using
+<code>glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, textureID, 0)</code>.</li>
+<li><strong>Set Texture Clamping</strong>: Set
+<code>GL_TEXTURE_WRAP_S</code> and <code>GL_TEXTURE_WRAP_T</code> to
+<code>GL_CLAMP_TO_EDGE</code> to prevent artifacts along the borders
+during sampling.</li>
+</ol>
+<h3 id="pass-1-the-horizontal-blur">Pass 1: The Horizontal Blur</h3>
+<p>The first render pass isolates the horizontal component using the
+original scene texture as the source.</p>
+<ol type="1">
+<li><strong>Bind the Target</strong>: Bind the first FBO
+(<code>FBO_A</code>) via
+<code>glBindFramebuffer(GL_FRAMEBUFFER, FBO_A)</code>.</li>
+<li><strong>Set the Viewport</strong>: Configure <code>glViewport</code>
+to match the target texture dimensions.</li>
+<li><strong>Bind the Source</strong>: Bind the original scene texture to
+a texture unit (e.g., <code>GL_TEXTURE0</code>).</li>
+<li><strong>Configure Uniforms</strong>: Pass a horizontal direction
+vector (such as <code>vec2(1.0, 0.0)</code>) or a boolean flag
+<code>horizontal = true</code> to the blur fragment shader.</li>
+<li><strong>Draw</strong>: Render a screen-aligned quad.</li>
+</ol>
+<p>The fragment shader samples texels strictly along the horizontal
+axis:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Horizontal offset calculation</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="dt">vec2</span> tex_offset <span class="op">=</span> <span class="fl">1.0</span> <span class="op">/</span> <span class="bu">textureSize</span><span class="op">(</span>image<span class="op">,</span> <span class="dv">0</span><span class="op">);</span> <span class="co">// Size of single texel</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">for</span><span class="op">(</span><span class="dt">int</span> i <span class="op">=</span> <span class="dv">1</span><span class="op">;</span> i <span class="op">&lt;</span> <span class="dv">5</span><span class="op">;</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    result <span class="op">+=</span> <span class="bu">texture</span><span class="op">(</span>image<span class="op">,</span> TexCoords <span class="op">+</span> <span class="dt">vec2</span><span class="op">(</span>tex_offset<span class="op">.</span><span class="fu">x</span> <span class="op">*</span> i<span class="op">,</span> <span class="fl">0.0</span><span class="op">)).</span><span class="fu">rgb</span> <span class="op">*</span> weight<span class="op">[</span>i<span class="op">];</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    result <span class="op">+=</span> <span class="bu">texture</span><span class="op">(</span>image<span class="op">,</span> TexCoords <span class="op">-</span> <span class="dt">vec2</span><span class="op">(</span>tex_offset<span class="op">.</span><span class="fu">x</span> <span class="op">*</span> i<span class="op">,</span> <span class="fl">0.0</span><span class="op">)).</span><span class="fu">rgb</span> <span class="op">*</span> weight<span class="op">[</span>i<span class="op">];</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>The resulting texture attached to <code>FBO_A</code> now contains a
+horizontally blurred version of the original image.</p>
+<h3 id="pass-2-the-vertical-blur">Pass 2: The Vertical Blur</h3>
+<p>The second render pass applies the vertical filter directly to the
+horizontally blurred image.</p>
+<ol type="1">
+<li><strong>Bind the Target</strong>: Bind the second FBO
+(<code>FBO_B</code>) or the default framebuffer (<code>0</code>) if this
+is the final output of your pipeline.</li>
+<li><strong>Bind the Intermediate Source</strong>: Bind the texture from
+<code>FBO_A</code> to <code>GL_TEXTURE0</code>.</li>
+<li><strong>Configure Uniforms</strong>: Set the direction vector to
+vertical (<code>vec2(0.0, 1.0)</code>) or set
+<code>horizontal = false</code>.</li>
+<li><strong>Draw</strong>: Render the screen-aligned quad once
+more.</li>
+</ol>
+<p>The fragment shader now samples strictly along the vertical axis:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Vertical offset calculation</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="dt">vec2</span> tex_offset <span class="op">=</span> <span class="fl">1.0</span> <span class="op">/</span> <span class="bu">textureSize</span><span class="op">(</span>image<span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="kw">for</span><span class="op">(</span><span class="dt">int</span> i <span class="op">=</span> <span class="dv">1</span><span class="op">;</span> i <span class="op">&lt;</span> <span class="dv">5</span><span class="op">;</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    result <span class="op">+=</span> <span class="bu">texture</span><span class="op">(</span>image<span class="op">,</span> TexCoords <span class="op">+</span> <span class="dt">vec2</span><span class="op">(</span><span class="fl">0.0</span><span class="op">,</span> tex_offset<span class="op">.</span><span class="fu">y</span> <span class="op">*</span> i<span class="op">)).</span><span class="fu">rgb</span> <span class="op">*</span> weight<span class="op">[</span>i<span class="op">];</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    result <span class="op">+=</span> <span class="bu">texture</span><span class="op">(</span>image<span class="op">,</span> TexCoords <span class="op">-</span> <span class="dt">vec2</span><span class="op">(</span><span class="fl">0.0</span><span class="op">,</span> tex_offset<span class="op">.</span><span class="fu">y</span> <span class="op">*</span> i<span class="op">)).</span><span class="fu">rgb</span> <span class="op">*</span> weight<span class="op">[</span>i<span class="op">];</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>The output written to <code>FBO_B</code> (or the screen) represents
+the fully blurred 2D image, achieved in two lightweight render
+passes.</p>
+<h3 id="additional-iterations">Additional Iterations</h3>
+<p>For stronger blurs without increasing the kernel radius, alternate
+between <code>FBO_A</code> and <code>FBO_B</code> in a loop:</p>
+<ul>
+<li><strong>Pass 1</strong>: Source = Original Scene <span
+class="math inline">\(\rightarrow\)</span> Target = <code>FBO_A</code>
+(Horizontal)</li>
+<li><strong>Pass 2</strong>: Source = <code>FBO_A</code> Texture <span
+class="math inline">\(\rightarrow\)</span> Target = <code>FBO_B</code>
+(Vertical)</li>
+<li><strong>Pass 3</strong>: Source = <code>FBO_B</code> Texture <span
+class="math inline">\(\rightarrow\)</span> Target = <code>FBO_A</code>
+(Horizontal)</li>
+<li><strong>Pass 4</strong>: Source = <code>FBO_A</code> Texture <span
+class="math inline">\(\rightarrow\)</span> Target = <code>FBO_B</code>
+(Vertical)</li>
+</ul>
+<p>This ping-pong approach reuses the allocated memory while
+progressively widening the blur radius across minimal shader cycles.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/two-pass-blur-in-open-gl-using-framebuffer-objects';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

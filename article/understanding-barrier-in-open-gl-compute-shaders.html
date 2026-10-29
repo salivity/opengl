@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Understanding barrier() in OpenGL Compute Shaders - opengl</title>
+    <meta name="description" content="The barrier() intrinsic in OpenGL compute shaders acts as a synchronization point that coordinates execution and shared memory access among all invocations within a single local workgroup. By halting faster-running threads until every thread in the workgr">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/understanding-barrier-in-open-gl-compute-shaders">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Understanding barrier() in OpenGL Compute Shaders - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/understanding-barrier-in-open-gl-compute-shaders" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The barrier() intrinsic in OpenGL compute shaders acts as a synchronization point that coordinates execution and shared memory access among all invocations within a single local workgroup. By halting faster-running threads until every thread in the workgr" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="understanding-barrier-in-opengl-compute-shaders">Understanding
+barrier() in OpenGL Compute Shaders</h1>
+<p>The <code>barrier()</code> intrinsic in OpenGL compute shaders acts
+as a synchronization point that coordinates execution and shared memory
+access among all invocations within a single local workgroup. By halting
+faster-running threads until every thread in the workgroup reaches the
+same instruction, it prevents race conditions and ensures that
+intermediate computations or data updates stored in shared memory are
+complete and universally visible before execution continues.</p>
+<h3 id="execution-synchronization">Execution Synchronization</h3>
+<p>In a compute shader, an individual workgroup consists of multiple
+invocations (threads) executing concurrently across hardware compute
+units. Because hardware schedulers execute threads and warps/subgroups
+at variable speeds, there is no guarantee regarding the relative
+execution order of separate threads.</p>
+<p>Calling <code>barrier()</code> establishes a strict execution
+checkpoint. When a thread encounters this function, it suspends
+execution until every other invocation within that identical local
+workgroup also reaches the <code>barrier()</code> call. Once all threads
+arrive, the execution freeze is lifted, and all threads proceed past the
+barrier in lockstep.</p>
+<h3 id="memory-ordering-and-visibility">Memory Ordering and
+Visibility</h3>
+<p>Beyond coordinating execution flow, <code>barrier()</code> functions
+as a memory barrier specifically for <code>shared</code> memory
+variables.</p>
+<p>In OpenGL, the <code>shared</code> storage qualifier designates
+variables located in on-chip, low-latency memory accessible to all
+threads in a workgroup. Under normal execution, a write by one thread to
+a <code>shared</code> variable is not immediately guaranteed to be
+visible to another thread due to compiler reordering, cache behaviors,
+and register allocations.</p>
+<p>When <code>barrier()</code> is called:</p>
+<ol type="1">
+<li>All prior writes to <code>shared</code> memory performed by any
+thread in the workgroup are finalized.</li>
+<li>Memory operations are committed, making updated values immediately
+readable by all other threads in the workgroup.</li>
+<li>Subsequent reads or writes to <code>shared</code> variables cannot
+be reordered by the compiler or GPU pipeline to occur before the
+barrier.</li>
+</ol>
+<h3 id="uniform-control-flow-requirement">Uniform Control Flow
+Requirement</h3>
+<p>A critical operational rule for <code>barrier()</code> is that it
+must be placed within uniform control flow. Every invocation in the
+workgroup must be capable of executing the exact same
+<code>barrier()</code> instruction.</p>
+<p>If <code>barrier()</code> is placed inside a divergent conditional
+statement (such as an <code>if</code> block that only some threads
+enter), the GPU will experience undefined behavior. In practice, this
+results in a deadlock where threads inside the conditional block wait
+indefinitely for the remaining threads to arrive, hanging the compute
+shader and potentially crashing the graphics driver.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/understanding-barrier-in-open-gl-compute-shaders';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Understanding OpenGL Texture Border Color Clamping - opengl</title>
+    <meta name="description" content="In OpenGL, the texture border color parameter defines a constant color value utilized when texture coordinates fall outside the standard normalized range of 0.0 to 1.0. This article explains the exact role of the GLTEXTUREBORDERCOLOR parameter, its intera">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/understanding-open-gl-texture-border-color-clamping">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Understanding OpenGL Texture Border Color Clamping - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/understanding-open-gl-texture-border-color-clamping" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In OpenGL, the texture border color parameter defines a constant color value utilized when texture coordinates fall outside the standard normalized range of 0.0 to 1.0. This article explains the exact role of the GLTEXTUREBORDERCOLOR parameter, its intera" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="understanding-opengl-texture-border-color-clamping">Understanding
+OpenGL Texture Border Color Clamping</h1>
+<p>In OpenGL, the texture border color parameter defines a constant
+color value utilized when texture coordinates fall outside the standard
+normalized range of 0.0 to 1.0. This article explains the exact role of
+the <code>GL_TEXTURE_BORDER_COLOR</code> parameter, its interaction with
+texture coordinate clamping modes—specifically
+<code>GL_CLAMP_TO_BORDER</code>—and its practical implementation in
+graphics techniques such as shadow mapping and decal rendering.</p>
+<h3 id="the-role-of-gl_texture_border_color">The Role of
+GL_TEXTURE_BORDER_COLOR</h3>
+<p>When mapping textures onto geometric primitives, texture coordinates
+(<span class="math inline">\(s, t, r\)</span>) typically range from
+<span class="math inline">\(0.0\)</span> to <span
+class="math inline">\(1.0\)</span>. When sampling coordinates extend
+beyond these limits, OpenGL requires a wrapping mode to determine what
+color to return.</p>
+<p>The parameter <code>GL_TEXTURE_BORDER_COLOR</code> specifies an
+arbitrary RGBA (or depth) value assigned to the texture object via the
+<code>glTexParameterfv</code> or <code>glTexParameterIiv</code>
+functions. Instead of repeating the texture or extending its edge
+pixels, OpenGL fetches this user-defined value whenever coordinates
+exceed boundaries under compatible wrapping configurations.</p>
+<h3 id="interaction-with-clamping-modes">Interaction with Clamping
+Modes</h3>
+<p>The behavior of the border color depends directly on the active
+wrapping mode set for the texture axes (<code>GL_TEXTURE_WRAP_S</code>,
+<code>GL_TEXTURE_WRAP_T</code>, and <code>GL_TEXTURE_WRAP_R</code>):</p>
+<ul>
+<li><strong><code>GL_CLAMP_TO_BORDER</code></strong>: This is the
+primary modern wrapping mode that relies on the border color. Any
+coordinate sampled strictly outside the <span
+class="math inline">\([0.0, 1.0]\)</span> range evaluates directly to
+the specified <code>GL_TEXTURE_BORDER_COLOR</code>.</li>
+<li><strong>Linear Filtering Boundary Effects</strong>: If texture
+filtering is set to <code>GL_LINEAR</code>, sampling within half a texel
+of the texture edge will linearly blend the edge texels with the
+configured border color, ensuring smooth transitions rather than abrupt
+cuts.</li>
+<li><strong>Legacy <code>GL_CLAMP</code></strong>: In older OpenGL
+specifications, <code>GL_CLAMP</code> clamped coordinates to <span
+class="math inline">\([0.0, 1.0]\)</span> and interpolated with a
+1-pixel border or the border color at the extreme edges. Modern OpenGL
+core profiles have deprecated this in favor of the distinct behaviors of
+<code>GL_CLAMP_TO_EDGE</code> (which clamps strictly to the outermost
+texel) and <code>GL_CLAMP_TO_BORDER</code>.</li>
+</ul>
+<h3 id="practical-applications">Practical Applications</h3>
+<ol type="1">
+<li><strong>Shadow Mapping</strong>: A common issue in shadow map
+generation is sampling outside the light's view frustum. By setting the
+wrap mode to <code>GL_CLAMP_TO_BORDER</code> and assigning a border
+depth color of <code>1.0</code> (maximum depth), regions outside the
+light's projection automatically evaluate as unshadowed.</li>
+<li><strong>Decals and Projected Textures</strong>: When projecting
+textures (like bullet impacts or UI markers) onto arbitrary geometry,
+coordinates naturally exceed <span class="math inline">\([0.0,
+1.0]\)</span>. Setting the border color to fully transparent black
+<code>(0.0, 0.0, 0.0, 0.0)</code> ensures the texture cleanly disappears
+outside the targeted projection area without edge bleeding.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/understanding-open-gl-texture-border-color-clamping';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

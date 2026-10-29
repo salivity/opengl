@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stencil Reference Masks in OpenGL Multi-Layer Testing - opengl</title>
+    <meta name="description" content="In OpenGL, stencil reference value masks allow developers to treat the stencil buffer as a collection of independent bit planes rather than a single contiguous integer. During multi-layer or multi-pass rendering pipelines, these masks perform a bitwise AN">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/stencil-reference-masks-in-open-gl-multi-layer-testing">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Stencil Reference Masks in OpenGL Multi-Layer Testing - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/stencil-reference-masks-in-open-gl-multi-layer-testing" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In OpenGL, stencil reference value masks allow developers to treat the stencil buffer as a collection of independent bit planes rather than a single contiguous integer. During multi-layer or multi-pass rendering pipelines, these masks perform a bitwise AN" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="stencil-reference-masks-in-opengl-multi-layer-testing">Stencil
+Reference Masks in OpenGL Multi-Layer Testing</h1>
+<p>In OpenGL, stencil reference value masks allow developers to treat
+the stencil buffer as a collection of independent bit planes rather than
+a single contiguous integer. During multi-layer or multi-pass rendering
+pipelines, these masks perform a bitwise AND operation on both the
+stencil reference value and the stored buffer value prior to comparison.
+This article explains how reference masks function, why they are vital
+for isolating layered rendering data within an 8-bit buffer, and how
+they prevent state collisions across successive rendering passes.</p>
+<h3 id="how-the-comparison-mask-operates">How the Comparison Mask
+Operates</h3>
+<p>When configuring the stencil test using functions like
+<code>glStencilFunc</code> or <code>glStencilFuncSeparate</code>, OpenGL
+requires three parameters: the comparison function, the reference value
+(<code>ref</code>), and a bitwise mask (<code>mask</code>).</p>
+<p>During the stencil test evaluation, the comparison is not computed
+directly between <code>ref</code> and the current buffer value. Instead,
+OpenGL applies the mask to both components:</p>
+<p><span class="math display">\[\text{Test Condition} = (\text{ref} \
+\&amp; \ \text{mask}) \ \mathbf{OP} \ (\text{stencil\_value} \ \&amp; \
+\text{mask})\]</span></p>
+<p>Here, <span class="math inline">\(\mathbf{OP}\)</span> represents the
+specified comparison operator (such as <code>GL_EQUAL</code>,
+<code>GL_LESS</code>, or <code>GL_NOTEQUAL</code>). Any bit set to
+<code>0</code> in the mask is excluded from the comparison, effectively
+neutralizing that bit's influence over whether the fragment passes or
+fails.</p>
+<h3 id="bit-plane-partitioning">Bit-Plane Partitioning</h3>
+<p>A standard OpenGL stencil buffer provides 8 bits of precision per
+pixel. In simple applications, this entire byte represents a single
+scalar value. However, advanced rendering techniques require multiple
+independent tests—such as clipping regions, shadow volume counting,
+planar reflections, and outline detection—to occur within the same
+frame.</p>
+<p>The reference mask enables bit-plane partitioning, allowing the 8-bit
+buffer to be subdivided into distinct functional layers. For
+example:</p>
+<ul>
+<li><strong>Bits 0–2 (Mask <code>0x07</code>):</strong> Reserved for
+material IDs or geometry tagging.</li>
+<li><strong>Bit 3 (Mask <code>0x08</code>):</strong> Reserved as a
+portal or clipping mask.</li>
+<li><strong>Bits 4–7 (Mask <code>0xF0</code>):</strong> Reserved for
+shadow volume depth-pass counters.</li>
+</ul>
+<p>By configuring the comparison mask to evaluate only the bits
+allocated to a specific pass, subsequent rendering operations can read
+their assigned sub-layer without being affected by the data written to
+the other bits.</p>
+<h3 id="isolation-in-multi-pass-pipelines">Isolation in Multi-Pass
+Pipelines</h3>
+<p>During multi-pass rendering, different shaders and geometry passes
+execute sequentially. Without a reference mask, performing a test such
+as <code>GL_EQUAL</code> would require the incoming reference value to
+match the exact 8-bit composite value of the buffer. Any modification
+made by an earlier pass would cause subsequent passes to fail
+unexpectedly.</p>
+<p>By targeting a specific subset of bits with the reference mask, a
+pass can verify specific criteria (e.g., "draw only if bit 3 is active")
+regardless of the dynamic values stored in the remaining 7 bits.</p>
+<h3 id="synergy-with-the-stencil-write-mask">Synergy with the Stencil
+Write Mask</h3>
+<p>To maintain proper multi-layer separation, the comparison mask
+(<code>glStencilFunc</code>) is paired with the stencil write mask
+configured via <code>glStencilMask</code>.</p>
+<p>While the reference mask controls which bits are <em>evaluated</em>
+during the test, the write mask controls which bits are
+<em>modified</em> when a fragment passes or fails. Using both mechanisms
+simultaneously ensures that a rendering pass evaluates only its relevant
+data layer and writes exclusively to its assigned bit slots, preserving
+the integrity of concurrent layers across the entire frame.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/stencil-reference-masks-in-open-gl-multi-layer-testing';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

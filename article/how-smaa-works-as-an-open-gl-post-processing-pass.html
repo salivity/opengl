@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How SMAA Works as an OpenGL Post-Processing Pass - opengl</title>
+    <meta name="description" content="Subpixel Morphological Anti-Aliasing (SMAA) is an efficient, image-based anti-aliasing technique that reconstructs clean edges across rendered frames using screen-space post-processing. Implemented within OpenGL, SMAA operates entirely on screen-aligned q">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-smaa-works-as-an-open-gl-post-processing-pass">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How SMAA Works as an OpenGL Post-Processing Pass - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-smaa-works-as-an-open-gl-post-processing-pass" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Subpixel Morphological Anti-Aliasing (SMAA) is an efficient, image-based anti-aliasing technique that reconstructs clean edges across rendered frames using screen-space post-processing. Implemented within OpenGL, SMAA operates entirely on screen-aligned q" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-smaa-works-as-an-opengl-post-processing-pass">How SMAA Works
+as an OpenGL Post-Processing Pass</h1>
+<p>Subpixel Morphological Anti-Aliasing (SMAA) is an efficient,
+image-based anti-aliasing technique that reconstructs clean edges across
+rendered frames using screen-space post-processing. Implemented within
+OpenGL, SMAA operates entirely on screen-aligned quads or triangles
+across multiple framebuffer passes, analyzing edge patterns and applying
+precomputed blending weights to smooth jagged edges without requiring
+the high memory bandwidth of hardware Multi-Sample Anti-Aliasing
+(MSAA).</p>
+<h3 id="pipeline-overview-in-opengl">Pipeline Overview in OpenGL</h3>
+<p>SMAA executes as a pipeline of sequential render passes. In OpenGL,
+this requires configuring Framebuffer Objects (FBOs) with specific
+texture formats to pass intermediate data between fragment shaders. The
+complete implementation relies on three primary passes and two
+precomputed Look-Up Tables (LUTs):</p>
+<ol type="1">
+<li><strong>Pass 1: Edge Detection</strong></li>
+<li><strong>Pass 2: Blending Weight Calculation</strong></li>
+<li><strong>Pass 3: Neighborhood Blending</strong></li>
+</ol>
+<p>Two static textures—the <strong>Area Texture</strong> and the
+<strong>Search Texture</strong>—are generated ahead of time and bound as
+sampler uniforms in OpenGL to accelerate pattern recognition during the
+second pass.</p>
+<hr />
+<h3 id="pass-1-edge-detection">Pass 1: Edge Detection</h3>
+<p>The initial pass identifies high-contrast pixel boundaries where
+aliasing occurs.</p>
+<ul>
+<li><strong>Inputs:</strong> The HDR/LDR rendered scene color buffer, or
+alternatively, the depth/stencil buffer.</li>
+<li><strong>Mechanism:</strong> The fragment shader calculates
+pixel-to-pixel discontinuity. Color edge detection converts neighboring
+RGB values to luminance and applies a contrast threshold (typically
+between 0.05 and 0.15). Depth-based detection compares depth values,
+which is faster and avoids false positives on texture details.</li>
+<li><strong>OpenGL Implementation:</strong> A full-screen triangle is
+drawn. The output is directed to an FBO attached to a two-channel
+texture (such as <code>GL_RG8</code>). The red channel stores horizontal
+edge metrics, and the green channel stores vertical edge metrics. Pixels
+that do not meet the threshold are discarded using early fragment tests
+or cleared to zero.</li>
+</ul>
+<hr />
+<h3 id="pass-2-blending-weight-calculation">Pass 2: Blending Weight
+Calculation</h3>
+<p>Once edges are mapped, this pass determines the structural shape of
+each edge and computes how much neighboring pixels should bleed into one
+another.</p>
+<ul>
+<li><strong>Inputs:</strong> The edge texture from Pass 1, along with
+the precomputed Area and Search textures.</li>
+<li><strong>Mechanism:</strong> The shader steps along detected
+horizontal and vertical edges to find their endpoints. The Search
+Texture accelerates this traversal by decoding the distance to the end
+of an edge in fewer texture lookups. Once the line length and end
+orientations are known (identifying patterns like "L-shapes" or
+"Z-shapes"), the shader samples the Area Texture using hardware bilinear
+filtering. The Area Texture converts the geometric edge features into
+subpixel coverage weights.</li>
+<li><strong>OpenGL Implementation:</strong> This pass renders to an FBO
+with a four-channel target (<code>GL_RGBA8</code>). The four channels
+represent blending weights for top, bottom, left, and right directions.
+Hardware bilinear interpolation (<code>GL_LINEAR</code>) must be enabled
+on the LUT samplers to ensure smooth transition gradients across edge
+segments.</li>
+</ul>
+<hr />
+<h3 id="pass-3-neighborhood-blending">Pass 3: Neighborhood Blending</h3>
+<p>The final pass applies the calculated weights to reconstruct the
+anti-aliased image.</p>
+<ul>
+<li><strong>Inputs:</strong> The original scene color texture and the
+blend weight texture from Pass 2.</li>
+<li><strong>Mechanism:</strong> For each pixel, the shader inspects the
+blend weights calculated for neighboring edges. Rather than taking
+multiple explicit color samples, SMAA exploits hardware bilinear
+sampling by computing subpixel coordinate offsets based on the weights.
+By sampling the color buffer at these offset coordinates, the GPU blends
+adjacent colors in a single texture fetch.</li>
+<li><strong>OpenGL Implementation:</strong> The fragment shader renders
+directly into the swap chain default framebuffer (<code>0</code>) or an
+FBO designated for subsequent post-processing steps (such as color
+grading or UI compositing). The target format matches the original color
+buffer (typically <code>GL_RGBA8</code> or
+<code>GL_RGBA16F</code>).</li>
+</ul>
+<hr />
+<h3 id="opengl-optimization-considerations">OpenGL Optimization
+Considerations</h3>
+<ul>
+<li><strong>Full-Screen Primitives:</strong> Rendering a single large
+triangle that covers the <code>[-1, 1]</code> Normalized Device
+Coordinate (NDC) space is preferred over a two-triangle quad to avoid
+redundant rasterization along the screen diagonal.</li>
+<li><strong>Texture Filtering and Offsets:</strong> The vertex shaders
+in each pass should precompute coordinate offsets (such as half-pixel
+offsets) to minimize arithmetic operations inside the fragment
+shaders.</li>
+<li><strong>Texture Formats:</strong> Using compact formats such as
+<code>GL_RG8</code> for edge detection and <code>GL_RGBA8</code> for
+weights reduces memory bandwidth, which is the primary performance
+factor for post-processing passes.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/how-smaa-works-as-an-open-gl-post-processing-pass';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

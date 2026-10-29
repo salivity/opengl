@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Legacy Lighting: Ambient, Diffuse, Specular - opengl</title>
+    <meta name="description" content="This article explores the mathematical mechanics behind the legacy OpenGL fixed-function lighting pipeline. Before the advent of programmable vertex and fragment shaders, OpenGL relied on a configurable implementation of the Blinn-Phong reflection model c">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-legacy-lighting-ambient-diffuse-specular">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Legacy Lighting: Ambient, Diffuse, Specular - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-legacy-lighting-ambient-diffuse-specular" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explores the mathematical mechanics behind the legacy OpenGL fixed-function lighting pipeline. Before the advent of programmable vertex and fragment shaders, OpenGL relied on a configurable implementation of the Blinn-Phong reflection model c" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-legacy-lighting-ambient-diffuse-specular">OpenGL Legacy
+Lighting: Ambient, Diffuse, Specular</h1>
+<p>This article explores the mathematical mechanics behind the legacy
+OpenGL fixed-function lighting pipeline. Before the advent of
+programmable vertex and fragment shaders, OpenGL relied on a
+configurable implementation of the Blinn-Phong reflection model computed
+per vertex. Below is a detailed breakdown of how OpenGL combined
+ambient, diffuse, and specular components to evaluate the final
+perceived color of a surface.</p>
+<h3 id="the-general-lighting-model">The General Lighting Model</h3>
+<p>In the legacy fixed-function pipeline, the total color <span
+class="math inline">\(C\)</span> of a vertex was evaluated as the sum of
+material emission, scene-level ambient light, and the individual
+contributions of enabled light sources. The standard formula per light
+source is:</p>
+<p><span class="math display">\[Color = Emission + Ambient_{global} +
+\sum (Attenuation \times Spotlight \times (Ambient + Diffuse +
+Specular))\]</span></p>
+<p>The lighting calculations operated entirely on directional vectors
+transformed into eye coordinates, using the surface normal, light
+direction, and viewer direction.</p>
+<h3 id="1-ambient-component">1. Ambient Component</h3>
+<p>The ambient component approximates indirect, scattered environmental
+light that illuminates an object uniformly from all directions,
+preventing unlit areas from appearing completely black.</p>
+<p>OpenGL calculates ambient reflection in two parts: a global scene
+ambient term and an individual light-source ambient term. The formula
+for a specific light source is:</p>
+<p><span class="math display">\[Ambient = M_a \times L_a\]</span></p>
+<p>Where:</p>
+<ul>
+<li><span class="math inline">\(M_a\)</span> is the material's ambient
+reflectance property (<code>GL_AMBIENT</code>).</li>
+<li><span class="math inline">\(L_a\)</span> is the ambient color
+intensity of the light source (<code>GL_AMBIENT</code>).</li>
+</ul>
+<p>This value is multiplied component-wise (RGBA). In addition to
+individual lights, OpenGL adds the global ambient contribution:</p>
+<p><span class="math display">\[Ambient_{total} = (M_a \times S_a) +
+\sum (M_a \times L_a)\]</span></p>
+<p>Where <span class="math inline">\(S_a\)</span> is the global ambient
+light setting (<code>GL_LIGHT_MODEL_AMBIENT</code>). The ambient term is
+independent of surface orientation and light direction.</p>
+<h3 id="2-diffuse-component">2. Diffuse Component</h3>
+<p>The diffuse component models Lambertian reflection, which accounts
+for light scattering uniformly across a matte surface. The brightness of
+the reflected light depends entirely on the angle at which the incoming
+light strikes the surface.</p>
+<p>The diffuse reflection is computed using the dot product of the
+surface normal and the light direction:</p>
+<p><span class="math display">\[Diffuse = \max(N \cdot L, 0) \times (M_d
+\times L_d)\]</span></p>
+<p>Where:</p>
+<ul>
+<li><span class="math inline">\(N\)</span> is the normalized unit normal
+vector of the surface.</li>
+<li><span class="math inline">\(L\)</span> is the normalized unit vector
+pointing from the vertex toward the light source.</li>
+<li><span class="math inline">\(M_d\)</span> is the material's diffuse
+reflectance (<code>GL_DIFFUSE</code>).</li>
+<li><span class="math inline">\(L_d\)</span> is the light source's
+diffuse intensity (<code>GL_DIFFUSE</code>).</li>
+</ul>
+<p>The dot product <span class="math inline">\(N \cdot L\)</span> equals
+the cosine of the angle of incidence (<span
+class="math inline">\(\theta\)</span>). If the surface faces directly
+toward the light, the dot product equals 1.0, generating maximum
+brightness. If the angle exceeds 90 degrees, the dot product drops below
+zero; the calculation clamps the result to zero to prevent surfaces
+pointing away from the light from being illuminated.</p>
+<h3 id="3-specular-component">3. Specular Component</h3>
+<p>The specular component produces shiny highlights on glossy surfaces.
+While original Phong lighting uses the reflection vector, legacy OpenGL
+implements the <strong>Blinn-Phong</strong> formulation for performance
+reasons, calculating the angle between the surface normal and a halfway
+vector.</p>
+<p>The halfway vector <span class="math inline">\(H\)</span> represents
+the direction halfway between the light source and the viewer:</p>
+<p><span class="math display">\[H = \frac{L + V}{\|L + V\|}\]</span></p>
+<p>Where:</p>
+<ul>
+<li><span class="math inline">\(L\)</span> is the unit vector to the
+light source.</li>
+<li><span class="math inline">\(V\)</span> is the unit vector pointing
+toward the viewer (camera).</li>
+</ul>
+<p>The specular contribution is then calculated as:</p>
+<p><span class="math display">\[Specular = \max(N \cdot H, 0)^s \times
+(M_s \times L_s)\]</span></p>
+<p>Where:</p>
+<ul>
+<li><span class="math inline">\(N\)</span> is the normalized unit normal
+vector.</li>
+<li><span class="math inline">\(H\)</span> is the normalized halfway
+vector.</li>
+<li><span class="math inline">\(s\)</span> is the material's shininess
+exponent (<code>GL_SHININESS</code>), ranging from 0 to 128.</li>
+<li><span class="math inline">\(M_s\)</span> is the material's specular
+reflectance (<code>GL_SPECULAR</code>).</li>
+<li><span class="math inline">\(L_s\)</span> is the light source's
+specular intensity (<code>GL_SPECULAR</code>).</li>
+</ul>
+<p>Raising <span class="math inline">\(N \cdot H\)</span> to the power
+of the shininess exponent <span class="math inline">\(s\)</span>
+concentrates the highlight into a smaller, sharper area, simulating
+smoother, more reflective surfaces. If the diffuse term <span
+class="math inline">\(N \cdot L \le 0\)</span>, OpenGL suppresses the
+specular term completely to ensure that back-facing surfaces do not
+receive highlights.</p>
+<h3 id="attenuation-and-interpolation">Attenuation and
+Interpolation</h3>
+<p>For positional light sources, the diffuse, specular, and
+light-specific ambient components are scaled by a distance attenuation
+factor:</p>
+<p><span class="math display">\[Attenuation = \frac{1}{k_c + k_l d + k_q
+d^2}\]</span></p>
+<p>Where <span class="math inline">\(d\)</span> is the distance from the
+light to the vertex, and <span class="math inline">\(k_c\)</span>, <span
+class="math inline">\(k_l\)</span>, and <span
+class="math inline">\(k_q\)</span> are the constant, linear, and
+quadratic attenuation coefficients defined via
+<code>GL_CONSTANT_ATTENUATION</code>,
+<code>GL_LINEAR_ATTENUATION</code>, and
+<code>GL_QUADRATIC_ATTENUATION</code>.</p>
+<p>Because these mathematical evaluations occurred exclusively at the
+vertex level, OpenGL used Gouraud shading: the calculated colors were
+passed down the graphics pipeline and linearly interpolated across the
+fragments of the primitive, creating smooth transitions over the
+geometry.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/open-gl-legacy-lighting-ambient-diffuse-specular';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

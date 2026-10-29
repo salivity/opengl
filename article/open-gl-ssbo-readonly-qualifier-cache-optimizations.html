@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL SSBO Readonly Qualifier Cache Optimizations - opengl</title>
+    <meta name="description" content="In OpenGL, declaring a Shader Storage Buffer Object (SSBO) with the readonly qualifier informs the graphics driver and hardware compiler that the shader stage will strictly perform load operations on that resource. This explicit guarantee allows the GPU t">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-ssbo-readonly-qualifier-cache-optimizations">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL SSBO Readonly Qualifier Cache Optimizations - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-ssbo-readonly-qualifier-cache-optimizations" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In OpenGL, declaring a Shader Storage Buffer Object (SSBO) with the readonly qualifier informs the graphics driver and hardware compiler that the shader stage will strictly perform load operations on that resource. This explicit guarantee allows the GPU t" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-ssbo-readonly-qualifier-cache-optimizations">OpenGL SSBO
+Readonly Qualifier Cache Optimizations</h1>
+<p>In OpenGL, declaring a Shader Storage Buffer Object (SSBO) with the
+<code>readonly</code> qualifier informs the graphics driver and hardware
+compiler that the shader stage will strictly perform load operations on
+that resource. This explicit guarantee allows the GPU to bypass
+expensive write-coherence protocols, route memory accesses through
+high-bandwidth read-only texture and scalar caches, emit specialized
+hardware load instructions, and perform aggressive latency-hiding
+optimizations that would otherwise be unsafe for read-write memory.</p>
+<h3 id="bypassing-cache-coherence-overhead">Bypassing Cache Coherence
+Overhead</h3>
+<p>By default, SSBOs are assumed to be read-write, forcing the GPU
+memory architecture to handle potential data hazards. Read-write access
+requires the hardware to maintain coherence across execution units (such
+as compute workgroups or fragment warps/wavefronts). This often means
+write-back or write-through policies must be enforced, dirty cache lines
+must be tracked, and local caches may need frequent invalidation or
+complete bypass to prevent reading stale data.</p>
+<p>Applying <code>readonly</code> eliminates data hazards originating
+from that shader stage. Because the shader cannot mutate the buffer, the
+driver can safely disable coherence checks and cache invalidation
+routines for those memory addresses during execution, leading to
+significantly higher cache hit rates.</p>
+<h3 id="routing-through-dedicated-read-only-caches">Routing Through
+Dedicated Read-Only Caches</h3>
+<p>Modern GPU architectures feature split cache hierarchies optimized
+for different workload types:</p>
+<ul>
+<li><strong>Read-Write Caches:</strong> These are built with complex
+logic to handle atomic operations, synchronization, and store
+operations. They often sacrifice raw bandwidth and hit latency to ensure
+correct memory ordering across compute units.</li>
+<li><strong>Read-Only / Texture Caches:</strong> These caches (often
+tied to the texture mapping units or scalar pipelines) are optimized for
+massive spatial locality, high parallel throughput, and read
+bandwidth.</li>
+</ul>
+<p>When an SSBO lacks the <code>readonly</code> qualifier, the compiler
+must route memory loads through the general-purpose, read-write L1/L2
+data cache path. Markings such as <code>readonly</code> allow the shader
+compiler to route memory requests through the read-only texture cache or
+dedicated scalar constant caches (such as AMD's Scalar L1 or NVIDIA's
+texture/uniform caches). These read paths feature wider buses and can
+serve multiple threads concurrently with lower latency.</p>
+<h3 id="instruction-selection-and-cache-flags">Instruction Selection and
+Cache Flags</h3>
+<p>Hardware instruction sets (ISAs) feature specific flags on load
+instructions that dictate caching behavior. When the GLSL compiler
+translates intermediate code to GPU assembly:</p>
+<ol type="1">
+<li><strong>Cache Line Allocation Flags:</strong> A read-write load may
+be instructed to bypass the L1 cache entirely to avoid cache pollution,
+fetching directly from L2 or VRAM. A <code>readonly</code> load allows
+the compiler to set flags that permit caching in all levels of the
+hierarchy (e.g., caching in both L1 and L2).</li>
+<li><strong>Vectorized and Scalar Loads:</strong> If the driver detects
+uniform read access across an invocation group, <code>readonly</code>
+enables the use of specialized scalar load hardware instead of divergent
+vector load instructions, dramatically reducing register pressure and
+memory pipeline congestion.</li>
+</ol>
+<h3 id="aggressive-compiler-scheduling-and-prefetching">Aggressive
+Compiler Scheduling and Prefetching</h3>
+<p>Memory loads are among the highest-latency operations a GPU executes.
+To hide this latency, the shader compiler attempts to hoist loads as
+early as possible in the instruction stream (prefetching) to give memory
+controllers time to fetch data before it is consumed.</p>
+<p>In a mutable buffer, the compiler must treat stores as potential
+barriers; it cannot safely hoist a load above a store if their addresses
+might alias. The <code>readonly</code> qualifier guarantees that no
+stores to the buffer will occur within the shader, allowing the
+compiler's instruction scheduler to aggressively reorder and hoist
+memory reads to maximize latency hiding.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/open-gl-ssbo-readonly-qualifier-cache-optimizations';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

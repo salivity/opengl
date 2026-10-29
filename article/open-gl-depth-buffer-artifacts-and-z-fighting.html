@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Depth Buffer Artifacts and Z-Fighting - opengl</title>
+    <meta name="description" content="When points, fragments, or primitives share identical or nearly identical spatial coordinates along the depth axis in OpenGL, the rendering pipeline frequently produces visual artifacts such as flickering, stitching, or banding. Commonly referred to as &quot;Z">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-depth-buffer-artifacts-and-z-fighting">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Depth Buffer Artifacts and Z-Fighting - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-depth-buffer-artifacts-and-z-fighting" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="When points, fragments, or primitives share identical or nearly identical spatial coordinates along the depth axis in OpenGL, the rendering pipeline frequently produces visual artifacts such as flickering, stitching, or banding. Commonly referred to as &quot;Z" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-depth-buffer-artifacts-and-z-fighting">OpenGL Depth
+Buffer Artifacts and Z-Fighting</h1>
+<p>When points, fragments, or primitives share identical or nearly
+identical spatial coordinates along the depth axis in OpenGL, the
+rendering pipeline frequently produces visual artifacts such as
+flickering, stitching, or banding. Commonly referred to as "Z-fighting,"
+this issue occurs because the graphics hardware cannot reliably
+determine which fragment lies closer to the viewer. This article
+examines the root causes of these artifacts along depth buffer
+boundaries—focusing on finite buffer precision, perspective projection
+non-linearity, and rasterization rounding errors—while outlining
+practical strategies to eliminate them.</p>
+<h3 id="finite-depth-buffer-precision">Finite Depth Buffer
+Precision</h3>
+<p>The depth buffer (Z-buffer) stores distance values using a fixed
+number of bits, typically 16, 24, or 32 bits per fragment. Because
+digital representations have finite resolution, there is a limit to the
+smallest distinguishable difference between two depth values (machine
+epsilon). When two points overlap precisely or lie closer together than
+the minimum resolvable delta of the buffer, both fragments compute depth
+values that round to the exact same discrete integer or floating-point
+representation. During the depth test (<code>GL_LESS</code> or
+<code>GL_LEQUAL</code>), the GPU makes arbitrary determinations based on
+evaluation order, causing fragments from different surfaces to
+interweave unpredictably.</p>
+<h3
+id="non-linear-depth-distribution-in-perspective-projection">Non-Linear
+Depth Distribution in Perspective Projection</h3>
+<p>In standard perspective projection, the transformation from view
+space to normalized device coordinates (NDC) maps depth non-linearly
+using a reciprocal function (<span class="math inline">\(1/z\)</span>).
+As a result:</p>
+<ul>
+<li>The vast majority of precision is concentrated extremely close to
+the near clipping plane.</li>
+<li>Depth precision degrades exponentially as the distance from the
+camera increases toward the far clipping plane.</li>
+</ul>
+<p>When overlapping points are positioned even moderately far from the
+camera, the quantization steps between representable depth values become
+relatively large. Primitives that appear visually distinct in object
+space end up falling into the same discrete depth quantization bin,
+drastically increasing the likelihood of boundary artifacts.</p>
+<h3 id="transformation-and-interpolation-differences">Transformation and
+Interpolation Differences</h3>
+<p>Even when two points are defined with identical mathematical
+coordinates, they may arrive at slightly different final depth values
+due to differences in:</p>
+<ol type="1">
+<li><strong>Matrix Multiplication Order:</strong> Computing world, view,
+and projection matrices in different orders or across different shader
+passes introduces tiny floating-point discrepancies.</li>
+<li><strong>Barycentric Interpolation:</strong> Vertices processed as
+part of different triangles or draw calls might be interpolated across
+fragments with differing floating-point tolerances, yielding slightly
+divergent interpolated <span class="math inline">\(z\)</span>-values at
+the fragment stage.</li>
+<li><strong>Compiler Optimizations:</strong> Shader compilers may
+rearrange arithmetic operations via fused multiply-add (FMA)
+instructions in one shader but not in another, breaking exact numerical
+equivalence.</li>
+</ol>
+<h3 id="sub-pixel-rasterization-and-quantization">Sub-Pixel
+Rasterization and Quantization</h3>
+<p>OpenGL rasterizes primitives by testing whether fragment centers or
+multi-sample locations fall within polygon boundaries. At exact shared
+boundaries, subtle floating-point rounding during screen-space
+coordinate evaluation can cause fragments to pass or fail depth and
+rasterization tests inconsistently. If depth tests use strict
+inequalities (<code>GL_LESS</code>), fragments that round to the exact
+value of an already rendered pixel are discarded, producing gaps or
+speckled boundaries.</p>
+<h3 id="mitigating-depth-buffer-artifacts">Mitigating Depth Buffer
+Artifacts</h3>
+<p>To prevent artifacts caused by overlapping points along depth
+boundaries:</p>
+<ul>
+<li><strong>Adjust Clipping Planes:</strong> Bring the near clipping
+plane (<span class="math inline">\(z_{near}\)</span>) as far forward as
+possible, and pull the far clipping plane (<span
+class="math inline">\(z_{far}\)</span>) closer. Minimizing the ratio
+<span class="math inline">\(z_{far} / z_{near}\)</span> distributes
+depth precision much more evenly across the scene.</li>
+<li><strong>Increase Buffer Precision:</strong> Use a 24-bit or 32-bit
+floating-point depth buffer (<code>GL_DEPTH_COMPONENT24</code> or
+<code>GL_DEPTH_COMPONENT32F</code>) instead of a 16-bit buffer.</li>
+<li><strong>Apply Polygon Offset:</strong> Use
+<code>glEnable(GL_POLYGON_OFFSET_FILL)</code> and
+<code>glPolygonOffset(factor, units)</code> to artificially bias the
+computed depth values of one layer, cleanly separating coplanar geometry
+in the depth test.</li>
+<li><strong>Implement Reversed-Z:</strong> In modern pipelines, mapping
+the near plane to <span class="math inline">\(1.0\)</span> and the far
+plane to <span class="math inline">\(0.0\)</span> in conjunction with a
+floating-point depth buffer provides a nearly linear distribution of
+precision across the entire viewing frustum.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/open-gl-depth-buffer-artifacts-and-z-fighting';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

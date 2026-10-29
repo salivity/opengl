@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tiled GPUs and Multi-Pass Framebuffers in OpenGL ES - opengl</title>
+    <meta name="description" content="Tiled GPU architectures drastically alter the performance profile of multi-pass framebuffers in OpenGL ES by shifting the primary performance bottleneck from external memory bandwidth to on-chip tile cache management. Unlike traditional immediate-mode GPU">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/tiled-gp-us-and-multi-pass-framebuffers-in-open-gl-es">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Tiled GPUs and Multi-Pass Framebuffers in OpenGL ES - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/tiled-gp-us-and-multi-pass-framebuffers-in-open-gl-es" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Tiled GPU architectures drastically alter the performance profile of multi-pass framebuffers in OpenGL ES by shifting the primary performance bottleneck from external memory bandwidth to on-chip tile cache management. Unlike traditional immediate-mode GPU" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="tiled-gpus-and-multi-pass-framebuffers-in-opengl-es">Tiled GPUs
+and Multi-Pass Framebuffers in OpenGL ES</h1>
+<p>Tiled GPU architectures drastically alter the performance profile of
+multi-pass framebuffers in OpenGL ES by shifting the primary performance
+bottleneck from external memory bandwidth to on-chip tile cache
+management. Unlike traditional immediate-mode GPUs that write each
+render target directly to system memory (DRAM), tiled architectures
+process scenes in small, screen-space chunks using ultra-fast on-chip
+memory. When developers understand how to keep intermediate render
+passes resident in this local tile storage, multi-pass rendering becomes
+exceptionally fast and power-efficient; conversely, naive
+implementations that force tile memory to repeatedly flush to DRAM can
+incur devastating performance penalties.</p>
+<h3 id="the-architectural-difference-tiled-vs-immediate-rendering">The
+Architectural Difference: Tiled vs. Immediate Rendering</h3>
+<p>Immediate Mode Renderers (IMRs), common in desktop hardware, process
+draw calls sequentially across the entire screen. Every rasterized
+fragment typically reads from and writes directly to external VRAM. In
+this paradigm, multi-pass techniques—such as deferred shading or
+post-processing—incur memory bandwidth costs proportional to the size
+and format of each render target.</p>
+<p>Tiled-Based Renderers (TBR) and Tile-Based Deferred Renderers (TBDR),
+standard in mobile platforms, split the rendering pipeline into two
+distinct phases:</p>
+<ol type="1">
+<li><strong>Binning (Geometry Phase):</strong> The GPU processes all
+vertex data for a frame and categorizes primitives into a screen-space
+grid of small tiles (typically 16x16 or 32x32 pixels).</li>
+<li><strong>Rasterization and Shading Phase:</strong> The GPU processes
+the scene tile by tile. The color, depth, and stencil data for a single
+tile are loaded into dedicated, low-latency, on-chip SRAM, rendered, and
+only written back to system RAM once the tile is fully completed.</li>
+</ol>
+<h3
+id="impact-on-traditional-multi-pass-framebuffer-objects-fbos">Impact on
+Traditional Multi-Pass Framebuffer Objects (FBOs)</h3>
+<p>In a traditional OpenGL ES multi-pass pipeline, an application
+renders scene attributes (diffuse, normals, depth) to a multi-target
+Framebuffer Object (FBO), binds those attachments as textures in a
+subsequent pass, and computes lighting.</p>
+<p>On a tiled GPU, switching FBOs naively disrupts the tiling
+pipeline:</p>
+<ul>
+<li><strong>Forced Tile Flushes:</strong> Changing the active FBO or
+issuing commands that read from an attachment currently being rendered
+forces the GPU to resolve the entire on-chip tile buffer and write it
+out to external DRAM.</li>
+<li><strong>Memory Reloads:</strong> When the next pass samples that
+target as a texture, the GPU must fetch those texels back from DRAM
+across the system memory bus.</li>
+<li><strong>Thermal and Bandwidth Throttling:</strong> On mobile devices
+where CPU and GPU share system RAM, repeatedly writing and reading large
+buffers (like 1080p or 4K G-buffers) consumes massive memory bandwidth,
+draining battery and triggering thermal throttling.</li>
+</ul>
+<p>Consequently, multi-pass algorithms that are inexpensive on desktop
+IMRs can run significantly slower on mobile tiled architectures if
+implemented using conventional multi-FBO ping-ponging.</p>
+<h3 id="optimizing-multi-pass-for-tiling-staying-on-chip">Optimizing
+Multi-Pass for Tiling: Staying On-Chip</h3>
+<p>Tiled GPUs offer an enormous performance advantage when intermediate
+data can remain inside the on-chip tile memory across multiple passes.
+Because on-chip SRAM bandwidth is orders of magnitude faster than system
+DRAM, intermediate reads and writes can occur essentially for free.</p>
+<p>To achieve this in OpenGL ES, specific extensions and paradigms must
+be utilized:</p>
+<h4 id="1-shader-framebuffer-fetch">1. Shader Framebuffer Fetch</h4>
+<p>Extensions like <code>GL_EXT_shader_framebuffer_fetch</code> and
+<code>GL_ARM_shader_framebuffer_fetch</code> allow fragment shaders to
+directly read the current values (color, depth, or stencil) of the pixel
+being shaded from the tile buffer without allocating external texture
+samplers. This allows multi-pass algorithms—such as blending equations
+not natively supported by hardware or multi-pass lighting—to execute
+entirely within on-chip memory in a single render pass.</p>
+<h4 id="2-pixel-local-storage">2. Pixel Local Storage</h4>
+<p>Extensions such as <code>GL_EXT_shader_pixel_local_storage</code>
+allow applications to define a custom, transient memory block allocated
+directly in tile memory. An application can write intermediate
+deferred-shading parameters into this local storage during an early
+sub-pass and read them in a later sub-pass. The intermediate data is
+never resolved to external RAM, eliminating G-buffer bandwidth costs
+entirely.</p>
+<h4 id="3-framebuffer-invalidation">3. Framebuffer Invalidation</h4>
+<p>When an intermediate buffer is only needed during the current frame
+(such as a depth buffer used solely to generate a final color image),
+developers must explicitly notify the driver that this data can be
+discarded. Using <code>glInvalidateFramebuffer</code> (or
+<code>glDiscardFramebufferEXT</code> in older versions) prevents the GPU
+from executing an expensive write-back of the depth/stencil tiles to
+DRAM at the end of the pass.</p>
+<h4 id="4-multisampled-render-to-texture">4. Multisampled Render to
+Texture</h4>
+<p>Standard MSAA on immediate GPUs requires allocating large multisample
+buffers in memory. Tiled GPUs handle MSAA natively within on-chip tile
+storage. By utilizing
+<code>GL_EXT_multisampled_render_to_texture</code>, the GPU resolves
+multisampled tiles to single-sampled pixels directly on-chip before
+writing the final result to DRAM, delivering high-quality anti-aliasing
+with almost no additional memory bandwidth footprint.</p>
+<h3 id="summary">Summary</h3>
+<p>Tiled GPUs polarize the performance of multi-pass framebuffers in
+OpenGL ES. When treated like immediate-mode desktop GPUs, multi-pass
+workflows cause frequent DRAM flushes and texture reloads that saturate
+system bandwidth. However, by structuring passes to execute sequentially
+within the same tile using framebuffer fetch, pixel local storage, and
+aggressive buffer invalidation, tiled architectures reduce memory
+bandwidth to near zero, resulting in superior performance and power
+characteristics.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/tiled-gp-us-and-multi-pass-framebuffers-in-open-gl-es';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

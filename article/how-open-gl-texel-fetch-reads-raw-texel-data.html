@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How OpenGL texelFetch Reads Raw Texel Data - opengl</title>
+    <meta name="description" content="In modern OpenGL, texelFetch allows shaders to retrieve exact, unadulterated texel values directly from a texture without the overhead or modification of standard texture sampling pipelines. Unlike standard texture sampling functions such as texture(), wh">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-open-gl-texel-fetch-reads-raw-texel-data">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How OpenGL texelFetch Reads Raw Texel Data - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-open-gl-texel-fetch-reads-raw-texel-data" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In modern OpenGL, texelFetch allows shaders to retrieve exact, unadulterated texel values directly from a texture without the overhead or modification of standard texture sampling pipelines. Unlike standard texture sampling functions such as texture(), wh" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-opengl-texelfetch-reads-raw-texel-data">How OpenGL
+texelFetch Reads Raw Texel Data</h1>
+<p>In modern OpenGL, <code>texelFetch</code> allows shaders to retrieve
+exact, unadulterated texel values directly from a texture without the
+overhead or modification of standard texture sampling pipelines. Unlike
+standard texture sampling functions such as <code>texture()</code>,
+which use normalized floating-point coordinates and route through
+dedicated interpolation units, <code>texelFetch</code> operates using
+integer coordinates and explicit level-of-detail indices. This article
+explains the underlying mechanics of how <code>texelFetch</code>
+bypasses the GPU's Texture Filtering Units (TFUs), circumvents sampler
+state parameters, and executes as an indexed memory load directly from
+the texture cache.</p>
+<h3 id="the-conventional-texture-sampling-pipeline">The Conventional
+Texture Sampling Pipeline</h3>
+<p>To understand how <code>texelFetch</code> circumvents hardware
+filtering, it is essential to examine the standard texture sampling
+path. When a shader calls <code>texture(sampler2D, vec2)</code>:</p>
+<ol type="1">
+<li><strong>Coordinate Normalization and Wrapping:</strong> The hardware
+receives normalized coordinates (ranging from <code>0.0</code> to
+<code>1.0</code>), scales them by the texture dimensions, and applies
+wrap modes defined in the sampler state (such as <code>GL_REPEAT</code>,
+<code>GL_CLAMP_TO_EDGE</code>, or <code>GL_MIRRORED_REPEAT</code>).</li>
+<li><strong>LOD and Derivative Computation:</strong> The GPU computes
+partial derivatives (<span class="math inline">\(\frac{\partial
+u}{\partial x}\)</span>, <span class="math inline">\(\frac{\partial
+v}{\partial y}\)</span>) across adjacent fragments in a <span
+class="math inline">\(2\times2\)</span> quad to select the appropriate
+mipmap level.</li>
+<li><strong>Hardware Filtering:</strong> The coordinates are routed into
+dedicated silicon known as Texture Filtering Units (TFUs). Depending on
+the sampler configuration (<code>GL_LINEAR</code>,
+<code>GL_LINEAR_MIPMAP_LINEAR</code>), the TFU fetches the surrounding
+four or eight texels and computes a weighted average via hardware
+interpolation before returning a color to the shader register.</li>
+</ol>
+<h3 id="how-texelfetch-alters-the-data-path">How <code>texelFetch</code>
+Alters the Data Path</h3>
+<p><code>texelFetch</code> diverges completely from this execution path
+by eliminating normalized coordinate math, derivative generation, and
+interpolation logic.</p>
+<h4 id="1-integer-based-addressing">1. Integer-Based Addressing</h4>
+<p>Instead of normalized floating-point coordinates,
+<code>texelFetch</code> takes integer vectors (<code>ivec2</code> for 2D
+textures, <code>ivec3</code> for 3D textures) representing the discrete
+grid coordinates of a specific texel (<span class="math inline">\([0,
+\text{width}-1]\)</span>, <span class="math inline">\([0,
+\text{height}-1]\)</span>). This replaces fractional coordinate
+evaluation with direct array indexing. Because there are no fractional
+components, the concept of a sub-pixel location does not exist, removing
+any mathematical basis for bilinear or bicubic filtering.</p>
+<h4 id="2-manual-mipmap-and-layer-indexing">2. Manual Mipmap and Layer
+Indexing</h4>
+<p>Standard sampling relies on quad-derivatives to dynamically determine
+mipmap levels. <code>texelFetch</code> requires the level-of-detail
+(LOD) to be explicitly provided as an integer argument (or an integer
+sample index for multisampled textures). Because the mip level is
+predetermined at the call site, the GPU skips the entire automatic LOD
+calculation phase.</p>
+<h4 id="3-bypassing-sampler-state-and-tfus">3. Bypassing Sampler State
+and TFUs</h4>
+<p>Samplers bind filtering settings (<code>GL_TEXTURE_MIN_FILTER</code>,
+<code>GL_TEXTURE_MAG_FILTER</code>) and wrapping rules to textures. When
+a shader invokes <code>texelFetch</code>, these sampler states are
+ignored:</p>
+<ul>
+<li><strong>No Wrap Modes:</strong> If the supplied integer coordinates
+fall outside the boundaries of the specified mip level, the behavior is
+undefined or returns zeroes depending on the architecture and
+bounds-checking extensions. The hardware does not evaluate clamping or
+wrapping logic.</li>
+<li><strong>TFU Bypass:</strong> Because no blending across texels or
+mip levels is required, the request bypasses the Texture Filtering Unit
+entirely. The instruction is handled similarly to an explicit memory
+load or a buffer fetch (<code>imageLoad</code>), translating the
+coordinate directly into an absolute linear memory offset.</li>
+</ul>
+<h3 id="architectural-execution">Architectural Execution</h3>
+<p>At the GPU ISA (Instruction Set Architecture) level, standard texture
+operations compile to specialized texture sampling instructions (such as
+<code>TEX</code> on various architectures), which queue data through the
+texture pipeline's decompression and filtering stages.</p>
+<p>In contrast, <code>texelFetch</code> often compiles down to direct
+texture load instructions (such as <code>TLD</code> or
+<code>TEX.B</code> on NVIDIA architectures, or <code>IMAGE_LOAD</code>
+on AMD GCN/RDNA). The GPU's address generation unit computes the memory
+address using the formula:</p>
+<p><span class="math display">\[\text{Address} = \text{Base} +
+(\text{MipOffset}) + (y \times \text{RowPitch}) + (x \times
+\text{BytesPerTexel})\]</span></p>
+<p>The GPU checks the L1/L2 texture caches for the computed address. If
+the data is present, the raw, uncompressed bits are converted directly
+to the format of the target vector (e.g., float, integer, unsigned
+integer) and loaded into the destination registers.</p>
+<h3 id="common-use-cases">Common Use Cases</h3>
+<p>By bypassing filtering hardware, <code>texelFetch</code> delivers
+deterministic, bit-exact access to texels at lower latency than filtered
+fetches. This makes it the primary tool for:</p>
+<ul>
+<li><strong>G-Buffer Access:</strong> Reading depth, normal, and
+material ID textures in deferred rendering passes where color blending
+would introduce invalid intermediate values.</li>
+<li><strong>Data Textures:</strong> Storing non-color data such as
+transformation matrices, lookup tables, or discrete state flags.</li>
+<li><strong>Multisample Textures:</strong> Resolving or inspecting
+individual samples within a multisampled render target
+(<code>sampler2DMS</code>).</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/how-open-gl-texel-fetch-reads-raw-texel-data';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Realistic Lens Flare Scattering in OpenGL Shaders - opengl</title>
+    <meta name="description" content="This article explores the mathematical formulations required to simulate realistic optical lens flare scattering in real-time using OpenGL fragment shaders (GLSL). It covers the geometric projection of lens ghosts along the optical axis, chromatic dispers">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/realistic-lens-flare-scattering-in-open-gl-shaders">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Realistic Lens Flare Scattering in OpenGL Shaders - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/realistic-lens-flare-scattering-in-open-gl-shaders" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explores the mathematical formulations required to simulate realistic optical lens flare scattering in real-time using OpenGL fragment shaders (GLSL). It covers the geometric projection of lens ghosts along the optical axis, chromatic dispers" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="realistic-lens-flare-scattering-in-opengl-shaders">Realistic
+Lens Flare Scattering in OpenGL Shaders</h1>
+<p>This article explores the mathematical formulations required to
+simulate realistic optical lens flare scattering in real-time using
+OpenGL fragment shaders (GLSL). It covers the geometric projection of
+lens ghosts along the optical axis, chromatic dispersion functions,
+analytical aperture diffraction modeling, halo generation, and intensity
+attenuation equations. Implementing these algorithms allows graphics
+programmers to generate physically plausible multi-element lens
+artifacts directly on the GPU without relying on pre-baked sprite
+textures.</p>
+<h2 id="1-optical-axis-ghost-projection">1. Optical Axis Ghost
+Projection</h2>
+<p>Lens flares occur when high-intensity light reflects internally
+between multi-lens elements. In screen space, these reflections align
+along an axis passing through the 2D light source coordinate and the
+screen center.</p>
+<p>Given a normalized device coordinate (NDC) light position <span
+class="math inline">\(\vec{p}_{\text{light}} \in [-1, 1]^2\)</span> and
+the screen center <span class="math inline">\(\vec{c} = (0, 0)\)</span>,
+the optical axis vector <span class="math inline">\(\vec{v}\)</span> is
+defined as:</p>
+<p><span class="math display">\[\vec{v} = \vec{c} -
+\vec{p}_{\text{light}} = -\vec{p}_{\text{light}}\]</span></p>
+<p>Individual ghost artifacts are distributed along this vector at
+scalar intervals <span class="math inline">\(s_i\)</span>. The sampling
+coordinate for the <span class="math inline">\(i\)</span>-th ghost
+is:</p>
+<p><span class="math display">\[\vec{p}_i = \vec{p}_{\text{light}} +
+\vec{v} \cdot s_i\]</span></p>
+<p>In a GLSL fragment shader, iterating over <span
+class="math inline">\(N\)</span> ghost instances samples the downsampled
+scene brightness threshold texture:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">vec2</span> ghostVec <span class="op">=</span> <span class="op">(</span><span class="dt">vec2</span><span class="op">(</span><span class="fl">0.0</span><span class="op">)</span> <span class="op">-</span> lightPosNDC<span class="op">)</span> <span class="op">*</span> u_Dispersal<span class="op">;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">for</span> <span class="op">(</span><span class="dt">int</span> i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> u_GhostCount<span class="op">;</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec2</span> <span class="dt">offset</span> <span class="op">=</span> <span class="bu">fract</span><span class="op">(</span>lightPosNDC <span class="op">+</span> ghostVec <span class="op">*</span> <span class="dt">float</span><span class="op">(</span>i<span class="op">));</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Sample texture at offset</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h2 id="2-chromatic-aberration-and-spectral-dispersion">2. Chromatic
+Aberration and Spectral Dispersion</h2>
+<p>Glass components have a refractive index <span
+class="math inline">\(\eta(\lambda)\)</span> that varies with the
+wavelength <span class="math inline">\(\lambda\)</span> of light
+(Cauchy's dispersion equation):</p>
+<p><span class="math display">\[\eta(\lambda) = A +
+\frac{B}{\lambda^2}\]</span></p>
+<p>In a fragment shader, this wavelength dependency is approximated by
+shifting the texture sampling offset per color channel (Red, Green,
+Blue) along the normalized direction vector <span
+class="math inline">\(\hat{v} =
+\frac{\vec{v}}{\|\vec{v}\|}\)</span>.</p>
+<p>For a sampling vector <span class="math inline">\(\vec{u}\)</span>,
+the channel offsets are computed as:</p>
+<p><span class="math display">\[\vec{u}_R = \vec{u} + \hat{v} \cdot
+\Delta\lambda_R\]</span> <span class="math display">\[\vec{u}_G =
+\vec{u} + \hat{v} \cdot \Delta\lambda_G\]</span> <span
+class="math display">\[\vec{u}_B = \vec{u} + \hat{v} \cdot
+\Delta\lambda_B\]</span></p>
+<p>Where <span class="math inline">\(\Delta\lambda_R &gt;
+\Delta\lambda_G &gt; \Delta\lambda_B\)</span> represent empirical
+dispersion factors.</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> <span class="fu">sampleChromatic</span><span class="op">(</span><span class="dt">sampler2D</span> tex<span class="op">,</span> <span class="dt">vec2</span> uv<span class="op">,</span> <span class="dt">vec2</span> direction<span class="op">,</span> <span class="dt">vec3</span> distortion<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    <span class="kw">return</span> <span class="dt">vec3</span><span class="op">(</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>        <span class="bu">texture</span><span class="op">(</span>tex<span class="op">,</span> uv <span class="op">+</span> direction <span class="op">*</span> distortion<span class="op">.</span><span class="fu">r</span><span class="op">).</span><span class="fu">r</span><span class="op">,</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>        <span class="bu">texture</span><span class="op">(</span>tex<span class="op">,</span> uv <span class="op">+</span> direction <span class="op">*</span> distortion<span class="op">.</span><span class="fu">g</span><span class="op">).</span><span class="fu">g</span><span class="op">,</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>        <span class="bu">texture</span><span class="op">(</span>tex<span class="op">,</span> uv <span class="op">+</span> direction <span class="op">*</span> distortion<span class="op">.</span><span class="fu">b</span><span class="op">).</span><span class="fu">b</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    <span class="op">);</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h2 id="3-radial-halo-formation">3. Radial Halo Formation</h2>
+<p>Halos are caused by internal cylindrical reflection or total internal
+reflection within curved lens borders. A halo appears as a ring centered
+on the light source or the optical inversion center.</p>
+<p>The distance <span class="math inline">\(d\)</span> from the fragment
+UV to the inverted light position is:</p>
+<p><span class="math display">\[\vec{p}_{\text{halo}} =
+-\vec{p}_{\text{light}}\]</span> <span class="math display">\[d =
+\|\vec{uv} - \vec{p}_{\text{halo}}\|\]</span></p>
+<p>The intensity of the halo <span
+class="math inline">\(I_{\text{halo}}\)</span> is formulated using a
+smooth distribution function centered at a predefined radius <span
+class="math inline">\(r\)</span> with width <span
+class="math inline">\(w\)</span>:</p>
+<p><span class="math display">\[I_{\text{halo}} = \exp\left(-\frac{(d -
+r)^2}{2w^2}\right)\]</span></p>
+<p>In GLSL, this can be efficiently calculated using
+<code>smoothstep</code>:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="dt">vec2</span> haloVec <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span><span class="dt">vec2</span><span class="op">(</span><span class="fl">0.0</span><span class="op">)</span> <span class="op">-</span> lightPosNDC<span class="op">)</span> <span class="op">*</span> u_HaloRadius<span class="op">;</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> haloWeight <span class="op">=</span> <span class="bu">length</span><span class="op">(</span><span class="dt">vec2</span><span class="op">(</span><span class="fl">0.0</span><span class="op">)</span> <span class="op">-</span> <span class="bu">fract</span><span class="op">(</span>uv <span class="op">+</span> haloVec<span class="op">));</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>haloWeight <span class="op">=</span> <span class="bu">smoothstep</span><span class="op">(</span><span class="fl">0.0</span><span class="op">,</span> u_HaloThickness<span class="op">,</span> <span class="bu">abs</span><span class="op">(</span>u_HaloRadius <span class="op">-</span> haloWeight<span class="op">));</span></span></code></pre></div>
+<h2 id="4-fraunhofer-diffraction-and-starburst-spikes">4. Fraunhofer
+Diffraction and Starburst Spikes</h2>
+<p>Diffraction from the camera’s polygonal aperture produces starburst
+spikes radiating from the core flare. According to Fraunhofer
+diffraction theory, the far-field intensity pattern is the Fourier
+transform of the aperture function.</p>
+<p>For an <span class="math inline">\(N\)</span>-bladed iris, this can
+be modeled analytically in polar coordinates <span
+class="math inline">\((r, \theta)\)</span> relative to the light
+center:</p>
+<p><span class="math display">\[r = \|\vec{uv} -
+\vec{p}_{\text{light}}\|, \quad \theta = \operatorname{atan2}(uv_y -
+p_{y}, uv_x - p_{x})\]</span></p>
+<p>The starburst intensity modulation <span
+class="math inline">\(M(\theta)\)</span> is governed by:</p>
+<p><span class="math display">\[M(\theta) = \left| \cos\left(\frac{N}{2}
+\cdot \theta + \phi \right) \right|^k\]</span></p>
+<p>Where:</p>
+<ul>
+<li><span class="math inline">\(N\)</span> is the number of aperture
+blades.</li>
+<li><span class="math inline">\(\phi\)</span> is the camera rotation
+angle.</li>
+<li><span class="math inline">\(k\)</span> controls the sharpness and
+narrowness of the diffraction spikes.</li>
+</ul>
+<p>To account for sub-surface irregularities on the glass, a
+pseudo-random high-frequency noise function <span
+class="math inline">\(W(\theta)\)</span> is multiplied:</p>
+<p><span class="math display">\[I_{\text{diffraction}}(r, \theta) =
+\frac{1}{r^2 + \epsilon} \cdot M(\theta) \cdot W(\theta)\]</span></p>
+<h2 id="5-radial-attenuation-and-edge-falloff">5. Radial Attenuation and
+Edge Falloff</h2>
+<p>Scattering diminishes as light diverges, governed by the
+inverse-square law, while physical lens hoods and barrels occlude
+peripheral light (vignetting).</p>
+<p>To prevent visual pops when light sources move off-screen, a boundary
+attenuation factor <span class="math inline">\(A(\vec{p})\)</span>
+suppresses flare intensity based on the distance of <span
+class="math inline">\(\vec{p}_{\text{light}}\)</span> from the
+center:</p>
+<p><span class="math display">\[A(\vec{p}_{\text{light}}) = 1.0 -
+\left(\frac{\|\vec{p}_{\text{light}}\|}{\sqrt{2}}\right)^m\]</span></p>
+<p>Where <span class="math inline">\(m\)</span> defines the steepness of
+the falloff towards the corner of the NDC unit square.</p>
+<p>The radial falloff of any given flare element relative to its center
+is calculated as:</p>
+<p><span class="math display">\[F(d) = \max\left(0.0, 1.0 -
+\left(\frac{d}{R_{\max}}\right)^n\right)\]</span></p>
+<p>Combining these formulations produces a multi-spectral, geometrically
+accurate scattering profile evaluated entirely within a single
+post-processing fragment pass.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/realistic-lens-flare-scattering-in-open-gl-shaders';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

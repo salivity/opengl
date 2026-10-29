@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Synchronizing Sound Propagation in OpenGL Compute - opengl</title>
+    <meta name="description" content="Dynamic sound propagation models, such as acoustic ray tracing and wave-based finite-difference time-domain (FDTD) simulations, require massive parallel computation that is ideally suited for graphics hardware. When implementing these algorithms in OpenGL">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/synchronizing-sound-propagation-in-open-gl-compute">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Synchronizing Sound Propagation in OpenGL Compute - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/synchronizing-sound-propagation-in-open-gl-compute" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Dynamic sound propagation models, such as acoustic ray tracing and wave-based finite-difference time-domain (FDTD) simulations, require massive parallel computation that is ideally suited for graphics hardware. When implementing these algorithms in OpenGL" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="synchronizing-sound-propagation-in-opengl-compute">Synchronizing
+Sound Propagation in OpenGL Compute</h1>
+<p>Dynamic sound propagation models, such as acoustic ray tracing and
+wave-based finite-difference time-domain (FDTD) simulations, require
+massive parallel computation that is ideally suited for graphics
+hardware. When implementing these algorithms in OpenGL, applications
+rely on compute passes (<code>glDispatchCompute</code>) writing to
+Shader Storage Buffer Objects (SSBOs) or textures to track pressure
+waves, reflections, and impulse responses. To maintain data consistency
+across iterative acoustic steps and prevent audio glitches, the
+application must orchestrate fine-grained synchronization both between
+consecutive GPU compute dispatches and between the GPU pipeline and the
+real-time CPU audio processing thread.</p>
+<h3 id="intra-gpu-compute-synchronization">Intra-GPU Compute
+Synchronization</h3>
+<p>Acoustic simulations generally run across multiple passes—such as
+source injection, spatial scattering, material absorption, and listener
+gathering. Because GPU work groups execute asynchronously without
+inherent ordering guarantees, OpenGL requires explicit memory barriers
+between dependent passes to prevent Read-After-Write (RAW) and
+Write-After-Read (WAR) hazards.</p>
+<p>Applications enforce pipeline consistency using
+<code>glMemoryBarrier()</code>. When computing dynamic sound paths:</p>
+<ol type="1">
+<li><strong>Pass-to-Pass Hazards:</strong> If Pass A calculates sound
+ray intersections and writes the resulting path data to an SSBO, and
+Pass B reads that data to generate impulse responses, the application
+must issue <code>glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT)</code>
+between dispatches. This ensures that all writes to the SSBO by Pass A
+complete and become visible to Pass B before Pass B reads from it.</li>
+<li><strong>Ping-Pong Buffer Synchronization:</strong> For iterative
+wave-equation solvers, developers frequently alternate between two
+storage textures or SSBOs (reading from state <span
+class="math inline">\(t\)</span> to write state <span
+class="math inline">\(t+1\)</span>). Even when alternating targets, a
+memory barrier—such as <code>GL_TEXTURE_FETCH_BARRIER_BIT</code> or
+<code>GL_SHADER_IMAGE_ACCESS_BARRIER_BIT</code>—is required before the
+next step to ensure the write cache is fully committed and visible to
+the sampling units.</li>
+</ol>
+<h3 id="host-to-device-synchronization-and-data-transfer">Host-to-Device
+Synchronization and Data Transfer</h3>
+<p>Audio rendering engines operate under strict real-time deadlines
+(typically servicing buffers every 5 to 10 milliseconds). Direct,
+blocking GPU synchronization will stall either the graphics pipeline or
+the audio thread, causing audio dropouts. Consequently, communication
+between OpenGL and the audio system must be asynchronous.</p>
+<ol type="1">
+<li><p><strong>Persistent Memory Mapping:</strong> Applications allocate
+staging SSBOs using <code>glBufferStorage()</code> with flags like
+<code>GL_MAP_PERSISTENT_BIT</code> and <code>GL_MAP_COHERENT_BIT</code>.
+This maps the buffer memory into the CPU address space once, eliminating
+the overhead of repeated <code>glMapBufferRange()</code> calls.</p></li>
+<li><p><strong>Fence Sync Objects:</strong> To determine when the GPU
+has finished updating the acoustic metadata without stalling the CPU,
+the application inserts an OpenGL sync object after the final compute
+dispatch:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>GLsync soundSync <span class="op">=</span> glFenceSync<span class="op">(</span>GL_SYNC_GPU_COMMANDS_COMPLETE<span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span></code></pre></div></li>
+<li><p><strong>Non-Blocking Query on the Audio Thread:</strong> The CPU
+audio thread or an intermediate synchronization worker polls the fence
+using <code>glClientWaitSync()</code> with a zero-timeout:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>GLenum status <span class="op">=</span> glClientWaitSync<span class="op">(</span>soundSync<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="op">(</span>status <span class="op">==</span> GL_ALREADY_SIGNALED <span class="op">||</span> status <span class="op">==</span> GL_CONDITION_SATISFIED<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Data is ready for impulse response convolution or DSP parameter updates</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    glDeleteSync<span class="op">(</span>soundSync<span class="op">);</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div></li>
+<li><p><strong>Ring Buffering (N-Buffering):</strong> To eliminate
+CPU-GPU race conditions, applications employ multi-buffering. While the
+GPU writes sound parameters to frame index <span
+class="math inline">\(N\)</span>, the CPU audio thread reads verified
+data from frame <span class="math inline">\(N-1\)</span> or <span
+class="math inline">\(N-2\)</span>. The audio DSP engine applies
+smoothing interpolation across frames to prevent sudden parameter jumps
+caused by GPU frame-time variance, yielding glitch-free, physically
+accurate dynamic spatial audio.</p></li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/synchronizing-sound-propagation-in-open-gl-compute';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

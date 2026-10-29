@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Immutable Textures and glTexStorage2D in OpenGL - opengl</title>
+    <meta name="description" content="This article examines immutable storage textures in modern OpenGL, focusing on how glTexStorage2D defines texture memory. It breaks down the mechanical differences between traditional mutable textures and immutable textures, highlighting how immutable sto">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/immutable-textures-and-gl-tex-storage-2-d-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Immutable Textures and glTexStorage2D in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/immutable-textures-and-gl-tex-storage-2-d-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article examines immutable storage textures in modern OpenGL, focusing on how glTexStorage2D defines texture memory. It breaks down the mechanical differences between traditional mutable textures and immutable textures, highlighting how immutable sto" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="immutable-textures-and-gltexstorage2d-in-opengl">Immutable
+Textures and glTexStorage2D in OpenGL</h1>
+<p>This article examines immutable storage textures in modern OpenGL,
+focusing on how <code>glTexStorage2D</code> defines texture memory. It
+breaks down the mechanical differences between traditional mutable
+textures and immutable textures, highlighting how immutable storage
+eliminates driver overhead, enforces texture completeness upfront, and
+fundamentally prevents runtime memory reallocation errors during
+rendering.</p>
+<h3 id="the-problem-with-mutable-textures">The Problem with Mutable
+Textures</h3>
+<p>Historically, OpenGL defined textures using mutable storage through
+functions like <code>glTexImage2D</code>. Under this legacy approach,
+each mipmap level and slice of a texture is allocated independently. A
+developer can call <code>glTexImage2D</code> repeatedly on the same
+texture target, changing the dimensions, internal format, or number of
+mip levels at any point in the application lifecycle.</p>
+<p>Because the state remains mutable, the graphics driver cannot
+reliably predict whether a texture is "mipmap complete" (possessing all
+required mip levels with matching dimensions and compatible formats)
+until the texture is actually bound and used in a draw call.
+Consequently, the driver must perform deferred allocation and expensive
+validation checks at runtime right before rendering. If an application
+inadvertently specifies incompatible mip levels, or if the driver needs
+to reallocate memory dynamically to consolidate disjoint mip chains
+during a draw pass, out-of-memory errors or undefined rendering
+behaviors can occur unpredictably mid-frame.</p>
+<h3 id="what-are-immutable-storage-textures">What Are Immutable Storage
+Textures?</h3>
+<p>Introduced in OpenGL 4.2 and through the
+<code>ARB_texture_storage</code> extension, immutable storage textures
+fundamentally alter how texture memory is handled. Instead of defining
+each mipmap level separately, an immutable texture defines its entire
+storage specification—internal format, base width, base height, and
+total mipmap levels—in a single, atomic command using
+<code>glTexStorage2D</code>.</p>
+<p>The term "immutable" strictly refers to the texture's metadata and
+memory layout, not its pixel data:</p>
+<ul>
+<li><strong>Immutable:</strong> The dimensions, internal format, mipmap
+count, and allocated memory block cannot be altered after creation.</li>
+<li><strong>Mutable:</strong> The pixel data itself remains fully
+mutable and can be updated at any time using functions such as
+<code>glTexSubImage2D</code>, memory mapping, or compute shaders.</li>
+</ul>
+<h3 id="how-gltexstorage2d-prevents-runtime-allocation-errors">How
+<code>glTexStorage2D</code> Prevents Runtime Allocation Errors</h3>
+<p>Using <code>glTexStorage2D</code> protects applications from
+unexpected runtime failures through several architectural
+mechanisms:</p>
+<ol type="1">
+<li><p><strong>Upfront, Contiguous Memory Allocation:</strong> When
+<code>glTexStorage2D</code> is invoked, the driver immediately allocates
+the full memory footprint for all specified mipmap levels at once.
+Because the allocation happens during asset initialization rather than
+during a draw loop, any out-of-memory condition is raised immediately at
+setup time. This allows developers to catch and handle allocation
+failures before gameplay or rendering begins.</p></li>
+<li><p><strong>Guaranteed Mipmap Completeness:</strong>
+<code>glTexStorage2D</code> calculates the dimensions of every
+subsequent mip level mathematically based on the base dimensions
+provided. It is impossible to produce mismatched dimensions, missing
+intermediary mip levels, or disparate internal formats between levels.
+The texture is permanently mipmap complete upon creation.</p></li>
+<li><p><strong>Elimination of Draw-Time Reallocations:</strong> With
+mutable textures, drivers often employ complex heuristics to manage GPU
+memory, sometimes deferring physical allocation or reshuffling memory
+buffers right before a draw call. With immutable storage, the driver
+guarantees the memory address and layout remain fixed for the lifetime
+of the texture object. The driver never needs to reallocate or
+revalidate storage layouts during draw calls, eliminating spontaneous
+runtime reallocation crashes and reducing CPU driver overhead.</p></li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/immutable-textures-and-gl-tex-storage-2-d-in-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

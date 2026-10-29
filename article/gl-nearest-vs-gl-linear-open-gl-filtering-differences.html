@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GL_NEAREST vs GL_LINEAR: OpenGL Filtering Differences - opengl</title>
+    <meta name="description" content="Texture filtering in OpenGL determines how texel colors are mapped to screen pixels when a texture is scaled, magnified, or minified. The two fundamental magnification and minification filtering modes are GLNEAREST (nearest-neighbor) and GLLINEAR (bilinea">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/gl-nearest-vs-gl-linear-open-gl-filtering-differences">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="GL_NEAREST vs GL_LINEAR: OpenGL Filtering Differences - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/gl-nearest-vs-gl-linear-open-gl-filtering-differences" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Texture filtering in OpenGL determines how texel colors are mapped to screen pixels when a texture is scaled, magnified, or minified. The two fundamental magnification and minification filtering modes are GLNEAREST (nearest-neighbor) and GLLINEAR (bilinea" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="gl_nearest-vs-gl_linear-opengl-filtering-differences">GL_NEAREST
+vs GL_LINEAR: OpenGL Filtering Differences</h1>
+<p>Texture filtering in OpenGL determines how texel colors are mapped to
+screen pixels when a texture is scaled, magnified, or minified. The two
+fundamental magnification and minification filtering modes are
+<code>GL_NEAREST</code> (nearest-neighbor) and <code>GL_LINEAR</code>
+(bilinear interpolation). This article breaks down the computational
+differences between these two methods, contrasting their memory access
+patterns, arithmetic overhead, hardware execution paths, and performance
+impacts on the GPU.</p>
+<h3 id="memory-access-and-bandwidth">Memory Access and Bandwidth</h3>
+<p>The primary divergence between <code>GL_NEAREST</code> and
+<code>GL_LINEAR</code> lies in memory access complexity:</p>
+<ul>
+<li><strong><code>GL_NEAREST</code>:</strong> Requires a single memory
+read per fragment. The GPU determines the UV coordinate, calculates the
+corresponding texel index via integer rounding/truncation, and fetches
+only that single texel from the texture cache or VRAM.</li>
+<li><strong><code>GL_LINEAR</code> (2D Textures):</strong> Requires four
+texel fetches per fragment. The GPU identifies the coordinate bounding
+box and reads the four neighboring texels surrounding the sample
+point.</li>
+<li><strong><code>GL_LINEAR</code> (3D Textures):</strong> Extends to
+eight texel fetches per fragment to sample across the X, Y, and Z
+axes.</li>
+</ul>
+<p>While modern GPU texture caches are optimized to mitigate duplicate
+fetches across adjacent pixels, <code>GL_LINEAR</code> inherently places
+a higher load on memory bandwidth and increases cache line utilization
+compared to <code>GL_NEAREST</code>.</p>
+<h3 id="mathematical-operations-and-arithmetic-cost">Mathematical
+Operations and Arithmetic Cost</h3>
+<p>The computational cost of resolving the final pixel color differs
+substantially in the arithmetic operations (ALU or dedicated hardware
+logic) required:</p>
+<ul>
+<li><strong><code>GL_NEAREST</code>:</strong> Requires almost zero
+floating-point arithmetic. The implementation involves a fast mapping of
+normalized coordinates <span class="math inline">\([0.0, 1.0]\)</span>
+to integer grid indices, usually performed via basic bitwise shifts or
+fixed-point truncation: <span class="math display">\[\text{Index} =
+\lfloor u \times \text{Width} \rfloor, \lfloor v \times \text{Height}
+\rfloor\]</span></li>
+<li><strong><code>GL_LINEAR</code>:</strong> Performs weighted
+mathematical interpolation. For a 2D texture, it computes fractional
+offsets along the axes (<span class="math inline">\(s\)</span> and <span
+class="math inline">\(t\)</span>) and carries out three separate linear
+interpolations (<code>lerp</code> operations):
+<ol type="1">
+<li>Interpolate between top-left and top-right texels using fractional
+offset <span class="math inline">\(s\)</span>.</li>
+<li>Interpolate between bottom-left and bottom-right texels using
+fractional offset <span class="math inline">\(s\)</span>.</li>
+<li>Interpolate between the two resulting values using fractional offset
+<span class="math inline">\(t\)</span>.</li>
+</ol>
+This process requires multiple multiply-accumulate (MAC) operations per
+color channel. For standard RGBA textures, this equates to 12 distinct
+linear interpolations across all four color channels.</li>
+</ul>
+<h3 id="hardware-execution-via-texture-mapping-units-tmus">Hardware
+Execution via Texture Mapping Units (TMUs)</h3>
+<p>Modern graphics hardware handles texture filtering via dedicated
+silicon known as Texture Mapping Units (TMUs):</p>
+<ul>
+<li><strong>Hardware Support:</strong> TMUs are natively designed to
+execute bilinear filtering (<code>GL_LINEAR</code>) in hardware without
+consuming general-purpose shader execution core (ALU) cycles. On modern
+desktop GPUs, a standard single-precision 2D <code>GL_LINEAR</code>
+sample often processes with the same or near-identical instruction
+throughput as <code>GL_NEAREST</code>.</li>
+<li><strong>Throughput Penalties:</strong> When sampling specialized
+formats (such as 32-bit floating-point textures <code>GL_RGBA32F</code>,
+deep integer formats, or ultra-wide textures), TMUs often lose
+single-cycle throughput. In these scenarios, <code>GL_LINEAR</code> can
+cause pipeline stalls or require multiple clock cycles per sample,
+whereas <code>GL_NEAREST</code> retains maximum throughput because it
+bypasses multi-tap blending logic.</li>
+</ul>
+<h3 id="computational-summary">Computational Summary</h3>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Metric</th>
+<th style="text-align: left;"><code>GL_NEAREST</code></th>
+<th style="text-align: left;"><code>GL_LINEAR</code> (2D)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>Texels Sampled</strong></td>
+<td style="text-align: left;">1</td>
+<td style="text-align: left;">4</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Arithmetic Overhead</strong></td>
+<td style="text-align: left;">Minimal (coordinate truncation)</td>
+<td style="text-align: left;">3 <code>lerp</code> operations per
+channel</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Cache Sensitivity</strong></td>
+<td style="text-align: left;">Low</td>
+<td style="text-align: left;">High (requires 4 adjacent texels)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>High-Precision
+Formats</strong></td>
+<td style="text-align: left;">High throughput maintained</td>
+<td style="text-align: left;">Often incurs hardware throughput
+penalties</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Power Consumption</strong></td>
+<td style="text-align: left;">Lower (fewer memory transactions/ALU
+ops)</td>
+<td style="text-align: left;">Higher (more active logic inside the
+TMU)</td>
+</tr>
+</tbody>
+</table>
+<p>While <code>GL_LINEAR</code> eliminates the pixelated, blocky
+artifacts associated with <code>GL_NEAREST</code>, it does so by
+quadrupling the data points read per 2D sample and introducing
+multi-step floating-point interpolation into the rasterization
+pipeline.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/gl-nearest-vs-gl-linear-open-gl-filtering-differences';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

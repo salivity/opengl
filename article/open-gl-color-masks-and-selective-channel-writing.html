@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Color Masks and Selective Channel Writing - opengl</title>
+    <meta name="description" content="Color masks in OpenGL provide a mechanism to selectively enable or disable writing to individual color channels—Red, Green, Blue, and Alpha—within the active framebuffer. By acting as a bitwise gate at the final raster operations (ROP) stage of the render">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-color-masks-and-selective-channel-writing">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Color Masks and Selective Channel Writing - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-color-masks-and-selective-channel-writing" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Color masks in OpenGL provide a mechanism to selectively enable or disable writing to individual color channels—Red, Green, Blue, and Alpha—within the active framebuffer. By acting as a bitwise gate at the final raster operations (ROP) stage of the render" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-color-masks-and-selective-channel-writing">OpenGL Color
+Masks and Selective Channel Writing</h1>
+<p>Color masks in OpenGL provide a mechanism to selectively enable or
+disable writing to individual color channels—Red, Green, Blue, and
+Alpha—within the active framebuffer. By acting as a bitwise gate at the
+final raster operations (ROP) stage of the rendering pipeline, color
+masks allow developers to control which components of a pixel are
+updated during drawing commands without altering the underlying fragment
+shader logic or clearing routines. This article explains how OpenGL
+color masks function, how to configure them using the core API, and the
+primary rendering techniques that rely on selective channel writing.</p>
+<h3 id="understanding-color-masks">Understanding Color Masks</h3>
+<p>In a standard rendering pass, when a fragment passes all fragment
+tests (such as the scissor, stencil, and depth tests), its computed RGBA
+values are written to the corresponding pixel locations in the color
+buffer. A color mask acts as a filter applied at the very end of this
+pipeline.</p>
+<p>When a channel's mask is set to false, any write operation targeting
+that specific channel is blocked, preserving the existing value stored
+in the color buffer for that component. This operation does not affect
+fragment shader execution, depth testing, or stencil testing; it only
+inhibits the final write of the masked channel data to the
+framebuffer.</p>
+<h3 id="the-api-glcolormask-and-glcolormaski">The API:
+<code>glColorMask</code> and <code>glColorMaski</code></h3>
+<p>OpenGL controls selective channel writes through the
+<code>glColorMask</code> function:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> glColorMask<span class="op">(</span>GLboolean red<span class="op">,</span> GLboolean green<span class="op">,</span> GLboolean blue<span class="op">,</span> GLboolean alpha<span class="op">);</span></span></code></pre></div>
+<p>Each parameter accepts either <code>GL_TRUE</code> (the default
+state) or <code>GL_FALSE</code>:</p>
+<ul>
+<li><code>red</code>: Controls writing to the red component.</li>
+<li><code>green</code>: Controls writing to the green component.</li>
+<li><code>blue</code>: Controls writing to the blue component.</li>
+<li><code>alpha</code>: Controls writing to the alpha component.</li>
+</ul>
+<p>For scenarios utilizing Multiple Render Targets (MRTs), OpenGL
+provides an indexed variant:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> glColorMaski<span class="op">(</span>GLuint buf<span class="op">,</span> GLboolean red<span class="op">,</span> GLboolean green<span class="op">,</span> GLboolean blue<span class="op">,</span> GLboolean alpha<span class="op">);</span></span></code></pre></div>
+<p><code>glColorMaski</code> allows developers to set distinct color
+masks for individual draw buffers specified by the <code>buf</code>
+index, enabling fine-grained control when outputting to multiple
+attachments simultaneously.</p>
+<h3 id="how-selective-channel-writing-works-in-practice">How Selective
+Channel Writing Works in Practice</h3>
+<p>Consider a scenario where an application needs to draw geometry that
+modifies the depth buffer but should not alter the visible color image.
+Instead of unbinding textures or writing an empty fragment shader, all
+color writes can be disabled globally:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Disable all color channel writes</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>glColorMask<span class="op">(</span>GL_FALSE<span class="op">,</span> GL_FALSE<span class="op">,</span> GL_FALSE<span class="op">,</span> GL_FALSE<span class="op">);</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="co">// Render geometry (updates depth/stencil buffers only)</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>DrawSceneGeometry<span class="op">();</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="co">// Re-enable color writes for subsequent passes</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>glColorMask<span class="op">(</span>GL_TRUE<span class="op">,</span> GL_TRUE<span class="op">,</span> GL_TRUE<span class="op">,</span> GL_TRUE<span class="op">);</span></span></code></pre></div>
+<p>When selective writing is applied, such as
+<code>glColorMask(GL_TRUE, GL_FALSE, GL_FALSE, GL_TRUE)</code>, only the
+red and alpha components of the target framebuffer receive updates. The
+green and blue components remain identical to whatever values were
+present prior to the draw call.</p>
+<h3 id="common-use-cases">Common Use Cases</h3>
+<ol type="1">
+<li><strong>Depth and Stencil Pre-passes:</strong> Rendering complex
+geometry with color writing disabled allows the depth buffer to be
+populated early (Early-Z), reducing fragment shading overhead in later
+forward rendering passes.</li>
+<li><strong>Anaglyph 3D Rendering:</strong> Color masking enables the
+creation of red-cyan stereoscopic 3D. The left eye view is rendered with
+only the red channel enabled
+(<code>glColorMask(GL_TRUE, GL_FALSE, GL_FALSE, GL_FALSE)</code>),
+followed by clearing the depth buffer and rendering the right eye view
+with green and blue enabled
+(<code>glColorMask(GL_FALSE, GL_TRUE, GL_TRUE, GL_FALSE)</code>).</li>
+<li><strong>Data Channel Packing:</strong> When utilizing custom
+framebuffer attachments where RGBA channels store disparate data (such
+as material properties, ambient occlusion, or custom flags), masking
+allows individual data fields to be updated independently without
+corrupting adjacent channel data.</li>
+<li><strong>Color-Blindness and Visual Debugging:</strong> Developers
+can quickly isolate and inspect individual color channels during runtime
+without modifying shader code by toggling specific components on or
+off.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/open-gl-color-masks-and-selective-channel-writing';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

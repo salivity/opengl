@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How local_size_x Impacts GPU Occupancy in OpenGL - opengl</title>
+    <meta name="description" content="In OpenGL compute shaders, the layout(localsizex, ...) qualifier defines the dimensions of a workgroup, directly dictating how the GPU schedules threads, allocates hardware resources, and saturates compute units. Choosing the correct workgroup size balanc">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-local-size-x-impacts-gpu-occupancy-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How local_size_x Impacts GPU Occupancy in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-local-size-x-impacts-gpu-occupancy-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In OpenGL compute shaders, the layout(localsizex, ...) qualifier defines the dimensions of a workgroup, directly dictating how the GPU schedules threads, allocates hardware resources, and saturates compute units. Choosing the correct workgroup size balanc" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-local_size_x-impacts-gpu-occupancy-in-opengl">How
+local_size_x Impacts GPU Occupancy in OpenGL</h1>
+<p>In OpenGL compute shaders, the <code>layout(local_size_x, ...)</code>
+qualifier defines the dimensions of a workgroup, directly dictating how
+the GPU schedules threads, allocates hardware resources, and saturates
+compute units. Choosing the correct workgroup size balances register
+usage, shared memory consumption, and thread scheduling to maximize GPU
+occupancy—the ratio of active execution units to the hardware's
+theoretical maximum. Setting this value incorrectly can lead to severe
+hardware underutilization or resource starvation.</p>
+<h3 id="hardware-execution-units-warps-and-wavefronts">Hardware
+Execution Units: Warps and Wavefronts</h3>
+<p>GPUs do not execute individual threads in isolation. Instead, they
+bundle threads into lockstep execution units known as warps on NVIDIA
+hardware (typically 32 threads) or wavefronts on AMD hardware (typically
+32 or 64 threads).</p>
+<p>When specifying <code>layout(local_size_x = N)</code>, the total
+number of invocations in the workgroup should ideally be an integer
+multiple of the native warp or wavefront size. If you specify an
+unaligned size—such as <code>layout(local_size_x = 40)</code> on an
+architecture using 32-thread warps—the GPU must allocate two full warps
+(64 thread slots) to service the group. In this scenario, 24 thread
+slots remain completely idle, directly degrading hardware efficiency and
+compute throughput.</p>
+<h3 id="the-occupancy-trade-off">The Occupancy Trade-Off</h3>
+<p>Occupancy measures how effectively the hardware scheduler can hide
+latency. GPUs hide instruction and memory latency by rapidly switching
+between active warps on a Streaming Multiprocessor (SM) or Compute Unit
+(CU). If one warp stalls waiting for a texture fetch or buffer load, the
+scheduler dispatches instructions from another warp.</p>
+<p>Workgroup size affects occupancy through three primary hardware
+limits per compute unit:</p>
+<ol type="1">
+<li><strong>Maximum Threads per Multiprocessor:</strong> Hardware limits
+total active threads (often 1024 to 2048 per SM/CU).</li>
+<li><strong>Maximum Workgroups per Multiprocessor:</strong> Hardware
+caps the number of concurrent workgroups an execution unit can track
+(typically 16 to 32).</li>
+<li><strong>Register and Shared Memory Limits:</strong> Each thread
+requires general-purpose registers, and each workgroup consumes a slice
+of local shared memory (<code>shared</code> memory qualifiers).</li>
+</ol>
+<h3 id="the-impact-of-small-workgroups">The Impact of Small
+Workgroups</h3>
+<p>Setting <code>local_size_x</code> to a very small number (such as 16,
+32, or 64) risks running into the maximum workgroup limit before filling
+the execution unit's thread capacity. For instance, if an SM has a limit
+of 16 concurrent workgroups and a capacity of 2048 threads, choosing
+<code>local_size_x = 32</code> caps the SM at only 512 active threads
+(16 × 32). This caps occupancy at 25%, drastically reducing the
+scheduler's ability to hide memory stalls.</p>
+<h3 id="the-impact-of-large-workgroups">The Impact of Large
+Workgroups</h3>
+<p>Conversely, setting <code>local_size_x</code> too high (such as 512
+or 1024) coarsens scheduling granularity. A multiprocessor must have
+enough free registers and shared memory to house the entire workgroup
+before launching it. If a shader has high register pressure, an SM might
+only have enough resources to host a single 1024-thread workgroup. If
+that workgroup blocks on a synchronization barrier
+(<code>barrier()</code>), the entire multiprocessor stalls, with no
+alternative workgroups available to execute.</p>
+<h3 id="practical-guidelines-for-opengl-shaders">Practical Guidelines
+for OpenGL Shaders</h3>
+<p>For most modern architectures, workgroup sizes between 64 and 256
+invocations provide the most stable occupancy profiles:</p>
+<ul>
+<li><strong>128 or 256 threads:</strong> Typically optimal for general
+compute tasks, as these sizes divide evenly into the scheduling
+capacities of modern NVIDIA, AMD, and Intel architectures.</li>
+<li><strong>Shared Memory Usage:</strong> Always calculate shared memory
+per workgroup. If an SM provides 64 KB of shared memory and your
+workgroup uses 33 KB, only one workgroup can run on that SM at a time,
+cutting occupancy in half regardless of thread count.</li>
+<li><strong>Latency vs. Occupancy:</strong> Achieving 100% occupancy is
+not always required for peak performance. A shader with high
+instruction-level parallelism (ILP) or primarily arithmetic workloads
+can reach peak throughput at moderate occupancy (50–70%), whereas
+memory-bound compute shaders rely heavily on high occupancy to hide
+latency.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/how-local-size-x-impacts-gpu-occupancy-in-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

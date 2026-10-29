@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Coherent Qualifier in Shader Storage Blocks - opengl</title>
+    <meta name="description" content="In OpenGL, the coherent type qualifier controls how memory transactions within Shader Storage Buffer Objects (SSBOs) are cached and made visible across different shader invocations. This article explains the exact function of the coherent qualifier, why i">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-coherent-qualifier-in-shader-storage-blocks">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Coherent Qualifier in Shader Storage Blocks - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-coherent-qualifier-in-shader-storage-blocks" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In OpenGL, the coherent type qualifier controls how memory transactions within Shader Storage Buffer Objects (SSBOs) are cached and made visible across different shader invocations. This article explains the exact function of the coherent qualifier, why i" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-coherent-qualifier-in-shader-storage-blocks">OpenGL
+Coherent Qualifier in Shader Storage Blocks</h1>
+<p>In OpenGL, the <code>coherent</code> type qualifier controls how
+memory transactions within Shader Storage Buffer Objects (SSBOs) are
+cached and made visible across different shader invocations. This
+article explains the exact function of the <code>coherent</code>
+qualifier, why it is critical for inter-invocation communication, and
+how it works in tandem with OpenGL memory barriers to maintain data
+integrity across parallel GPU executions.</p>
+<h3 id="the-default-incoherent-memory-model">The Default Incoherent
+Memory Model</h3>
+<p>By default, the OpenGL shading language (GLSL) operates under an
+incoherent memory model for variables in shader storage blocks. Modern
+GPUs rely on multiple levels of local caches (such as L1 caches per
+compute unit or streaming multiprocessor). When a shader invocation
+writes to an SSBO variable, the GPU may store that update in a local
+cache rather than immediately flushing it to a shared L2 cache or global
+VRAM. Similarly, when an invocation reads data, it may read a stale
+value from its local cache.</p>
+<p>Within a single invocation, accesses are always consistent. However,
+without explicit instructions, OpenGL makes no guarantee that a write
+performed by one shader invocation will be visible to another shader
+invocation running concurrently on a different hardware unit.</p>
+<h3 id="the-function-of-the-coherent-qualifier">The Function of the
+<code>coherent</code> Qualifier</h3>
+<p>The <code>coherent</code> qualifier modifies this behavior by
+enforcing cache coherency across all concurrently executing shader
+invocations. When a buffer variable inside a shader storage block is
+declared with <code>coherent</code>:</p>
+<ol type="1">
+<li><strong>Write Visibility:</strong> Any write to that variable is
+committed in a way that makes it visible to other shader invocations.
+Depending on the hardware architecture, this typically bypasses
+write-back local caches or marks them for immediate propagation to
+shared memory levels.</li>
+<li><strong>Fresh Reads:</strong> Any read of that variable bypasses
+stale local caches, forcing the GPU to fetch the most recent data
+written by other invocations.</li>
+</ol>
+<p>In practice, applying <code>coherent</code> to a variable allows
+threads in different workgroups (or different stages of execution) to
+share data dynamically through the same buffer during a single draw or
+dispatch call.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">std430</span><span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="kw">buffer</span> DataBuffer <span class="op">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">coherent</span> <span class="dt">uint</span> sharedCounter<span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">coherent</span> <span class="dt">float</span> globalValues<span class="op">[];</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
+<p>You can apply the qualifier to individual members or to the entire
+buffer block. Applying it to the block makes all contained variables
+coherent.</p>
+<h3 id="the-necessity-of-memory-barriers">The Necessity of Memory
+Barriers</h3>
+<p>Declaring a variable as <code>coherent</code> is necessary for
+cross-invocation communication, but it is not sufficient on its own. The
+<code>coherent</code> qualifier only guarantees that when a memory
+access occurs, it uses coherent paths; it does not dictate execution
+order or guarantee that one invocation has finished writing before
+another attempts to read.</p>
+<p>To safely communicate between invocations, <code>coherent</code> must
+be paired with memory barrier functions, such as
+<code>memoryBarrier()</code> or <code>memoryBarrierBuffer()</code>.</p>
+<ul>
+<li>The writing invocation writes to the <code>coherent</code> variable
+and then calls a memory barrier to ensure the write completes.</li>
+<li>The reading invocation executes a barrier (or synchronization
+mechanism) to ensure it does not read until the write has
+completed.</li>
+</ul>
+<p>Without both the <code>coherent</code> qualifier and appropriate
+memory barriers, data races and stale reads can still occur.</p>
+<h3 id="performance-considerations">Performance Considerations</h3>
+<p>Because <code>coherent</code> forces memory transactions through
+coherent cache hierarchies or bypasses low-level caches entirely, it
+increases memory latency and reduces throughput. It also prevents the
+GLSL compiler from optimizing memory operations, such as keeping
+frequently accessed variables in registers. The <code>coherent</code>
+qualifier should only be applied to variables that are actively read and
+written by distinct, concurrently executing invocations. For read-only
+buffers or data localized to a single thread, standard buffer
+declarations provide significantly better performance.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/open-gl-coherent-qualifier-in-shader-storage-blocks';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

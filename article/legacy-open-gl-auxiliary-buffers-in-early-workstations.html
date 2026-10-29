@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Legacy OpenGL Auxiliary Buffers in Early Workstations - opengl</title>
+    <meta name="description" content="This article provides a technical overview of the legacy auxiliary color buffers implemented in early workstation OpenGL hardware. It examines how systems allocated and addressed these buffers, the specific hardware environments that supported them, their">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/legacy-open-gl-auxiliary-buffers-in-early-workstations">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Legacy OpenGL Auxiliary Buffers in Early Workstations - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/legacy-open-gl-auxiliary-buffers-in-early-workstations" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article provides a technical overview of the legacy auxiliary color buffers implemented in early workstation OpenGL hardware. It examines how systems allocated and addressed these buffers, the specific hardware environments that supported them, their" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="legacy-opengl-auxiliary-buffers-in-early-workstations">Legacy
+OpenGL Auxiliary Buffers in Early Workstations</h1>
+<p>This article provides a technical overview of the legacy auxiliary
+color buffers implemented in early workstation OpenGL hardware. It
+examines how systems allocated and addressed these buffers, the specific
+hardware environments that supported them, their primary use cases for
+off-screen computation and multi-pass effects, and their eventual
+replacement by modern rendering techniques such as Framebuffer Objects
+(FBOs).</p>
+<h3 id="the-architecture-of-auxiliary-buffers">The Architecture of
+Auxiliary Buffers</h3>
+<p>In the original OpenGL specifications (OpenGL 1.0 through 1.5), the
+default framebuffer provided by the operating system’s windowing system
+could include more than just standard display buffers. Beyond the front
+and back buffers for double buffering, and left and right buffers for
+stereoscopic rendering, the specification allowed for non-displayable
+scratchpad color buffers designated as auxiliary buffers:
+<code>GL_AUX0</code>, <code>GL_AUX1</code>, <code>GL_AUX2</code>, and
+<code>GL_AUX3</code>.</p>
+<p>Applications queried hardware support using
+<code>glGetIntegerv(GL_AUX_BUFFERS, &amp;count)</code>. While the OpenGL
+specification supported an implementation-dependent count of auxiliary
+buffers (typically up to four), consumer-grade hardware rarely
+implemented any due to memory constraints. High-end Unix workstations,
+however, routinely exposed one to four of these 24-bit or 32-bit color
+planes directly within video memory.</p>
+<h3 id="target-hardware-implementations">Target Hardware
+Implementations</h3>
+<p>Auxiliary buffers were primarily found on specialized professional
+graphics systems throughout the 1990s and early 2000s, including:</p>
+<ul>
+<li><strong>Silicon Graphics (SGI):</strong> Workstations based on the
+IRIX operating system, such as the SGI Indigo2, Octane, and Onyx systems
+equipped with RealityEngine, InfiniteReality, or Impact graphics
+subsystems.</li>
+<li><strong>Sun Microsystems and HP Workstations:</strong> Systems
+equipped with Elite3D, Creator3D, or Visualize FX graphics
+hardware.</li>
+<li><strong>Professional PC Workstation Cards:</strong> Early
+workstation-class accelerators such as the 3Dlabs Wildcat series and
+early Evans &amp; Sutherland boards.</li>
+</ul>
+<p>In these systems, video memory (VRAM) was statically allocated when
+configuring the visual or pixel format via GLX or WGL. If an application
+requested a visual with auxiliary buffers, the system dedicated physical
+video memory to those buffers for the lifetime of that context.</p>
+<h3 id="operational-usage">Operational Usage</h3>
+<p>Developers directed drawing operations to these buffers using
+<code>glDrawBuffer()</code> and read operations using
+<code>glReadBuffer()</code>. Common workflows included:</p>
+<ul>
+<li><strong>Multi-Pass Compositing:</strong> An application could render
+geometry into <code>GL_AUX0</code>, compute a secondary pass into
+<code>GL_AUX1</code>, and combine both passes into <code>GL_BACK</code>
+using pixel-transfer operations or hardware blending.</li>
+<li><strong>Object Picking and Selection:</strong> Developers rendered
+unique object identifiers (encoded as RGB colors) into an auxiliary
+buffer. When the user clicked the mouse, <code>glReadPixels()</code>
+sampled the coordinate directly from the auxiliary buffer without
+interrupting the visible scene on the front or back buffers.</li>
+<li><strong>Intermediate Texture Generation:</strong> Early hardware
+lacked the ability to render directly to textures. Auxiliary buffers
+served as off-screen staging grounds from which pixels were transferred
+to texture memory via <code>glCopyTexImage2D()</code> or
+<code>glCopyTexSubImage2D()</code>.</li>
+</ul>
+<h3 id="obsolescence-and-removal">Obsolescence and Removal</h3>
+<p>Auxiliary buffers suffered from fundamental limitations: they were
+tied to the windowing system, shared the fixed resolution and bit-depth
+of the visible window, and wasted substantial VRAM if not actively
+used.</p>
+<p>The industry initially addressed these limitations with
+hardware-accelerated off-screen rendering contexts known as pbuffers
+(<code>WGL_ARB_pbuffer</code> and <code>GLX_SGIX_pbuffer</code>).
+Auxiliary buffers became entirely obsolete with the introduction of the
+Framebuffer Object extension (<code>GL_EXT_framebuffer_object</code>),
+later integrated into the core specification. Modern Multiple Render
+Target (MRT) pipelines allow dynamic binding of off-screen textures
+directly as color attachments (<code>GL_COLOR_ATTACHMENT0</code> through
+<code>GL_COLOR_ATTACHMENTn</code>), leading to the complete deprecation
+and removal of <code>GL_AUXn</code> in OpenGL Core Profiles.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/legacy-open-gl-auxiliary-buffers-in-early-workstations';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

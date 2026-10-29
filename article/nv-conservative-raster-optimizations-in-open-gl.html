@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NV Conservative Raster Optimizations in OpenGL - opengl</title>
+    <meta name="description" content="This article examines the hardware rasterization optimizations introduced by the NVconservativeraster OpenGL extension and its subsequent revisions. It covers how conservative rasterization replaces costly software and geometry shader workarounds with ded">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/nv-conservative-raster-optimizations-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="NV Conservative Raster Optimizations in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/nv-conservative-raster-optimizations-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article examines the hardware rasterization optimizations introduced by the NVconservativeraster OpenGL extension and its subsequent revisions. It covers how conservative rasterization replaces costly software and geometry shader workarounds with ded" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="nv-conservative-raster-optimizations-in-opengl">NV Conservative
+Raster Optimizations in OpenGL</h1>
+<p>This article examines the hardware rasterization optimizations
+introduced by the <code>NV_conservative_raster</code> OpenGL extension
+and its subsequent revisions. It covers how conservative rasterization
+replaces costly software and geometry shader workarounds with dedicated
+GPU fixed-function logic, the operational modes available—such as
+overestimation, underestimation, dilation, and pre-snap evaluation—and
+how these mechanisms optimize real-time workloads like voxelization and
+occlusion culling.</p>
+<h3 id="dedicated-fixed-function-coverage-testing">Dedicated
+Fixed-Function Coverage Testing</h3>
+<p>Standard hardware rasterization only generates a fragment if a
+geometric primitive covers a pixel's center point or a designated
+multisample location. Prior to conservative rasterization, applications
+requiring guaranteed coverage for any pixel touching a triangle (such as
+sparse voxel octree construction or collision detection) had to expand
+triangle perimeters manually in a geometry shader.</p>
+<p>The <code>NV_conservative_raster</code> extension offloads this
+entire process to the GPU’s fixed-function rasterizer. The hardware
+evaluates the polygon edges against the full bounding box of the pixel
+rather than point samples. By moving this test to dedicated hardware,
+the GPU eliminates the massive vertex and geometry shader amplification
+overhead, memory bandwidth bottlenecks, and redundant fragment
+generation associated with geometric dilation.</p>
+<h3 id="sub-pixel-pre-snap-conservative-rasterization">Sub-Pixel
+Pre-Snap Conservative Rasterization</h3>
+<p>Sub-pixel snapping can introduce cracks or unintended coverage drops
+when vertices snap to fixed-point grid locations before rasterization.
+The extension and its companion specifications introduce pre-snap
+triangle evaluation.</p>
+<p>Hardware evaluates the exact floating-point vertices of a triangle
+against pixel boundaries before rounding them to the sub-pixel grid.
+This ensures mathematical conservatism: a fragment is guaranteed to be
+generated even if a thin or degenerate triangle would otherwise collapse
+or shift outside a pixel’s sample domain due to hardware sub-pixel
+precision limits.</p>
+<h3 id="hardware-conservative-dilation">Hardware Conservative
+Dilation</h3>
+<p>Through the related dilation control, the hardware rasterizer can
+apply a user-defined expansion offset (dilation) directly to triangle
+edges in screen space:</p>
+<ul>
+<li><strong>Zero-Cost Offset Application:</strong> The rasterizer
+automatically inflates the primitive by a floating-point pixel radius
+directly within the rasterization core.</li>
+<li><strong>Algorithmic Margin of Safety:</strong> Applications can
+dilate coverage by fractions of a pixel or multiple pixels to account
+for conservative filtering, blur kernels, or ray-tracing acceleration
+structure (BVH) generation without recalculating screen-space edge
+equations in shaders.</li>
+</ul>
+<h3 id="conservative-underestimation">Conservative Underestimation</h3>
+<p>While default conservative rasterization generates a fragment if
+<em>any</em> portion of a pixel is touched (overestimation), the
+hardware also supports conservative underestimation. Under this
+mode:</p>
+<ul>
+<li>A fragment is generated <strong>only</strong> if the primitive
+completely covers the entire pixel area.</li>
+<li>Hardware logic tests all four corners of the pixel against the
+primitive's edges.</li>
+<li>This provides a hardware-accelerated method for conservative
+occlusion culling, ensuring that a bounding volume completely occludes
+underlying geometry without false positives.</li>
+</ul>
+<h3 id="throughput-and-memory-improvements">Throughput and Memory
+Improvements</h3>
+<p>By replacing compute- or geometry-driven workarounds with
+fixed-function evaluation, <code>NV_conservative_raster</code> optimizes
+rendering pipelines in three key areas:</p>
+<ol type="1">
+<li><strong>Primitive Setup Reduction:</strong> Eliminates primitive
+expansion in geometry shaders, keeping primitive setup pipelines running
+at peak fixed-function throughput.</li>
+<li><strong>Bandwidth Conservation:</strong> Greatly reduces VRAM
+traffic by removing the need for auxiliary vertex buffers and
+intermediate geometry passes during voxelization.</li>
+<li><strong>Culling Efficiency:</strong> Allows the early-Z and
+hierarchical-Z (HiZ) hardware to aggressively discard fragments that do
+not meet coverage thresholds before executing expensive fragment shader
+code.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/nv-conservative-raster-optimizations-in-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fast Fourier Transform in OpenGL Shaders - opengl</title>
+    <meta name="description" content="Executing the Fast Fourier Transform (FFT) within an OpenGL shader environment enables real-time signal processing, ocean surface simulation, and audio visualization directly on the GPU. Achieving this requires mapping the recursive mathematical structure">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/fast-fourier-transform-in-open-gl-shaders">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Fast Fourier Transform in OpenGL Shaders - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/fast-fourier-transform-in-open-gl-shaders" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Executing the Fast Fourier Transform (FFT) within an OpenGL shader environment enables real-time signal processing, ocean surface simulation, and audio visualization directly on the GPU. Achieving this requires mapping the recursive mathematical structure" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="fast-fourier-transform-in-opengl-shaders">Fast Fourier Transform
+in OpenGL Shaders</h1>
+<p>Executing the Fast Fourier Transform (FFT) within an OpenGL shader
+environment enables real-time signal processing, ocean surface
+simulation, and audio visualization directly on the GPU. Achieving this
+requires mapping the recursive mathematical structure of the
+Cooley-Tukey algorithm onto hardware designed for parallel rasterization
+and compute pipelines. Developers utilize techniques such as multi-pass
+ping-pong rendering, precomputed twiddle factor textures, separable
+dimension processing, and compute shader shared memory to overcome GPU
+memory constraints and maximize throughput.</p>
+<h3 id="cooley-tukey-radix-2-decomposition">Cooley-Tukey Radix-2
+Decomposition</h3>
+<p>The standard recursive Cooley-Tukey FFT cannot run natively in
+fragment shaders due to recursion limits and isolated per-pixel
+execution. Instead, the algorithm is unrolled into an iterative,
+stage-by-stage pipeline. For an input of size <span
+class="math inline">\(N\)</span>, the transform is divided into <span
+class="math inline">\(\log_2(N)\)</span> sequential stages. Each stage
+performs butterfly operations where pairs of complex samples are
+combined using complex multiplication and addition, allowing every
+butterfly operation at a given stage to be computed independently across
+parallel shader invocations.</p>
+<h3 id="ping-pong-texture-architecture">Ping-Pong Texture
+Architecture</h3>
+<p>Fragment-shader-based FFT implementations cannot read from and write
+to the same texture simultaneously. To resolve this, developers
+implement a "ping-pong" buffering strategy using two Framebuffer Objects
+(FBOs) attached to floating-point textures (typically
+<code>GL_RGBA32F</code> to hold real and imaginary components for
+multiple channels). In each pass of the <span
+class="math inline">\(\log_2(N)\)</span> sequence, one texture acts as
+the read-only sampler while the other acts as the render target. The
+roles swap on the subsequent pass, eliminating data race conditions and
+providing cache-friendly sequential data access.</p>
+<h3 id="precomputed-twiddle-factors-and-bit-reversal">Precomputed
+Twiddle Factors and Bit-Reversal</h3>
+<p>Calculating trigonometric twiddle factors (<span
+class="math inline">\(e^{-2\pi i k / N}\)</span>) and bit-reversal
+indices on the fly inside inner shader loops introduces significant
+arithmetic overhead. Modern implementations precompute these values on
+the CPU or in an initialization compute pass, storing them in a
+dedicated 1D or 2D lookup texture. The shader samples this lookup table
+to instantly retrieve the source pixel coordinates for the butterfly
+operation and the pre-calculated complex twiddle factor, reducing the
+per-pixel workload to basic multiply-accumulate operations.</p>
+<h3 id="dimension-separation-for-2d-transforms">Dimension Separation for
+2D Transforms</h3>
+<p>The two-dimensional Discrete Fourier Transform is mathematically
+separable. Rather than calculating 2D frequencies simultaneously, the
+transform is split into two independent 1D operations:</p>
+<ol type="1">
+<li>Perform a 1D horizontal FFT across all rows.</li>
+<li>Perform a 1D vertical FFT across all columns of the resulting
+data.</li>
+</ol>
+<p>This separation reduces algorithmic complexity from <span
+class="math inline">\(\mathcal{O}(N^4)\)</span> to <span
+class="math inline">\(\mathcal{O}(N^2 \log_2 N)\)</span> and fits the
+linear structure of texture caches, maintaining high memory bandwidth
+utilization.</p>
+<h3 id="compute-shaders-and-shared-memory">Compute Shaders and Shared
+Memory</h3>
+<p>Modern OpenGL (version 4.3 and later) allows the replacement of
+fragment shaders with compute shaders (<code>GL_COMPUTE_SHADER</code>),
+offering significant performance gains:</p>
+<ul>
+<li><strong>Local Workgroup Memory:</strong> By using the
+<code>shared</code> keyword in GLSL, an entire row or column can be
+loaded into on-chip local memory (L1/shared cache). All <span
+class="math inline">\(\log_2(N)\)</span> butterfly stages can execute
+within that workgroup using barrier synchronization
+(<code>memoryBarrierShared()</code> and <code>barrier()</code>).</li>
+<li><strong>Direct Image Load/Store:</strong> Compute shaders bypass the
+rasterization pipeline, writing directly to textures using
+<code>imageStore()</code>, which eliminates framebuffer overhead and
+drastically reduces global VRAM round-trips.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/fast-fourier-transform-in-open-gl-shaders';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

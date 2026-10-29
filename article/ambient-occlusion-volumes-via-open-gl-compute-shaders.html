@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ambient Occlusion Volumes via OpenGL Compute Shaders - opengl</title>
+    <meta name="description" content="Ambient occlusion (AO) volume calculation is a rendering technique that evaluates diffuse environmental shadowing by computing occlusion factors within a discrete 3D spatial grid rather than relying on screen-space approximations. Implementing this method">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/ambient-occlusion-volumes-via-open-gl-compute-shaders">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Ambient Occlusion Volumes via OpenGL Compute Shaders - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/ambient-occlusion-volumes-via-open-gl-compute-shaders" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Ambient occlusion (AO) volume calculation is a rendering technique that evaluates diffuse environmental shadowing by computing occlusion factors within a discrete 3D spatial grid rather than relying on screen-space approximations. Implementing this method" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="ambient-occlusion-volumes-via-opengl-compute-shaders">Ambient
+Occlusion Volumes via OpenGL Compute Shaders</h1>
+<p>Ambient occlusion (AO) volume calculation is a rendering technique
+that evaluates diffuse environmental shadowing by computing occlusion
+factors within a discrete 3D spatial grid rather than relying on
+screen-space approximations. Implementing this method via OpenGL compute
+shaders allows developers to leverage massively parallel GPU computing
+to inject scene geometry, compute volumetric visibility, and generate
+view-independent occlusion fields. This article explains the mechanics
+of ambient occlusion volumes, details the architectural stages of the
+compute shader pipeline, and outlines the core OpenGL calls required for
+implementation.</p>
+<h2 id="understanding-the-ao-volume-method">Understanding the AO Volume
+Method</h2>
+<p>Traditional Screen-Space Ambient Occlusion (SSAO) derives occlusion
+solely from the depth buffer, which introduces edge artifacts and fails
+to account for geometry outside the camera's field of view. The Ambient
+Occlusion Volume approach resolves these issues by representing the
+surrounding scene in a volumetric 3D texture.</p>
+<p>In this method:</p>
+<ul>
+<li>The scene is discretized into a 3D grid (voxel volume) where cells
+store occupancy, geometric proxies, or distance fields.</li>
+<li>Rays, cones, or spherical harmonic functions are integrated within
+this 3D grid around surface points to determine how much ambient light
+is blocked.</li>
+<li>Because occlusion is stored or calculated in object/world space,
+occlusion remains stable across camera movements and accurately captures
+off-screen occluders.</li>
+</ul>
+<h2 id="compute-shader-pipeline-architecture">Compute Shader Pipeline
+Architecture</h2>
+<p>Implementing AO volumes in an OpenGL compute shader pipeline involves
+three sequential stages: volume population, occlusion computation, and
+final shading integration.</p>
+<h3 id="1-volume-population-voxelization">1. Volume Population
+(Voxelization)</h3>
+<p>Before calculating occlusion, the compute pipeline requires a spatial
+representation of occluders:</p>
+<ul>
+<li><strong>3D Texture Allocation:</strong> An OpenGL 3D texture
+(<code>GL_TEXTURE_3D</code>) is allocated with an appropriate internal
+format (such as <code>GL_R8</code> or <code>GL_RGBA8</code>) depending
+on whether only binary occupancy or full normal/color data is
+needed.</li>
+<li><strong>Data Injection:</strong> Scene geometry is mapped into the
+volume. This can be accomplished dynamically via conservative
+rasterization without a render target or by executing a compute shader
+that checks bounding volumes or triangle primitives against grid cells,
+setting the appropriate texels via <code>imageStore()</code>.</li>
+</ul>
+<h3 id="2-occlusion-calculation-via-compute-shader">2. Occlusion
+Calculation via Compute Shader</h3>
+<p>Once the volume represents the scene geometry, a compute shader
+calculates the visibility integral across the volume:</p>
+<ul>
+<li><strong>Work Group Configuration:</strong> Compute threads are
+typically arranged in 3D workgroups (e.g.,
+<code>layout(local_size_x = 8, local_size_y = 8, local_size_z = 8)</code>)
+to mirror the spatial locality of the 3D texture.</li>
+<li><strong>Occlusion Integration:</strong> For each voxel or surface
+coordinate, the compute shader casts rays or cones outward across the
+upper hemisphere using a low-discrepancy sampling pattern.</li>
+<li><strong>Traversing the Volume:</strong> The shader samples the 3D
+texture using trilinear filtering (<code>texture()</code> or
+<code>texelFetch()</code>) along each direction. As samples intersect
+occupied voxels, occlusion accumulates based on distance attenuation
+functions:</li>
+</ul>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> occlusion <span class="op">=</span> <span class="fl">0.0</span><span class="op">;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">for</span> <span class="op">(</span><span class="dt">int</span> i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> NUM_SAMPLES<span class="op">;</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> samplePos <span class="op">=</span> worldPos <span class="op">+</span> sampleDirections<span class="op">[</span>i<span class="op">]</span> <span class="op">*</span> stepSize <span class="op">*</span> <span class="op">(</span><span class="dt">float</span><span class="op">(</span>i<span class="op">)</span> <span class="op">+</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec3</span> uvw <span class="op">=</span> <span class="fu">worldToVolume</span><span class="op">(</span>samplePos<span class="op">);</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> density <span class="op">=</span> <span class="bu">texture</span><span class="op">(</span>u_VolumeTexture<span class="op">,</span> uvw<span class="op">).</span><span class="fu">r</span><span class="op">;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    occlusion <span class="op">+=</span> density <span class="op">/</span> <span class="op">(</span><span class="fl">1.0</span> <span class="op">+</span> <span class="bu">length</span><span class="op">(</span>sampleDirections<span class="op">[</span>i<span class="op">]</span> <span class="op">*</span> stepSize <span class="op">*</span> <span class="dt">float</span><span class="op">(</span>i<span class="op">)));</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>occlusion <span class="op">=</span> <span class="bu">clamp</span><span class="op">(</span><span class="fl">1.0</span> <span class="op">-</span> <span class="op">(</span>occlusion <span class="op">/</span> <span class="dt">float</span><span class="op">(</span>NUM_SAMPLES<span class="op">)),</span> <span class="fl">0.0</span><span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span></code></pre></div>
+<ul>
+<li><strong>Output:</strong> The resulting occlusion scalar or
+directional visibility coefficient (such as spherical harmonics) is
+written to an output 3D AO texture or directly into a deferred rendering
+G-buffer.</li>
+</ul>
+<h3 id="3-integration-into-the-shading-pass">3. Integration into the
+Shading Pass</h3>
+<p>During the scene's lighting pass, fragments query the generated AO
+volume:</p>
+<ul>
+<li>The fragment's world-space position is transformed into the
+normalized coordinate space of the AO volume (<code>[0, 1]</code>).</li>
+<li>A hardware-interpolated sample is retrieved from the AO
+texture.</li>
+<li>The sampled occlusion factor is multiplied directly with the ambient
+or indirect lighting term in the lighting equation.</li>
+</ul>
+<h2 id="opengl-implementation-specifics">OpenGL Implementation
+Specifics</h2>
+<p>Executing this process in OpenGL requires careful resource binding
+and synchronization primitives.</p>
+<h3 id="texture-allocation-and-binding">Texture Allocation and
+Binding</h3>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Create the 3D AO Volume texture</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>GLuint aoVolumeTex<span class="op">;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>glGenTextures<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="op">&amp;</span>aoVolumeTex<span class="op">);</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>glBindTexture<span class="op">(</span>GL_TEXTURE_3D<span class="op">,</span> aoVolumeTex<span class="op">);</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>glTexStorage3D<span class="op">(</span>GL_TEXTURE_3D<span class="op">,</span> <span class="dv">1</span><span class="op">,</span> GL_R8<span class="op">,</span> gridDimX<span class="op">,</span> gridDimY<span class="op">,</span> gridDimZ<span class="op">);</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_3D<span class="op">,</span> GL_TEXTURE_MIN_FILTER<span class="op">,</span> GL_LINEAR<span class="op">);</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_3D<span class="op">,</span> GL_TEXTURE_MAG_FILTER<span class="op">,</span> GL_LINEAR<span class="op">);</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_3D<span class="op">,</span> GL_TEXTURE_WRAP_S<span class="op">,</span> GL_CLAMP_TO_EDGE<span class="op">);</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_3D<span class="op">,</span> GL_TEXTURE_WRAP_T<span class="op">,</span> GL_CLAMP_TO_EDGE<span class="op">);</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_3D<span class="op">,</span> GL_TEXTURE_WRAP_R<span class="op">,</span> GL_CLAMP_TO_EDGE<span class="op">);</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a><span class="co">// Bind the texture to an image unit for compute write operations</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>glBindImageTexture<span class="op">(</span><span class="dv">0</span><span class="op">,</span> aoVolumeTex<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> GL_TRUE<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> GL_WRITE_ONLY<span class="op">,</span> GL_R8<span class="op">);</span></span></code></pre></div>
+<h3 id="compute-dispatch-and-synchronization">Compute Dispatch and
+Synchronization</h3>
+<p>Because the AO volume depends on previously written spatial data and
+will subsequently be read during the geometry or deferred shading phase,
+memory barriers are mandatory:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Step 1: Ensure voxelization writes are complete before AO calculation</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>glMemoryBarrier<span class="op">(</span>GL_SHADER_IMAGE_ACCESS_BARRIER_BIT <span class="op">|</span> GL_TEXTURE_FETCH_BARRIER_BIT<span class="op">);</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="co">// Step 2: Dispatch the AO compute shader</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>glUseProgram<span class="op">(</span>aoComputeProgram<span class="op">);</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>glDispatchCompute<span class="op">(</span>gridDimX <span class="op">/</span> <span class="dv">8</span><span class="op">,</span> gridDimY <span class="op">/</span> <span class="dv">8</span><span class="op">,</span> gridDimZ <span class="op">/</span> <span class="dv">8</span><span class="op">);</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="co">// Step 3: Ensure compute shader writes finish before reading in the lighting pass</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>glMemoryBarrier<span class="op">(</span>GL_TEXTURE_FETCH_BARRIER_BIT <span class="op">|</span> GL_SHADER_IMAGE_ACCESS_BARRIER_BIT<span class="op">);</span></span></code></pre></div>
+<h2 id="performance-and-quality-considerations">Performance and Quality
+Considerations</h2>
+<ul>
+<li><strong>Resolution Scaling:</strong> 3D textures exhibit cubic
+memory scaling (<span class="math inline">\(O(N^3)\)</span>). A <span
+class="math inline">\(128 \times 128 \times 128\)</span> 8-bit texture
+occupies 2 MB, whereas a <span class="math inline">\(512 \times 512
+\times 512\)</span> texture requires 128 MB. Developers often use
+cascaded or clipmap volumes centered on the camera to maintain high
+resolution locally without prohibitive VRAM costs.</li>
+<li><strong>Shared Memory:</strong> Compute shaders can pre-cache
+localized regions of the occupancy volume into <code>shared</code>
+memory arrays to minimize bandwidth pressure caused by adjacent threads
+reading identical neighborhood voxels.</li>
+<li><strong>Temporal Accumulation:</strong> In dynamic scenes,
+developers frequently calculate a fraction of the AO ray samples per
+frame and accumulate results over time using an exponential moving
+average, stabilizing frame rates while increasing visual fidelity.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/ambient-occlusion-volumes-via-open-gl-compute-shaders';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

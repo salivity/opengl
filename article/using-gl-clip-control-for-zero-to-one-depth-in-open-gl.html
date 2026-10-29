@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Using glClipControl for Zero-to-One Depth in OpenGL - opengl</title>
+    <meta name="description" content="This article explains how the glClipControl function configures OpenGL’s clipping behavior to use a zero-to-one depth range instead of the traditional negative-one-to-one range. You will learn the mechanics behind this function, how it alters normalized d">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/using-gl-clip-control-for-zero-to-one-depth-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Using glClipControl for Zero-to-One Depth in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/using-gl-clip-control-for-zero-to-one-depth-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how the glClipControl function configures OpenGL’s clipping behavior to use a zero-to-one depth range instead of the traditional negative-one-to-one range. You will learn the mechanics behind this function, how it alters normalized d" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="using-glclipcontrol-for-zero-to-one-depth-in-opengl">Using
+glClipControl for Zero-to-One Depth in OpenGL</h1>
+<p>This article explains how the <code>glClipControl</code> function
+configures OpenGL’s clipping behavior to use a zero-to-one depth range
+instead of the traditional negative-one-to-one range. You will learn the
+mechanics behind this function, how it alters normalized device
+coordinates (NDC), and why transitioning to a <span
+class="math inline">\([0, 1]\)</span> depth range improves
+floating-point depth buffer precision and simplifies cross-API engine
+architecture.</p>
+<h3 id="the-traditional-opengl-depth-problem">The Traditional OpenGL
+Depth Problem</h3>
+<p>Historically, OpenGL clips vertex positions in clip space such that
+the clip-space coordinate <span class="math inline">\(z_c\)</span> must
+satisfy:</p>
+<p><span class="math display">\[-w_c \le z_c \le w_c\]</span></p>
+<p>After the perspective divide (<span class="math inline">\(z_{ndc} =
+z_c / w_c\)</span>), the resulting Normalized Device Coordinate (NDC)
+lies within the <span class="math inline">\([-1, 1]\)</span> interval.
+Finally, the viewport transformation scales this range to the <span
+class="math inline">\([0, 1]\)</span> window depth range used by the
+depth buffer.</p>
+<p>This standard creates issues when working with modern graphics
+techniques:</p>
+<ul>
+<li><strong>Precision Waste:</strong> Floating-point depth buffers
+(<code>GL_DEPTH_COMPONENT32F</code>) have high precision close to
+<code>0.0</code> and lower precision near <code>1.0</code>. Mapping a
+<span class="math inline">\([-1, 1]\)</span> range onto a floating-point
+buffer causes an inefficient distribution of depth values.</li>
+<li><strong>API Inconsistency:</strong> Modern APIs such as Vulkan,
+Direct3D, and Metal natively use a <span class="math inline">\([0,
+1]\)</span> clip range (<span class="math inline">\(0 \le z_c \le
+w_c\)</span>). Supporting both OpenGL and other APIs previously required
+dedicated projection matrices and shader branches.</li>
+</ul>
+<h3 id="the-role-of-glclipcontrol">The Role of
+<code>glClipControl</code></h3>
+<p>Introduced in OpenGL 4.5 and available via the
+<code>ARB_clip_control</code> extension, <code>glClipControl</code>
+allows developers to directly modify the clipping volume and NDC
+transformation.</p>
+<p>The function signature is:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> glClipControl<span class="op">(</span>GLenum origin<span class="op">,</span> GLenum depth<span class="op">);</span></span></code></pre></div>
+<p>The parameters accept the following values:</p>
+<ul>
+<li><strong><code>origin</code></strong>: Controls the coordinate origin
+for window space.
+<ul>
+<li><code>GL_LOWER_LEFT</code>: Standard OpenGL convention (Y-axis
+points upward).</li>
+<li><code>GL_UPPER_LEFT</code>: Matches DirectX and Vulkan conventions
+(Y-axis points downward).</li>
+</ul></li>
+<li><strong><code>depth</code></strong>: Controls the clipping volume
+range.
+<ul>
+<li><code>GL_NEGATIVE_ONE_TO_ONE</code>: Default OpenGL behavior (<span
+class="math inline">\(-w_c \le z_c \le w_c\)</span>).</li>
+<li><code>GL_ZERO_TO_ONE</code>: Sets the clipping volume to modern
+standards (<span class="math inline">\(0 \le z_c \le w_c\)</span>).</li>
+</ul></li>
+</ul>
+<h3 id="establishing-the-zero-to-one-depth-range">Establishing the
+Zero-to-One Depth Range</h3>
+<p>To configure OpenGL to clip depth against a <span
+class="math inline">\([0, 1]\)</span> range while keeping the standard
+coordinate origin, execute:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>glClipControl<span class="op">(</span>GL_LOWER_LEFT<span class="op">,</span> GL_ZERO_TO_ONE<span class="op">);</span></span></code></pre></div>
+<p>When <code>GL_ZERO_TO_ONE</code> is active, the GPU alters the
+clipping equations:</p>
+<ol type="1">
+<li>Primitives are clipped against <span class="math inline">\(0 \le z_c
+\le w_c\)</span>.</li>
+<li>The perspective divide yields <span class="math inline">\(z_{ndc}
+\in [0, 1]\)</span>.</li>
+<li>The viewport transformation maps the <span class="math inline">\([0,
+1]\)</span> NDC directly to the <span class="math inline">\([0,
+1]\)</span> depth buffer without an intermediate remapping from <span
+class="math inline">\([-1, 1]\)</span>.</li>
+</ol>
+<h3 id="key-benefits">Key Benefits</h3>
+<h4 id="reversed-z-rendering">Reversed-Z Rendering</h4>
+<p>The primary motivation for using
+<code>glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE)</code> is enabling an
+effective reversed-Z setup. In a reversed-Z buffer, the near clipping
+plane is mapped to <code>1.0</code> and the far clipping plane is mapped
+to <code>0.0</code>. When combined with a floating-point depth buffer
+(<code>GL_DEPTH_COMPONENT32F</code>) and a greater-than depth test
+(<code>glDepthFunc(GL_GREATER)</code>), the numerical precision of
+floating-point representations matches the non-linear perspective
+projection. This virtually eliminates Z-fighting across vast view
+distances.</p>
+<h4 id="unified-projection-matrices">Unified Projection Matrices</h4>
+<p>By matching the depth clip volume to APIs like Vulkan and Direct3D, a
+single projection matrix implementation can be used across all backends.
+There is no longer a need to maintain separate matrix math libraries to
+account for OpenGL's legacy <span class="math inline">\([-1, 1]\)</span>
+clipping volume.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/using-gl-clip-control-for-zero-to-one-depth-in-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

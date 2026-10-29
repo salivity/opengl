@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modern OpenGL Mouse Picking: Ray Casting vs Framebuffers - opengl</title>
+    <meta name="description" content="Mouse picking in modern OpenGL translates 2D screen coordinates from user input into interactions with 3D scene geometry, primarily achieved through mathematical ray casting or custom integer ID framebuffers. Ray casting transforms screen pixels into worl">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/modern-open-gl-mouse-picking-ray-casting-vs-framebuffers">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Modern OpenGL Mouse Picking: Ray Casting vs Framebuffers - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/modern-open-gl-mouse-picking-ray-casting-vs-framebuffers" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Mouse picking in modern OpenGL translates 2D screen coordinates from user input into interactions with 3D scene geometry, primarily achieved through mathematical ray casting or custom integer ID framebuffers. Ray casting transforms screen pixels into worl" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="modern-opengl-mouse-picking-ray-casting-vs-framebuffers">Modern
+OpenGL Mouse Picking: Ray Casting vs Framebuffers</h1>
+<p>Mouse picking in modern OpenGL translates 2D screen coordinates from
+user input into interactions with 3D scene geometry, primarily achieved
+through mathematical ray casting or custom integer ID framebuffers. Ray
+casting transforms screen pixels into world-space rays using the inverse
+projection and view matrices, checking for intersections against
+bounding volumes or mesh polygons. Conversely, custom integer ID picking
+utilizes an off-screen Framebuffer Object (FBO) where every pickable
+object renders its unique ID directly to an integer-formatted texture,
+allowing instant pixel-perfect retrieval at the cursor position.</p>
+<h3 id="ray-casting">Ray Casting</h3>
+<p>Ray casting computes a line in 3D world space corresponding to the
+mouse cursor's 2D position and tests it against the geometric bounds of
+objects in the scene.</p>
+<h4 id="1-screen-to-world-space-transformation">1. Screen to World-Space
+Transformation</h4>
+<p>To cast a ray, screen coordinates must be mapped back to world space
+using the camera's inverse view and projection matrices:</p>
+<ol type="1">
+<li><strong>Normalized Device Coordinates (NDC):</strong> Map mouse
+pixel coordinates <span class="math inline">\((x, y)\)</span> to the
+range <span class="math inline">\([-1, 1]\)</span>. <span
+class="math display">\[\text{ndc}_x = \frac{2x}{\text{width}} - 1, \quad
+\text{ndc}_y = 1 - \frac{2y}{\text{height}}\]</span></li>
+<li><strong>Homogeneous Clip Space:</strong> Create a 4D vector pointing
+forward along the z-axis (e.g., <span class="math inline">\(z =
+-1\)</span> for the near plane, <span class="math inline">\(w =
+1\)</span>).</li>
+<li><strong>Eye/View Space:</strong> Multiply the clip-space ray by the
+inverse projection matrix <span class="math inline">\((P^{-1})\)</span>
+and set <span class="math inline">\(z = -1, w = 0\)</span> to define a
+direction vector.</li>
+<li><strong>World Space:</strong> Multiply by the inverse view matrix
+<span class="math inline">\((V^{-1})\)</span> and normalize the
+resulting vector to yield the final ray direction (<span
+class="math inline">\(D\)</span>). The camera position serves as the ray
+origin (<span class="math inline">\(O\)</span>).</li>
+</ol>
+<h4 id="2-intersection-testing">2. Intersection Testing</h4>
+<p>Once defined by <span class="math inline">\(R(t) = O + tD\)</span>,
+the ray is evaluated against scene geometry:</p>
+<ul>
+<li><strong>Bounding Volumes:</strong> Hierarchical checks using
+Axis-Aligned Bounding Boxes (AABB) or bounding spheres quickly eliminate
+non-colliding objects.</li>
+<li><strong>Triangle Meshes:</strong> When precision is required,
+algorithms like Möller–Trumbore evaluate ray-triangle
+intersections.</li>
+<li><strong>Pros:</strong> Highly dynamic, runs completely decoupled
+from the rendering pipeline, integrates naturally with CPU physics
+engines, and does not require rendering an extra pass.</li>
+<li><strong>Cons:</strong> Becomes computationally expensive on the CPU
+when evaluating high-density meshes unless accelerated by spatial
+partition structures like BVHs or octrees.</li>
+</ul>
+<hr />
+<h3 id="custom-integer-id-framebuffers">Custom Integer ID
+Framebuffers</h3>
+<p>Integer ID picking, often called color picking or FBO picking,
+delegates the selection logic to the GPU rendering pipeline.</p>
+<h4 id="1-framebuffer-and-texture-setup">1. Framebuffer and Texture
+Setup</h4>
+<p>Instead of reading typical color channels, modern OpenGL allows
+integer attachments:</p>
+<ul>
+<li>Generate an FBO using <code>glGenFramebuffers</code>.</li>
+<li>Attach an integer texture, typically using the <code>GL_R32UI</code>
+(single-channel 32-bit unsigned integer) format via
+<code>glTexImage2D</code>.</li>
+<li>Attach a standard depth buffer (<code>GL_DEPTH_COMPONENT</code>) so
+normal depth testing applies.</li>
+</ul>
+<h4 id="2-the-pick-render-pass">2. The Pick Render Pass</h4>
+<p>During a selection pass, the scene is drawn to the off-screen
+FBO:</p>
+<ul>
+<li><p>Each mesh or entity is assigned a unique 32-bit integer
+identifier.</p></li>
+<li><p>In the fragment shader, declare an unsigned integer output
+variable instead of a standard color vector:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 330 core</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">out</span> <span class="dt">uint</span> FragID<span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">uint</span> u_ObjectID<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    FragID <span class="op">=</span> u_ObjectID<span class="op">;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div></li>
+<li><p>Standard depth testing resolves occlusions, ensuring the closest
+object's ID occupies the final pixel.</p></li>
+</ul>
+<h4 id="3-reading-the-id">3. Reading the ID</h4>
+<p>When an interaction occurs, retrieve the integer value at the mouse
+coordinates:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>glBindFramebuffer<span class="op">(</span>GL_READ_FRAMEBUFFER<span class="op">,</span> pickingFBO<span class="op">);</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>glReadBuffer<span class="op">(</span>GL_COLOR_ATTACHMENT0<span class="op">);</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="dt">uint32_t</span> pixelID <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>glReadPixels<span class="op">(</span>mouseX<span class="op">,</span> viewportHeight <span class="op">-</span> mouseY<span class="op">,</span> <span class="dv">1</span><span class="op">,</span> <span class="dv">1</span><span class="op">,</span> GL_RED_INTEGER<span class="op">,</span> GL_UNSIGNED_INT<span class="op">,</span> <span class="op">&amp;</span>pixelID<span class="op">);</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>glBindFramebuffer<span class="op">(</span>GL_READ_FRAMEBUFFER<span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span></code></pre></div>
+<ul>
+<li><strong>Pros:</strong> Provides pixel-perfect accuracy
+automatically, inherently accounting for complex shaders, skeletal
+animations, and alpha-tested geometry without extra math.</li>
+<li><strong>Cons:</strong> Calling <code>glReadPixels</code> causes a
+synchronous CPU-GPU stall, forcing the CPU to wait until the GPU
+pipeline drains. This can be mitigated by offloading reads using
+asynchronous Pixel Buffer Objects (PBOs) or by restricting the pick pass
+strictly to clicks rather than continuous cursor movement.</li>
+</ul>
+<hr />
+<h3 id="choosing-between-the-two-approaches">Choosing Between the Two
+Approaches</h3>
+<ul>
+<li><strong>Use Ray Casting</strong> when user interactions drive
+physics, require continuous hovering, need intersection points and
+surface normals, or when operating in environments where rendering
+passes are constrained.</li>
+<li><strong>Use Integer ID Framebuffers</strong> in dense CAD/DCC
+software, level editors, or scenes with complex, animated, or irregular
+geometry where mathematical intersection tests would be too expensive or
+difficult to implement manually.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/modern-open-gl-mouse-picking-ray-casting-vs-framebuffers';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

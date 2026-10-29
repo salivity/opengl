@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How OpenGL Discard Keyword Kills Fragment Execution - opengl</title>
+    <meta name="description" content="The discard keyword in an OpenGL fragment shader provides a mechanism to conditionally terminate the processing of a fragment, completely preventing it from writing to the framebuffer. This article covers how discard functions at the shader level, how und">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-open-gl-discard-keyword-kills-fragment-execution">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How OpenGL Discard Keyword Kills Fragment Execution - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-open-gl-discard-keyword-kills-fragment-execution" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The discard keyword in an OpenGL fragment shader provides a mechanism to conditionally terminate the processing of a fragment, completely preventing it from writing to the framebuffer. This article covers how discard functions at the shader level, how und" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-opengl-discard-keyword-kills-fragment-execution">How OpenGL
+Discard Keyword Kills Fragment Execution</h1>
+<p>The <code>discard</code> keyword in an OpenGL fragment shader
+provides a mechanism to conditionally terminate the processing of a
+fragment, completely preventing it from writing to the framebuffer. This
+article covers how <code>discard</code> functions at the shader level,
+how underlying GPU architectures execute it within SIMD threads, its
+consequences for early depth testing, and the performance implications
+associated with cutout rendering.</p>
+<h3 id="the-purpose-and-logical-behavior-of-discard">The Purpose and
+Logical Behavior of <code>discard</code></h3>
+<p>In GLSL (OpenGL Shading Language), <code>discard</code> is a jump
+statement used exclusively inside fragment shaders. When the execution
+path encounters <code>discard</code>, the fragment currently being
+processed is effectively eliminated. The pipeline halts further
+evaluation for that specific fragment and prevents it from updating any
+associated framebuffer attachments, including color, depth, and stencil
+buffers.</p>
+<p>A standard application is alpha-testing or cutouts, such as rendering
+chain-link fences or foliage:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 330 core</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="dt">in</span> <span class="dt">vec2</span> TexCoords<span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec4</span> FragColor<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">sampler2D</span> texture_diffuse<span class="op">;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> texColor <span class="op">=</span> <span class="bu">texture</span><span class="op">(</span>texture_diffuse<span class="op">,</span> TexCoords<span class="op">);</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span><span class="op">(</span>texColor<span class="op">.</span><span class="fu">a</span> <span class="op">&lt;</span> <span class="fl">0.1</span><span class="op">)</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>        <span class="kw">discard</span><span class="op">;</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    FragColor <span class="op">=</span> texColor<span class="op">;</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>If the alpha value of the sample falls below the threshold, the
+fragment is discarded. Any following instructions within that shader
+invocation are bypassed, and no values are committed to the screen.</p>
+<h3
+id="architectural-reality-simd-quads-and-thread-masking">Architectural
+Reality: SIMD Quads and Thread Masking</h3>
+<p>While <code>discard</code> logically halts the execution of a single
+fragment, modern GPUs do not immediately terminate the underlying
+hardware thread in isolation.</p>
+<p>GPUs execute fragment shaders in parallel across lockstep groups of
+threads known as warps (NVIDIA) or wavefronts (AMD). Fragments are
+processed in 2x2 clusters called quads to allow the calculation of
+screen-space derivatives (<code>dFdx</code>, <code>dFdy</code>), which
+are necessary for tasks like texture level-of-detail (mipmapping).</p>
+<p>If only one or two fragments within a 2x2 quad execute a
+<code>discard</code>:</p>
+<ol type="1">
+<li>The hardware cannot shut down the SIMD execution lane entirely if
+neighboring threads in the same quad need to continue.</li>
+<li>The discarded lane is instead masked off (disabled).</li>
+<li>The masked thread may still execute subsequent instructions in
+lockstep with the active lanes in its quad to maintain derivative
+calculations, but its side effects, texture writes, and memory outputs
+are disabled.</li>
+<li>Only when all fragments in a warp or wavefront reach a discard point
+can the hardware scheduler fully terminate the entire block of execution
+early.</li>
+</ol>
+<h3 id="impact-on-early-z-testing">Impact on Early-Z Testing</h3>
+<p>The most significant performance consideration when using
+<code>discard</code> is its effect on Early Depth Testing (Early-Z).</p>
+<p>Under normal conditions, modern GPUs run depth and stencil tests
+<em>before</em> the fragment shader executes. If an incoming fragment is
+obscured by previously rendered geometry, the GPU drops the fragment
+immediately, avoiding expensive fragment shading altogether.</p>
+<p>When a shader contains the <code>discard</code> keyword:</p>
+<ul>
+<li>The GPU cannot safely write to the depth buffer before the fragment
+shader runs, because the shader itself determines whether the fragment
+even exists.</li>
+<li>The driver typically disables early depth writes. Some architectures
+can still perform early depth <em>tests</em> to reject fragments
+obscured by earlier geometry, but they must defer the final depth update
+until shader execution completes.</li>
+<li>This deferral limits the efficiency of occlusion culling and can
+lead to pipeline stalls, as depth updates are serialized later in the
+pipeline.</li>
+</ul>
+<h3 id="performance-considerations">Performance Considerations</h3>
+<p>Because <code>discard</code> disables early depth writes and can lead
+to thread divergence within SIMD warps, it should be used
+deliberately.</p>
+<p>To mitigate performance penalties:</p>
+<ul>
+<li><strong>Render opaque geometry first:</strong> Draw solid geometry
+before cutout geometry using standard early depth testing. This ensures
+that fragments hidden behind solid surfaces are culled before the
+expensive cutout shaders are ever invoked.</li>
+<li><strong>Keep discard logic near the top:</strong> Placing the
+discard condition as early as possible in the shader allows the compiler
+to skip unnecessary arithmetic for unmasked lanes, even if the SIMD warp
+remains partially active.</li>
+<li><strong>Evaluate Alpha Blending vs. Discard:</strong> In
+high-overdraw scenes, blending can sometimes be more pipeline-friendly
+than branching with <code>discard</code>, though it requires depth
+sorting and incurs memory bandwidth overhead.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/how-open-gl-discard-keyword-kills-fragment-execution';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Discard Impact on Early-Z Culling - opengl</title>
+    <meta name="description" content="Using the discard keyword inside an OpenGL fragment shader directly interferes with hardware-level early depth testing (Early-Z), frequently leading to reduced rendering throughput and unnecessary GPU overhead. This article explains how Early-Z culling op">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-discard-impact-on-early-z-culling">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Discard Impact on Early-Z Culling - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-discard-impact-on-early-z-culling" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Using the discard keyword inside an OpenGL fragment shader directly interferes with hardware-level early depth testing (Early-Z), frequently leading to reduced rendering throughput and unnecessary GPU overhead. This article explains how Early-Z culling op" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-discard-impact-on-early-z-culling">OpenGL Discard Impact
+on Early-Z Culling</h1>
+<p>Using the <code>discard</code> keyword inside an OpenGL fragment
+shader directly interferes with hardware-level early depth testing
+(Early-Z), frequently leading to reduced rendering throughput and
+unnecessary GPU overhead. This article explains how Early-Z culling
+operates under normal circumstances, why invoking <code>discard</code>
+forces hardware to alter its depth-testing behavior, the specific
+performance penalties incurred, and how to mitigate these issues in
+rendering pipelines.</p>
+<h3 id="understanding-early-z-culling">Understanding Early-Z
+Culling</h3>
+<p>In standard graphics pipelines, depth testing occurs naturally after
+fragment shading (Late-Z). However, modern GPUs optimize this process by
+performing an Early-Z test before the fragment shader executes. If an
+incoming fragment is obscured by existing geometry, the GPU culls it
+immediately. This optimization prevents the pipeline from executing
+computationally expensive fragment shader instructions on invisible
+pixels, drastically reducing shading cost and memory bandwidth.</p>
+<h3 id="why-discard-compromises-early-z">Why <code>discard</code>
+Compromises Early-Z</h3>
+<p>The <code>discard</code> keyword conditionally terminates the
+execution of a fragment shader and prevents the fragment from updating
+the framebuffer or the depth buffer. This conditional behavior creates a
+dependency hazard for the depth testing pipeline:</p>
+<ol type="1">
+<li><strong>Uncertainty of Pixel Existence:</strong> The GPU cannot
+write a fragment's depth value to the depth buffer before the shader
+runs because it does not yet know whether the shader will execute a
+<code>discard</code>.</li>
+<li><strong>Disabling Depth Pre-Writes:</strong> Because writing depth
+early could erroneously mask geometry behind a discarded pixel, the
+hardware must disable early depth writes.</li>
+<li><strong>Fallback to Late-Z:</strong> On many GPU architectures, the
+presence of <code>discard</code> completely disables Early-Z
+optimization for the affected draw call, shifting both the depth test
+and depth write to the Late-Z stage.</li>
+</ol>
+<h3 id="primary-performance-consequences">Primary Performance
+Consequences</h3>
+<h4 id="1-wasted-fragment-shading-lost-occlusion-culling">1. Wasted
+Fragment Shading (Lost Occlusion Culling)</h4>
+<p>When Early-Z is disabled, the GPU must execute the fragment shader
+for every rasterized pixel, regardless of whether it is hidden behind
+already-rendered opaque geometry. In scenes with high depth complexity
+(dense overdraw), this causes significant performance drops as hidden
+pixels consume arithmetic logic units (ALU) and texture filtering
+resources.</p>
+<h4 id="2-hierarchical-z-hiz-degradation">2. Hierarchical Z (HiZ)
+Degradation</h4>
+<p>GPUs rely on hierarchical depth buffers (HiZ) to reject entire tiles
+of hidden pixels at once. When shaders introduce dynamic discards, the
+hardware often cannot update or maintain HiZ data accurately for that
+draw call. In severe cases, HiZ might be temporarily disabled or
+partially invalidated, causing performance degradation that spills into
+subsequent draw passes.</p>
+<h4 id="3-pipeline-stalls-and-cache-serialization">3. Pipeline Stalls
+and Cache Serialization</h4>
+<p>Deferred depth writes require the GPU to manage fragments longer in
+memory. Rather than retiring a quad as soon as the test finishes, the
+rasterizer must track dependencies between overlapping fragments to
+ensure they write back to the depth and color buffers in the correct API
+order. This tracking increases pressure on fragment caches and can
+create serialization bottlenecks.</p>
+<h3 id="partial-mitigations-by-modern-hardware">Partial Mitigations by
+Modern Hardware</h3>
+<p>Modern GPU architectures implement varying levels of mitigation:</p>
+<ul>
+<li><strong>Early-Z Test with Late-Z Write:</strong> Many desktop
+architectures allow an Early-Z <em>read/test</em> even if
+<code>discard</code> is present, provided the shader does not write to
+<code>gl_FragDepth</code>. If the incoming fragment is already occluded
+by previously written opaque depth, it is discarded immediately.
+However, if the fragment passes, it cannot write to the depth buffer
+early. Consequently, if another object is rendered behind it within the
+same pass, that subsequent object cannot be culled early.</li>
+</ul>
+<h3 id="best-practices-to-minimize-overhead">Best Practices to Minimize
+Overhead</h3>
+<ul>
+<li><strong>Use a Depth Pre-Pass:</strong> Render your scene geometry to
+the depth buffer first using a minimal shader with depth writes enabled.
+In the secondary color pass, set the depth mask to false
+(<code>glDepthMask(GL_FALSE)</code>) and depth func to equal
+(<code>glDepthFunc(GL_EQUAL)</code>). Early-Z will successfully cull all
+fully hidden fragments before they hit the shader containing
+<code>discard</code>.</li>
+<li><strong>Sort Draw Calls Front-to-Back:</strong> If a depth pre-pass
+is too costly, drawing opaque geometry before masked (discarding)
+geometry ensures that fully opaque objects establish depth values that
+can cull masked objects via partial Early-Z tests.</li>
+<li><strong>Consider Alpha-to-Coverage:</strong> For cutouts such as
+foliage, MSAA-based alpha-to-coverage can replace manual
+<code>discard</code> statements in the shader, allowing the hardware to
+retain standard depth evaluation behaviors.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/open-gl-discard-impact-on-early-z-culling';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

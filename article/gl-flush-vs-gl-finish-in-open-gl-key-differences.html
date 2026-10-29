@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>glFlush vs glFinish in OpenGL: Key Differences - opengl</title>
+    <meta name="description" content="In OpenGL development, managing how and when rendering commands are sent to the graphics hardware is critical for performance and synchronization. This article explains the core functions of glFlush and glFinish, highlighting their architectural differenc">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/gl-flush-vs-gl-finish-in-open-gl-key-differences">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="glFlush vs glFinish in OpenGL: Key Differences - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/gl-flush-vs-gl-finish-in-open-gl-key-differences" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In OpenGL development, managing how and when rendering commands are sent to the graphics hardware is critical for performance and synchronization. This article explains the core functions of glFlush and glFinish, highlighting their architectural differenc" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="glflush-vs-glfinish-in-opengl-key-differences">glFlush vs
+glFinish in OpenGL: Key Differences</h1>
+<p>In OpenGL development, managing how and when rendering commands are
+sent to the graphics hardware is critical for performance and
+synchronization. This article explains the core functions of
+<code>glFlush</code> and <code>glFinish</code>, highlighting their
+architectural differences, their impact on CPU-GPU parallelism, and the
+specific scenarios where each command should be used.</p>
+<h2 id="the-opengl-command-pipeline">The OpenGL Command Pipeline</h2>
+<p>OpenGL operates on a client-server architecture. The application
+running on the CPU acts as the client, while the GPU (or software
+rasterizer) acts as the server. When you issue rendering calls—such as
+drawing geometry, binding textures, or setting states—the CPU does not
+immediately execute them on the GPU. Instead, it places them into a
+command queue (buffer) to minimize communication overhead.</p>
+<p>Both <code>glFlush</code> and <code>glFinish</code> control how this
+command queue is processed, but they do so with fundamentally different
+mechanics.</p>
+<h2 id="what-is-glflush">What is <code>glFlush</code>?</h2>
+<p>The <code>glFlush</code> command forces the OpenGL client to empty
+its internal command buffer and send all pending commands down the
+pipeline to the GPU.</p>
+<ul>
+<li><strong>Non-Blocking Execution:</strong> <code>glFlush</code>
+returns immediately. It does not wait for the GPU to complete rendering
+the commands; it simply guarantees that the commands have been
+dispatched and will be processed within a finite amount of time.</li>
+<li><strong>Preserving Parallelism:</strong> Because it does not wait
+for execution to complete, <code>glFlush</code> preserves parallel
+processing between the CPU and the GPU. The CPU can proceed with game
+logic or preparing the next frame while the GPU processes the flushed
+queue.</li>
+</ul>
+<h2 id="what-is-glfinish">What is <code>glFinish</code>?</h2>
+<p>The <code>glFinish</code> command also empties the command buffer,
+but it behaves as a synchronous barrier.</p>
+<ul>
+<li><strong>Blocking Execution:</strong> <code>glFinish</code> stalls
+the calling thread on the CPU until all previously issued OpenGL
+commands have completely finished executing on the GPU. It does not
+return until the GPU is entirely idle relative to the issued
+pipeline.</li>
+<li><strong>Pipeline Stalls:</strong> Calling <code>glFinish</code>
+forces the CPU and GPU into lockstep, completely eliminating parallel
+processing. The CPU sits idle waiting for the GPU, leading to severe
+performance bottlenecks if used within a normal rendering loop.</li>
+</ul>
+<h2 id="key-differences">Key Differences</h2>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Feature</th>
+<th style="text-align: left;"><code>glFlush</code></th>
+<th style="text-align: left;"><code>glFinish</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>Behavior</strong></td>
+<td style="text-align: left;">Asynchronous (non-blocking)</td>
+<td style="text-align: left;">Synchronous (blocking)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Return Condition</strong></td>
+<td style="text-align: left;">Returns immediately after dispatching
+commands</td>
+<td style="text-align: left;">Returns only after all commands fully
+execute</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>CPU/GPU Concurrency</strong></td>
+<td style="text-align: left;">Preserved</td>
+<td style="text-align: left;">Destroyed (pipeline stall)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Performance Impact</strong></td>
+<td style="text-align: left;">Minimal</td>
+<td style="text-align: left;">Severe</td>
+</tr>
+</tbody>
+</table>
+<h2 id="when-to-use-each-command">When to Use Each Command</h2>
+<h3 id="when-to-use-glflush">When to Use <code>glFlush</code></h3>
+<ul>
+<li><strong>Single-Buffered Contexts:</strong> If you are rendering
+directly to the front buffer without a swap mechanism,
+<code>glFlush</code> ensures that the drawn shapes appear on the display
+promptly.</li>
+<li><strong>Network-Based OpenGL:</strong> In network rendering contexts
+(like classic X11), <code>glFlush</code> ensures packets are sent across
+the network rather than lingering in the local client buffer.</li>
+<li><strong>Note on Modern Double Buffering:</strong> If you use double
+buffering, window management libraries (<code>glfwSwapBuffers</code>,
+<code>glutSwapBuffers</code>, or platform equivalents like
+<code>wglSwapBuffers</code>) automatically flush the pipeline before
+swapping buffers, making explicit calls to <code>glFlush</code> largely
+redundant.</li>
+</ul>
+<h3 id="when-to-use-glfinish">When to Use <code>glFinish</code></h3>
+<ul>
+<li><strong>Benchmarking and Profiling:</strong> Simple CPU-side timing
+of GPU commands requires forcing the GPU to finish rendering to measure
+accurate elapsed time (though OpenGL Timer Queries are the modern,
+non-stalling alternative).</li>
+<li><strong>Inter-Context / Inter-API Synchronization:</strong> When
+sharing resources (such as textures or framebuffers) between OpenGL and
+external APIs like OpenCL, CUDA, or Vulkan without native fence
+synchronization objects.</li>
+<li><strong>Debugging:</strong> Isolating crashes or driver hangs to
+determine exactly which command caused the GPU failure.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/gl-flush-vs-gl-finish-in-open-gl-key-differences';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

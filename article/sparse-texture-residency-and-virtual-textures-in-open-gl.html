@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sparse Texture Residency and Virtual Textures in OpenGL - opengl</title>
+    <meta name="description" content="Sparse texture residency is an advanced graphics technique that decouples a texture&#39;s virtual dimensions from its physical video memory consumption, allowing graphics engines to load and render colossal textures using only a fraction of system VRAM. In Op">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/sparse-texture-residency-and-virtual-textures-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Sparse Texture Residency and Virtual Textures in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/sparse-texture-residency-and-virtual-textures-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Sparse texture residency is an advanced graphics technique that decouples a texture&#39;s virtual dimensions from its physical video memory consumption, allowing graphics engines to load and render colossal textures using only a fraction of system VRAM. In Op" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="sparse-texture-residency-and-virtual-textures-in-opengl">Sparse
+Texture Residency and Virtual Textures in OpenGL</h1>
+<p>Sparse texture residency is an advanced graphics technique that
+decouples a texture's virtual dimensions from its physical video memory
+consumption, allowing graphics engines to load and render colossal
+textures using only a fraction of system VRAM. In OpenGL, this feature
+is enabled through dedicated extensions that divide textures into
+fixed-size tiles and expose control over which tiles reside in physical
+memory. By utilizing sparse residency, developers can implement
+virtualized texturing systems—often called mega-texturing—streaming only
+the visible and resolution-appropriate portions of a surface to the GPU
+on demand.</p>
+<h3 id="the-mechanics-of-sparse-texture-residency">The Mechanics of
+Sparse Texture Residency</h3>
+<p>Traditionally, creating a texture in OpenGL requires allocating a
+contiguous block of physical GPU memory sufficient to hold the entire
+surface and all of its mipmap levels. If an application requires a
+16,384 x 16,384 RGBA8 texture, it must allocate over a gigabyte of VRAM
+immediately, regardless of how much of that texture is currently
+visible.</p>
+<p>Sparse texture residency, exposed via the
+<code>GL_ARB_sparse_texture</code> extension, alters this behavior by
+leveraging modern GPU page tables. Instead of reserving physical memory
+upfront, OpenGL allocates a virtual address space for the texture. The
+texture is partitioned into uniform, implementation-defined
+three-dimensional blocks known as "pages" or "tiles" (typically 64 KB in
+size).</p>
+<p>Under this model, tiles can exist in two states:</p>
+<ul>
+<li><strong>Resident:</strong> The tile is backed by physical VRAM and
+can be sampled normally by shaders.</li>
+<li><strong>Non-resident (Uncommitted):</strong> The tile occupies
+virtual address space, but no physical VRAM is allocated. Sampling an
+uncommitted tile yields a predefined value (typically zero) without
+crashing or causing hardware faults.</li>
+</ul>
+<p>Developers control tile allocation at runtime using OpenGL functions
+such as <code>glTexPageCommitmentARB</code>, which dynamically commits
+or frees physical memory for specific subregions and mip levels.</p>
+<h3 id="enabling-virtualized-textures-in-opengl">Enabling Virtualized
+Textures in OpenGL</h3>
+<p>Virtualized texturing is an architectural approach where scenes
+reference textures that are far larger than the available physical
+memory, streaming data dynamically as the camera moves. Sparse texture
+residency serves as the hardware-accelerated foundation for this process
+in three distinct stages:</p>
+<h4 id="1-defining-the-virtual-canvas">1. Defining the Virtual
+Canvas</h4>
+<p>With sparse textures, an application can allocate an enormous virtual
+texture—such as a unified 64K x 64K landscape map—directly in OpenGL.
+Because uncommitted pages consume virtually no physical memory, creating
+multiple gigapixel surfaces incurs negligible baseline VRAM cost.</p>
+<h4 id="2-hardware-level-residency-feedback">2. Hardware-Level Residency
+Feedback</h4>
+<p>To determine which texture tiles need to be loaded, the rendering
+pipeline must identify which regions the camera can see at any given
+distance. The sparse texture extension provides specialized GLSL
+functions (such as <code>sparseTextureARB</code> and
+<code>sparseTextureLodARB</code>).</p>
+<p>When a fragment shader samples a sparse texture, these intrinsics
+return both the sampled color data and a residency code. This code
+indicates whether the sample hit a resident page or fell on an
+uncommitted page. Shaders can write these missing-page coordinates to a
+low-resolution feedback buffer, providing the CPU with a precise list of
+missing tiles required for upcoming frames.</p>
+<h4 id="3-asynchronous-streaming-and-page-eviction">3. Asynchronous
+Streaming and Page Eviction</h4>
+<p>Once the application identifies the missing pages via the feedback
+buffer, it reads the required texture data from disk or system RAM and
+uploads it to the GPU via pixel buffer objects (PBOs). It then calls
+<code>glTexPageCommitmentARB</code> to map those tiles into physical
+memory.</p>
+<p>Conversely, when an area of a texture leaves the view frustum or
+requires a lower mip level, the application calls the commitment
+function to unbind the page, freeing that physical VRAM for other
+surfaces.</p>
+<p>By offloading address translation and clipping to the GPU's native
+memory management unit, sparse texture residency eliminates the
+CPU-heavy software indirection tables historically required for virtual
+texturing, providing a highly performant and scalable texture streaming
+architecture in OpenGL.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/sparse-texture-residency-and-virtual-textures-in-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

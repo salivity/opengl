@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Purpose of Shared Memory in OpenGL Compute Shaders - opengl</title>
+    <meta name="description" content="Shared memory in OpenGL compute shaders serves as a high-speed, on-chip scratchpad designed for fast data exchange and caching among threads within the same local workgroup. By providing a low-latency alternative to high-bandwidth global video memory (VRA">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/purpose-of-shared-memory-in-open-gl-compute-shaders">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Purpose of Shared Memory in OpenGL Compute Shaders - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/purpose-of-shared-memory-in-open-gl-compute-shaders" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Shared memory in OpenGL compute shaders serves as a high-speed, on-chip scratchpad designed for fast data exchange and caching among threads within the same local workgroup. By providing a low-latency alternative to high-bandwidth global video memory (VRA" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="purpose-of-shared-memory-in-opengl-compute-shaders">Purpose of
+Shared Memory in OpenGL Compute Shaders</h1>
+<p>Shared memory in OpenGL compute shaders serves as a high-speed,
+on-chip scratchpad designed for fast data exchange and caching among
+threads within the same local workgroup. By providing a low-latency
+alternative to high-bandwidth global video memory (VRAM), shared memory
+enables threads to cooperate, reuse fetched data, and perform collective
+operations efficiently. Utilizing this memory space minimizes costly
+memory bottlenecks and dramatically accelerates parallel execution
+patterns such as image filtering, reductions, and physics
+simulations.</p>
+<h3 id="accelerating-memory-access-latency">Accelerating Memory Access
+Latency</h3>
+<p>In modern GPU architectures, global memory—accessed through Shader
+Storage Buffer Objects (SSBOs), Uniform Buffer Objects (UBOs), or
+textures—resides in off-chip DRAM. Accessing global memory takes
+hundreds of clock cycles. In contrast, shared memory is physically
+located on the GPU compute units, comparable to an L1 cache in latency
+and throughput. Declaring variables with the <code>shared</code> keyword
+in GLSL allows compute invocations to read and write data in just a few
+cycles, removing memory access delays from performance-critical
+calculation loops.</p>
+<h3 id="facilitating-inter-thread-communication">Facilitating
+Inter-Thread Communication</h3>
+<p>Threads (invocations) in a compute shader execute independently, but
+algorithms often require them to share intermediate results. Shared
+memory acts as a local bulletin board accessible to every invocation
+within that specific workgroup:</p>
+<ul>
+<li><strong>Data Sharing:</strong> Invocations write their individual
+calculations to specific indices of a shared array, allowing neighboring
+invocations to read those values.</li>
+<li><strong>Synchronization:</strong> To prevent race conditions, OpenGL
+provides synchronization barriers such as <code>barrier()</code> and
+<code>memoryBarrierShared()</code>. These intrinsics guarantee that all
+shared memory writes are complete and visible to all threads in the
+workgroup before execution continues.</li>
+</ul>
+<p>This mechanism is foundational for collective algorithms like
+parallel reductions (e.g., finding the minimum, maximum, or sum of an
+array) and parallel prefix sums (scans).</p>
+<h3 id="reducing-global-memory-bandwidth">Reducing Global Memory
+Bandwidth</h3>
+<p>A primary performance bottleneck in GPU computing is memory bandwidth
+saturation. Shared memory allows workgroups to implement cooperative
+loading:</p>
+<ol type="1">
+<li>Invocations collectively read a block (or tile) of data from global
+memory into shared memory once.</li>
+<li>The workgroup synchronizes via <code>barrier()</code>.</li>
+<li>Invocations read from and write to the shared cache multiple times
+during processing.</li>
+<li>Results are written back to global memory once the computation
+concludes.</li>
+</ol>
+<p>This pattern is widely used in image convolutions and blur filters.
+Instead of every pixel invocation independently loading its neighboring
+pixels from global memory—causing redundant reads—the workgroup
+cooperatively stages the neighborhood into shared memory, drastically
+reducing the total number of off-chip memory transactions.</p>
+<h3 id="architectural-constraints">Architectural Constraints</h3>
+<p>While powerful, shared memory is a finite resource managed per
+compute unit (often limited to 32 KB or 64 KB per workgroup).
+Over-allocating shared memory restricts the number of active workgroups
+that can run concurrently on a hardware compute unit, which can reduce
+thread occupancy and diminish overall GPU utilization. Efficient shader
+design balances shared memory usage with the number of parallel threads
+to maximize throughput.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/purpose-of-shared-memory-in-open-gl-compute-shaders';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

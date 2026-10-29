@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parallax Occlusion Mapping vs Normal Mapping in OpenGL - opengl</title>
+    <meta name="description" content="Parallax occlusion mapping is an advanced shading technique that simulates complex geometric displacement and depth on flat surfaces without adding extra polygons. While standard normal mapping alters surface lighting to mimic minor details, parallax occl">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/parallax-occlusion-mapping-vs-normal-mapping-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Parallax Occlusion Mapping vs Normal Mapping in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/parallax-occlusion-mapping-vs-normal-mapping-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Parallax occlusion mapping is an advanced shading technique that simulates complex geometric displacement and depth on flat surfaces without adding extra polygons. While standard normal mapping alters surface lighting to mimic minor details, parallax occl" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="parallax-occlusion-mapping-vs-normal-mapping-in-opengl">Parallax
+Occlusion Mapping vs Normal Mapping in OpenGL</h1>
+<p>Parallax occlusion mapping is an advanced shading technique that
+simulates complex geometric displacement and depth on flat surfaces
+without adding extra polygons. While standard normal mapping alters
+surface lighting to mimic minor details, parallax occlusion mapping
+calculates visual depth, self-occlusion, and motion parallax through an
+internal ray-marching algorithm implemented directly within fragment
+shaders. This article explores how parallax occlusion mapping operates
+and how it significantly expands upon standard normal mapping in an
+OpenGL rendering pipeline.</p>
+<h2 id="standard-normal-mapping-and-its-limitations">Standard Normal
+Mapping and Its Limitations</h2>
+<p>Normal mapping is a standard technique in modern real-time rendering.
+In OpenGL, an artist bakes fine geometric details from a high-poly mesh
+into a 2D RGB texture known as a normal map. Inside the fragment shader,
+these RGB values are decoded into normal vectors (typically mapped from
+the <span class="math inline">\([0, 1]\)</span> range to <span
+class="math inline">\([-1, 1]\)</span> in tangent space). The fragment
+shader then uses these per-pixel normals instead of the geometric
+surface normal to compute lighting models such as Blinn-Phong or
+physically based rendering (PBR).</p>
+<p>While computationally cheap and effective for subtle surface bumps,
+normal mapping has distinct limitations:</p>
+<ul>
+<li><strong>No Geometric Parallax:</strong> As the camera moves across
+the surface, details do not shift relative to one another.</li>
+<li><strong>Flat Grazing Angles:</strong> When viewed at sharp angles,
+the illusion breaks completely because the silhouette remains perfectly
+flat.</li>
+<li><strong>No Self-Occlusion:</strong> High points on the texture
+cannot obscure low points behind them.</li>
+</ul>
+<h2 id="what-is-parallax-occlusion-mapping">What is Parallax Occlusion
+Mapping?</h2>
+<p>Parallax Occlusion Mapping (POM) resolves these limitations by
+incorporating a height map (often packed into the alpha channel of a
+normal map or bound as a separate texture) alongside the surface
+normals. Instead of simply reading the texture coordinate supplied by
+the vertex stage, POM performs an iterative ray-marching routine in the
+fragment shader to determine which point of the height field the camera
+is actually looking at.</p>
+<p>When a fragment is processed, a ray is projected from the camera's
+eye position into the height field in tangent space. The shader steps
+along this view ray, comparing the ray's depth with the height sampled
+from the height map. Once the ray intersects the height field, the
+shader interpolates between the step before and after the intersection
+to find a precise texture coordinate offset.</p>
+<h2 id="how-pom-expands-upon-normal-mapping">How POM Expands Upon Normal
+Mapping</h2>
+<p>Parallax occlusion mapping does not replace normal mapping; rather,
+it augments it by dynamically calculating correct UV offsets before
+normal sampling and lighting occur.</p>
+<h3 id="1-motion-parallax">1. Motion Parallax</h3>
+<p>Because texture coordinates are displaced based on the angle between
+the surface normal and the view direction, features appear to have
+genuine depth. Features closer to the viewer shift faster than recessed
+features, creating real motion parallax as the camera moves.</p>
+<h3 id="2-true-self-occlusion">2. True Self-Occlusion</h3>
+<p>In standard normal mapping, a deep crevice receives the same UV
+coordinate regardless of angle. In POM, if a raised edge blocks the line
+of sight into a crevice, the ray-march terminates on the raised edge.
+This causes raised features to realistically occlude lower details at
+shallow viewing angles.</p>
+<h3 id="3-self-shadowing">3. Self-Shadowing</h3>
+<p>POM shaders can perform a secondary ray-march from the calculated
+surface intersection point toward the light source. If any height field
+geometry intersects this light ray, the fragment is determined to be in
+shadow. This generates dynamic self-shadows cast by micro-geometry onto
+itself, something impossible with standard normal mapping.</p>
+<h2 id="implementing-pom-in-the-opengl-pipeline">Implementing POM in the
+OpenGL Pipeline</h2>
+<p>Integrating POM into an OpenGL shader requires moving lighting and
+view computations into tangent space to align with the height map
+data:</p>
+<ol type="1">
+<li><strong>Vertex Shader Preparation:</strong> The vertex shader
+computes the Tangent, Bitangent, and Normal (TBN) matrix and uses it to
+transform the view vector (camera position minus vertex position) from
+world space into tangent space. Passing the tangent-space view vector to
+the fragment shader ensures the ray-marching algorithm operates in
+texture coordinate space.</li>
+<li><strong>Ray Marching in the Fragment Shader:</strong> The fragment
+shader divides the height map into a set number of layers (often scaling
+dynamically based on the view angle to optimize performance). It
+advances along the tangent-space view ray until the ray depth exceeds
+the sampled height value.</li>
+<li><strong>Occlusion Interpolation:</strong> The shader linearly
+interpolates between the height values of the last two steps to produce
+an accurate texture coordinate without requiring extremely high sample
+counts.</li>
+<li><strong>Sampling and Lighting:</strong> The modified texture
+coordinate is then used to sample the normal map, albedo map, and
+roughness maps. The rest of the lighting calculations proceed as normal,
+resulting in a three-dimensional appearance on an otherwise flat
+polygon.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/parallax-occlusion-mapping-vs-normal-mapping-in-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How to Structure and Sample Cubemaps in OpenGL - opengl</title>
+    <meta name="description" content="Cubemaps are specialized texture constructs in OpenGL composed of six distinct 2D images mapped onto the faces of an imaginary cube, commonly utilized for skyboxes, environment mapping, and omnidirectional shadow maps. Unlike standard 2D textures that uti">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-to-structure-and-sample-cubemaps-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How to Structure and Sample Cubemaps in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-to-structure-and-sample-cubemaps-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Cubemaps are specialized texture constructs in OpenGL composed of six distinct 2D images mapped onto the faces of an imaginary cube, commonly utilized for skyboxes, environment mapping, and omnidirectional shadow maps. Unlike standard 2D textures that uti" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-to-structure-and-sample-cubemaps-in-opengl">How to Structure
+and Sample Cubemaps in OpenGL</h1>
+<p>Cubemaps are specialized texture constructs in OpenGL composed of six
+distinct 2D images mapped onto the faces of an imaginary cube, commonly
+utilized for skyboxes, environment mapping, and omnidirectional shadow
+maps. Unlike standard 2D textures that utilize UV coordinates, cubemaps
+are structured around directional axes and are sampled using a
+three-dimensional direction vector originating from the cube's center.
+This article outlines the architectural structure of cubemaps in OpenGL,
+the API procedures required to configure them, and the mathematical and
+shader mechanics used to sample them.</p>
+<h3 id="the-structure-of-a-cubemap">The Structure of a Cubemap</h3>
+<p>A cubemap texture target is represented by the OpenGL constant
+<code>GL_TEXTURE_CUBE_MAP</code>. Internally, it manages six individual
+2D texture layers, each representing an axis-aligned face of a unit
+cube:</p>
+<ul>
+<li><code>GL_TEXTURE_CUBE_MAP_POSITIVE_X</code> (Right)</li>
+<li><code>GL_TEXTURE_CUBE_MAP_NEGATIVE_X</code> (Left)</li>
+<li><code>GL_TEXTURE_CUBE_MAP_POSITIVE_Y</code> (Top)</li>
+<li><code>GL_TEXTURE_CUBE_MAP_NEGATIVE_Y</code> (Bottom)</li>
+<li><code>GL_TEXTURE_CUBE_MAP_POSITIVE_Z</code> (Back)</li>
+<li><code>GL_TEXTURE_CUBE_MAP_NEGATIVE_Z</code> (Front)</li>
+</ul>
+<p>In memory, these six targets have consecutive integer values
+beginning with <code>GL_TEXTURE_CUBE_MAP_POSITIVE_X</code>. This layout
+allows developers to iterate through the faces programmatically using a
+loop to allocate and upload image data.</p>
+<p>All six faces must be square and must share identical dimensions,
+color formats, and mipmap levels to form a valid cubemap texture.</p>
+<h3 id="loading-and-configuring-a-cubemap">Loading and Configuring a
+Cubemap</h3>
+<p>Configuring a cubemap involves generating a texture ID, binding it to
+the <code>GL_TEXTURE_CUBE_MAP</code> target, uploading data for all six
+individual faces, and setting specific sampling parameters.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">unsigned</span> <span class="dt">int</span> textureID<span class="op">;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>glGenTextures<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="op">&amp;</span>textureID<span class="op">);</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>glBindTexture<span class="op">(</span>GL_TEXTURE_CUBE_MAP<span class="op">,</span> textureID<span class="op">);</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="op">(</span><span class="dt">unsigned</span> <span class="dt">int</span> i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> <span class="dv">6</span><span class="op">;</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    glTexImage2D<span class="op">(</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>        GL_TEXTURE_CUBE_MAP_POSITIVE_X <span class="op">+</span> i<span class="op">,</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>        <span class="dv">0</span><span class="op">,</span> GL_RGB<span class="op">,</span> width<span class="op">,</span> height<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> GL_RGB<span class="op">,</span> GL_UNSIGNED_BYTE<span class="op">,</span> data<span class="op">[</span>i<span class="op">]</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    <span class="op">);</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_CUBE_MAP<span class="op">,</span> GL_TEXTURE_MIN_FILTER<span class="op">,</span> GL_LINEAR<span class="op">);</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_CUBE_MAP<span class="op">,</span> GL_TEXTURE_MAG_FILTER<span class="op">,</span> GL_LINEAR<span class="op">);</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_CUBE_MAP<span class="op">,</span> GL_TEXTURE_WRAP_S<span class="op">,</span> GL_CLAMP_TO_EDGE<span class="op">);</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_CUBE_MAP<span class="op">,</span> GL_TEXTURE_WRAP_T<span class="op">,</span> GL_CLAMP_TO_EDGE<span class="op">);</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_CUBE_MAP<span class="op">,</span> GL_TEXTURE_WRAP_R<span class="op">,</span> GL_CLAMP_TO_EDGE<span class="op">);</span></span></code></pre></div>
+<p>The third texture coordinate axis, <span
+class="math inline">\(R\)</span>, corresponds to the depth/direction
+dimension. Wrapping parameters are set to <code>GL_CLAMP_TO_EDGE</code>
+on the <span class="math inline">\(S\)</span>, <span
+class="math inline">\(T\)</span>, and <span
+class="math inline">\(R\)</span> coordinates to prevent visual seams
+from appearing along the borders where the cube faces meet.
+Additionally, enabling
+<code>glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);</code> allows the hardware
+to filter across adjacent face edges seamlessly.</p>
+<h3 id="sampling-mechanics-in-glsl">Sampling Mechanics in GLSL</h3>
+<p>Sampling a cubemap texture does not use normalized <span
+class="math inline">\((u, v)\)</span> coordinates. Instead, the hardware
+requires a 3D directional vector:</p>
+<p><span class="math display">\[\vec{v} = (x, y, z)\]</span></p>
+<p>The hardware determines which face to sample and converts the 3D
+vector into 2D face coordinates using the following steps:</p>
+<ol type="1">
+<li><strong>Major Axis Selection:</strong> The component of <span
+class="math inline">\(\vec{v}\)</span> with the largest absolute value
+determines the target face. For instance, if <span
+class="math inline">\(|z| &gt; |x|\)</span> and <span
+class="math inline">\(|z| &gt; |y|\)</span>, the <span
+class="math inline">\(Z\)</span>-axis is selected. The sign of <span
+class="math inline">\(z\)</span> determines whether the positive or
+negative face is selected.</li>
+<li><strong>Coordinate Normalization:</strong> The remaining two
+components are divided by the absolute value of the major axis
+component, scaling the coordinates to a range of <span
+class="math inline">\([-1.0, 1.0]\)</span>.</li>
+<li><strong>UV Mapping:</strong> The hardware remaps the normalized
+range <span class="math inline">\([-1.0, 1.0]\)</span> to standard
+texture space <span class="math inline">\([0.0, 1.0]\)</span> to fetch
+the texel from the chosen face.</li>
+</ol>
+<p>Because the lookup is based strictly on direction, the length of the
+vector does not affect the final coordinate determination; only its
+direction relative to the origin matters.</p>
+<h3 id="shader-implementation">Shader Implementation</h3>
+<p>In GLSL, the texture uniform is declared as a
+<code>samplerCube</code>. The built-in <code>texture()</code> function
+accepts this sampler alongside the 3D lookup vector.</p>
+<p><strong>Fragment Shader:</strong></p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 330 core</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec4</span> FragColor<span class="op">;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="dt">in</span> <span class="dt">vec3</span> TexCoords<span class="op">;</span> <span class="co">// Direction vector from the vertex stage</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">samplerCube</span> skybox<span class="op">;</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    FragColor <span class="op">=</span> <span class="bu">texture</span><span class="op">(</span>skybox<span class="op">,</span> TexCoords<span class="op">);</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>For environment mapping effects such as reflection or refraction, the
+lookup vector is calculated dynamically per-fragment using vectors such
+as the surface normal <span class="math inline">\(\vec{N}\)</span> and
+view direction <span class="math inline">\(\vec{I}\)</span>:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> R <span class="op">=</span> <span class="bu">reflect</span><span class="op">(</span>I<span class="op">,</span> <span class="bu">normalize</span><span class="op">(</span>Normal<span class="op">));</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>FragColor <span class="op">=</span> <span class="bu">texture</span><span class="op">(</span>skybox<span class="op">,</span> R<span class="op">);</span></span></code></pre></div></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/how-to-structure-and-sample-cubemaps-in-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Separable Convolution with OpenGL Compute Shaders - opengl</title>
+    <meta name="description" content="This article explores how separable convolution filters are implemented and executed within OpenGL compute shaders for high-performance image processing. By breaking down a two-dimensional convolution kernel into two consecutive one-dimensional passes (ho">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/separable-convolution-with-open-gl-compute-shaders">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Separable Convolution with OpenGL Compute Shaders - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/separable-convolution-with-open-gl-compute-shaders" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explores how separable convolution filters are implemented and executed within OpenGL compute shaders for high-performance image processing. By breaking down a two-dimensional convolution kernel into two consecutive one-dimensional passes (ho" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="separable-convolution-with-opengl-compute-shaders">Separable
+Convolution with OpenGL Compute Shaders</h1>
+<p>This article explores how separable convolution filters are
+implemented and executed within OpenGL compute shaders for
+high-performance image processing. By breaking down a two-dimensional
+convolution kernel into two consecutive one-dimensional passes
+(horizontal and vertical), GPUs can process complex spatial filters like
+Gaussian blurs or Sobel edge detectors with significantly reduced
+computational cost. Utilizing OpenGL compute shaders allows developers
+to harness workgroup-level shared memory, coordinate thread dispatching,
+and eliminate redundant texture sampling to achieve optimal
+throughput.</p>
+<h3 id="the-principle-of-separable-convolution">The Principle of
+Separable Convolution</h3>
+<p>A standard 2D convolution applies an <span class="math inline">\(M
+\times N\)</span> matrix to every pixel in an image, requiring <span
+class="math inline">\(M \times N\)</span> texture fetches and
+multiply-accumulate operations per pixel. When a filter kernel is
+mathematically separable, it can be factored into the outer product of
+two 1D vectors (<span class="math inline">\(K_{2D} = v \cdot
+h^T\)</span>).</p>
+<p>Instead of evaluating an <span class="math inline">\(N \times
+N\)</span> kernel in a single expensive pass (<span
+class="math inline">\(O(N^2)\)</span> complexity per pixel), the
+operation is divided into:</p>
+<ol type="1">
+<li>A horizontal pass using a <span class="math inline">\(1 \times
+N\)</span> kernel.</li>
+<li>A vertical pass using an <span class="math inline">\(N \times
+1\)</span> kernel.</li>
+</ol>
+<p>This reduces the algorithmic complexity to <span
+class="math inline">\(O(2N)\)</span> operations per pixel, resulting in
+drastic performance improvements as kernel sizes grow.</p>
+<h3 id="the-compute-shader-pipeline">The Compute Shader Pipeline</h3>
+<p>Running separable convolutions in OpenGL requires a two-pass render
+pipeline, typically using two textures or image units: an intermediate
+buffer and a final destination buffer.</p>
+<ol type="1">
+<li><strong>Pass 1 (Horizontal Filtering):</strong> The compute shader
+binds the source image as a readable texture and an intermediate texture
+as a writable image via <code>glBindImageTexture</code>. The shader
+calculates the horizontal 1D convolution and outputs the intermediate
+results.</li>
+<li><strong>Synchronization:</strong> Before beginning the second pass,
+the host program issues an execution and memory barrier using
+<code>glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT)</code> to
+ensure that all writes to the intermediate image are fully completed and
+cache-coherent.</li>
+<li><strong>Pass 2 (Vertical Filtering):</strong> The second compute
+shader (or the same shader reconfigured via uniforms) binds the
+intermediate texture as the input and writes the vertically filtered
+values to the final destination image.</li>
+</ol>
+<h3 id="utilizing-workgroup-shared-memory">Utilizing Workgroup Shared
+Memory</h3>
+<p>The most significant performance bottleneck in convolution filtering
+is global memory bandwidth. Because neighboring pixels share overlapping
+kernel samples, reading directly from global texture memory for every
+kernel tap causes massive redundant memory traffic.</p>
+<p>OpenGL compute shaders solve this through workgroup local memory
+declared with the <code>shared</code> keyword:</p>
+<ul>
+<li><strong>Tiling and Halos:</strong> Compute threads are organized
+into workgroups (e.g., <span class="math inline">\(16 \times 16\)</span>
+or <span class="math inline">\(256 \times 1\)</span> threads). Each
+workgroup loads a tile of image data into <code>shared</code> memory. To
+evaluate pixels at the boundaries of the tile, the workgroup also loads
+an "apron" or "halo" of surrounding pixels proportional to the kernel
+radius (<span class="math inline">\(R = \lfloor N / 2
+\rfloor\)</span>).</li>
+<li><strong>Cooperative Loading:</strong> Threads cooperate to load the
+central tile and the boundary halo pixels from global memory into the
+shared array.</li>
+<li><strong>Synchronization Barrier:</strong> Once loading is complete,
+a <code>barrier()</code> command ensures all shared memory writes are
+visible to all threads in the workgroup.</li>
+<li><strong>Kernel Execution:</strong> Each thread computes its 1D
+convolution by sampling exclusively from the fast, on-chip
+<code>shared</code> memory rather than high-latency global memory,
+dramatically accelerating execution.</li>
+</ul>
+<h3 id="workgroup-layout-strategies">Workgroup Layout Strategies</h3>
+<p>When designing compute shaders for 1D passes, workgroup layouts
+generally follow one of two strategies:</p>
+<ul>
+<li><strong>1D Workgroup Strips:</strong> A layout such as
+<code>layout(local_size_x = 256, local_size_y = 1)</code> is used for
+the horizontal pass, loading a <span class="math inline">\(256 +
+2R\)</span> strip of data into shared memory. The vertical pass flips
+this arrangement to
+<code>layout(local_size_x = 1, local_size_y = 256)</code>. This matches
+data loading tightly with the direction of the blur.</li>
+<li><strong>2D Workgroup Blocks:</strong> A layout like
+<code>layout(local_size_x = 16, local_size_y = 16)</code> is used for
+both passes. For the horizontal pass, each row in the block loads its
+left and right halos. While this requires a slightly more complex
+loading pattern, it often maps better to hardware cache lines and
+texture layouts.</li>
+</ul>
+<h3 id="hardware-level-execution">Hardware-Level Execution</h3>
+<p>During execution, the OpenGL driver maps compute workgroups onto the
+GPU's Compute Units or Streaming Multiprocessors. The GPU schedules
+warps or wavefronts of threads in parallel. Because compute shaders
+bypass the rasterization pipeline, depth testing, and frame-buffer
+blending, execution avoids fixed-function overhead. When combined with
+shared memory caching and vector registers, separable convolutions in
+OpenGL compute shaders run near the physical bandwidth limits of the
+graphics hardware.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/separable-convolution-with-open-gl-compute-shaders';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

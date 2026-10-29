@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Eye Adaptation Using Parallel Reduction in OpenGL - opengl</title>
+    <meta name="description" content="Dynamic eye adaptation simulates how the human eye adjusts to varying light levels across a high dynamic range (HDR) scene. In modern rendering pipelines using OpenGL compute shaders, this effect is achieved by downsampling the rendered HDR frame through">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/eye-adaptation-using-parallel-reduction-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Eye Adaptation Using Parallel Reduction in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/eye-adaptation-using-parallel-reduction-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Dynamic eye adaptation simulates how the human eye adjusts to varying light levels across a high dynamic range (HDR) scene. In modern rendering pipelines using OpenGL compute shaders, this effect is achieved by downsampling the rendered HDR frame through" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="eye-adaptation-using-parallel-reduction-in-opengl">Eye
+Adaptation Using Parallel Reduction in OpenGL</h1>
+<p>Dynamic eye adaptation simulates how the human eye adjusts to varying
+light levels across a high dynamic range (HDR) scene. In modern
+rendering pipelines using OpenGL compute shaders, this effect is
+achieved by downsampling the rendered HDR frame through a process called
+parallel reduction to determine the average scene luminance. By
+iteratively summing luminance values in shared workgroup memory and
+applying temporal filtering across frames, the engine can smoothly alter
+exposure levels in real time without stalling the CPU or GPU
+pipelines.</p>
+<h3 id="1-extracting-initial-logarithmic-luminance">1. Extracting
+Initial Logarithmic Luminance</h3>
+<p>The process begins by reading the HDR color buffer rendered in linear
+space. Standard luminance is calculated using standard photometric
+weights:</p>
+<p><span class="math display">\[Y = 0.2126R + 0.7152G +
+0.0722B\]</span></p>
+<p>Because scenes can contain localized specular highlights or light
+sources with extreme values, a simple arithmetic mean would
+disproportionately skew the adaptation. Instead, the geometric mean is
+used, requiring the luminance values to be converted to the logarithmic
+domain:</p>
+<p><span class="math display">\[\log(Y + \epsilon)\]</span></p>
+<p>The small constant <span class="math inline">\(\epsilon\)</span>
+prevents taking the logarithm of zero in completely dark pixels.</p>
+<h3 id="2-parallel-reduction-via-compute-shaders">2. Parallel Reduction
+via Compute Shaders</h3>
+<p>Parallel reduction efficiently aggregates thousands or millions of
+pixel values into a single value by halving the active elements in
+logarithmic steps (<span class="math inline">\(O(\log N)\)</span>
+complexity).</p>
+<h4 id="first-dispatch-image-to-workgroup-buffers">First Dispatch: Image
+to Workgroup Buffers</h4>
+<p>A compute shader is dispatched with a two-dimensional grid of
+workgroups (for example, <span class="math inline">\(16 \times
+16\)</span> threads per workgroup).</p>
+<ol type="1">
+<li><p><strong>Shared Memory Loading:</strong> Each thread reads one or
+more pixels from the HDR texture, computes the logarithmic luminance,
+and stores it in a <code>shared</code> memory array allocated per
+workgroup:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">shared</span> <span class="dt">float</span> sharedLuminance<span class="op">[</span><span class="dv">256</span><span class="op">];</span></span></code></pre></div></li>
+<li><p><strong>Synchronized Tree Reduction:</strong> The threads execute
+an iterative tree reduction. Half of the threads sum pairs of elements,
+followed by a memory barrier (<code>barrier()</code>) to ensure memory
+consistency across the workgroup:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">for</span> <span class="op">(</span><span class="dt">uint</span> stride <span class="op">=</span> <span class="dv">128</span><span class="op">;</span> stride <span class="op">&gt;</span> <span class="dv">0</span><span class="op">;</span> stride <span class="op">&gt;&gt;=</span> <span class="dv">1</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> <span class="op">(</span><span class="bu">gl_LocalInvocationIndex</span> <span class="op">&lt;</span> stride<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>        sharedLuminance<span class="op">[</span><span class="bu">gl_LocalInvocationIndex</span><span class="op">]</span> <span class="op">+=</span> sharedLuminance<span class="op">[</span><span class="bu">gl_LocalInvocationIndex</span> <span class="op">+</span> stride<span class="op">];</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    <span class="bu">barrier</span><span class="op">();</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div></li>
+<li><p><strong>Partial Output:</strong> Once the stride drops to zero,
+the thread at index zero writes the workgroup's total sum into an
+intermediate Shader Storage Buffer Object (SSBO).</p></li>
+</ol>
+<h4 id="subsequent-reduction-passes">Subsequent Reduction Passes</h4>
+<p>If the initial dispatch outputs more elements than can fit in a
+single workgroup, subsequent 1D compute passes are chained together.
+Each pass reduces the previous buffer until only a single scalar value
+remains, representing the sum of all logarithmic luminance values in the
+scene.</p>
+<p>The final step divides this sum by the total pixel count and computes
+the exponential:</p>
+<p><span class="math display">\[L_{\text{target}} =
+\exp\left(\frac{1}{N} \sum \log(Y + \epsilon)\right)\]</span></p>
+<h3 id="3-temporal-adaptation">3. Temporal Adaptation</h3>
+<p>Instantaneous exposure adjustments feel unnatural and cause
+flickering. To simulate gradual pupil dilation and constriction, the
+target luminance is blended with the adapted luminance from the previous
+frame using exponential decay:</p>
+<p><span class="math display">\[L_{\text{adapted}} = L_{\text{prev}} +
+(L_{\text{target}} - L_{\text{prev}}) \cdot \left(1.0 - e^{-\Delta t
+\cdot \sigma}\right)\]</span></p>
+<p>Where:</p>
+<ul>
+<li><span class="math inline">\(\Delta t\)</span> is the frame delta
+time.</li>
+<li><span class="math inline">\(\sigma\)</span> is the adaptation rate
+constant (different rates are often applied for adapting to dark versus
+bright areas).</li>
+</ul>
+<p>This calculation typically runs in the final <span
+class="math inline">\(1 \times 1\)</span> reduction compute step,
+reading the previous luminance and writing the new value into a
+dedicated <span class="math inline">\(1 \times 1\)</span> texture or
+persistent uniform buffer.</p>
+<h3 id="4-exposure-application">4. Exposure Application</h3>
+<p>The resulting adapted luminance value is bound as a uniform or
+texture buffer in the post-processing tone mapping pass. The exposure
+value is calculated as:</p>
+<p><span class="math display">\[\text{Exposure} =
+\frac{K}{L_{\text{adapted}}}\]</span></p>
+<p>where <span class="math inline">\(K\)</span> is a calibration
+constant (middle gray). The HDR color is scaled by this exposure factor
+prior to applying an operator like Reinhard, Filmic, or ACES, completing
+the eye adaptation loop.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/eye-adaptation-using-parallel-reduction-in-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mathematical Benefits of Variance Shadow Mapping - opengl</title>
+    <meta name="description" content="Variance Shadow Mapping (VSM) resolves one of real-time computer graphics&#39; most persistent bottlenecks by reformulating the shadow determination problem using probability theory. In conventional shadow mapping, depth comparisons occur after texture sampli">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/mathematical-benefits-of-variance-shadow-mapping">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Mathematical Benefits of Variance Shadow Mapping - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/mathematical-benefits-of-variance-shadow-mapping" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Variance Shadow Mapping (VSM) resolves one of real-time computer graphics&#39; most persistent bottlenecks by reformulating the shadow determination problem using probability theory. In conventional shadow mapping, depth comparisons occur after texture sampli" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="mathematical-benefits-of-variance-shadow-mapping">Mathematical
+Benefits of Variance Shadow Mapping</h1>
+<p>Variance Shadow Mapping (VSM) resolves one of real-time computer
+graphics' most persistent bottlenecks by reformulating the shadow
+determination problem using probability theory. In conventional shadow
+mapping, depth comparisons occur after texture sampling, preventing the
+use of standard hardware-accelerated filtering techniques. By storing
+statistical depth moments rather than raw scalar distances, VSM allows
+developers using OpenGL to leverage native texture filtering,
+mipmapping, and Gaussian blurs to produce smooth, anti-aliased shadows
+with minimal computational overhead.</p>
+<h3 id="the-linearity-of-statistical-moments">The Linearity of
+Statistical Moments</h3>
+<p>Standard shadow mapping relies on a non-linear step function: a
+surface is either fully in shadow or fully lit based on the condition
+<span class="math inline">\(z_{fragment} \le z_{light}\)</span>. Because
+this step function is non-linear, applying a linear filter directly to
+the depth values before comparison produces mathematically incorrect
+results, manifesting as severe light bleeding or distorted penumbras.
+Consequently, Percentage Closer Filtering (PCF) must sample multiple
+depths individually, evaluate the step function for each, and average
+the boolean results in the fragment shader.</p>
+<p>VSM bypasses this constraint by representing shadow caster
+distributions as continuous random variables. Instead of storing a
+single depth value <span class="math inline">\(z\)</span>, an OpenGL
+framebuffer writes two components to a two-channel floating-point
+texture (such as <code>GL_RG32F</code> or <code>GL_RG16F</code>):</p>
+<ol type="1">
+<li>The first moment: the expected depth <span
+class="math inline">\(E[x] = z\)</span></li>
+<li>The second moment: the expected squared depth <span
+class="math inline">\(E[x^2] = z^2\)</span></li>
+</ol>
+<p>Because the expectation operator <span
+class="math inline">\(E[\cdot]\)</span> is strictly linear (<span
+class="math inline">\(E[aX + bY] = aE[X] + bE[Y]\)</span>), linear
+combinations of moments equal the moments of the linear combination.
+This mathematical property allows these values to be filtered using any
+linear convolution operator prior to the shadow test.</p>
+<h3 id="analytic-visibility-via-cantellis-inequality">Analytic
+Visibility via Cantelli's Inequality</h3>
+<p>When shading a fragment at depth <span
+class="math inline">\(t\)</span>, the rendering pipeline needs to
+determine the probability that an occluder exists in front of the
+fragment (<span class="math inline">\(P(x \ge t)\)</span>). VSM computes
+an upper bound on this probability using Cantelli’s Inequality, a
+one-sided variant of Chebyshev’s Inequality.</p>
+<p>First, the shader calculates the local variance (<span
+class="math inline">\(\sigma^2\)</span>) from the retrieved moments:</p>
+<p><span class="math display">\[\sigma^2 = E[x^2] -
+(E[x])^2\]</span></p>
+<p>If the current fragment depth <span class="math inline">\(t\)</span>
+is less than or equal to the filtered average depth <span
+class="math inline">\(\mu = E[x]\)</span>, the fragment is deemed
+completely lit (<span class="math inline">\(p = 1.0\)</span>). If <span
+class="math inline">\(t &gt; \mu\)</span>, the maximum probability of
+visibility is computed algebraically:</p>
+<p><span class="math display">\[P(x \ge t) \le p_{max}(t) =
+\frac{\sigma^2}{\sigma^2 + (t - \mu)^2}\]</span></p>
+<p>This closed-form rational equation approximates the percentage of the
+light source occluded without requiring iterative sampling. It yields a
+continuous scalar value between <span class="math inline">\(0.0\)</span>
+and <span class="math inline">\(1.0\)</span>, naturally generating soft
+penumbras based on the local depth distribution.</p>
+<h3 id="opengl-hardware-acceleration-advantages">OpenGL Hardware
+Acceleration Advantages</h3>
+<p>The mathematical shift from discrete boolean tests to continuous
+moment distributions unlocks several hardware-level optimizations in
+OpenGL:</p>
+<ul>
+<li><strong>Native Bilinear and Trilinear Filtering:</strong> OpenGL can
+use <code>GL_LINEAR</code> filtering parameters directly on the moment
+texture. Texture filtering units automatically blend texel moments
+during the sampling stage, eliminating the high shader instruction
+counts associated with multi-tap PCF.</li>
+<li><strong>Hardware Mipmapping:</strong> Mipmaps can be generated
+automatically using <code>glGenerateMipmap(GL_TEXTURE_2D)</code> because
+downsampling averages preserve moment validity. This reduces aliasing
+artifacts on distant surfaces and minimizes texture cache
+thrashing.</li>
+<li><strong>Anisotropic Filtering:</strong> High-angle geometry benefits
+directly from hardware anisotropic filtering, preserving sharp shadow
+silhouettes on surfaces viewed at grazing angles.</li>
+<li><strong>Separable Convolution Blurring:</strong> Large penumbras can
+be achieved by running rapid, two-pass separable Gaussian blur compute
+or fragment passes over the shadow map texture before the main geometry
+pass, decoupling filter kernel size from per-pixel shading cost.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/mathematical-benefits-of-variance-shadow-mapping';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

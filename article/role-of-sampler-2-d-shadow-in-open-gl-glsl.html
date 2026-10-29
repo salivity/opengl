@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Role of sampler2DShadow in OpenGL GLSL - opengl</title>
+    <meta name="description" content="This article explores the specific purpose and mechanics of the sampler2DShadow uniform type in the OpenGL Shading Language (GLSL). It covers how this specialized sampler differs from standard 2D texture samplers, its function in depth comparison for shad">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/role-of-sampler-2-d-shadow-in-open-gl-glsl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Role of sampler2DShadow in OpenGL GLSL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/role-of-sampler-2-d-shadow-in-open-gl-glsl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explores the specific purpose and mechanics of the sampler2DShadow uniform type in the OpenGL Shading Language (GLSL). It covers how this specialized sampler differs from standard 2D texture samplers, its function in depth comparison for shad" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="role-of-sampler2dshadow-in-opengl-glsl">Role of sampler2DShadow
+in OpenGL GLSL</h1>
+<p>This article explores the specific purpose and mechanics of the
+<code>sampler2DShadow</code> uniform type in the OpenGL Shading Language
+(GLSL). It covers how this specialized sampler differs from standard 2D
+texture samplers, its function in depth comparison for shadow mapping,
+and how it enables hardware-accelerated Percentage-Closer Filtering
+(PCF) to achieve smooth shadow boundaries.</p>
+<p>In OpenGL shadow mapping, determining whether a fragment is
+illuminated requires comparing its distance from the light source
+against the closest depth recorded from the light's perspective. While a
+standard <code>sampler2D</code> uniform fetches raw color or depth
+values from a texture, <code>sampler2DShadow</code> is designed
+specifically to perform this depth comparison directly on the GPU
+hardware.</p>
+<p>When using a <code>sampler2DShadow</code> uniform, the texture lookup
+function (such as <code>texture()</code> in modern GLSL) expects texture
+coordinates with an additional component. For a standard 2D shadow map,
+the shader provides a <code>vec3</code> containing the horizontal and
+vertical texture coordinates <span class="math inline">\((u, v)\)</span>
+alongside a reference depth value <span
+class="math inline">\((r)\)</span> representing the current fragment's
+depth relative to the light.</p>
+<p>Instead of returning the stored depth value, the hardware
+automatically compares the reference depth <span
+class="math inline">\((r)\)</span> with the depth value stored in the
+texture at <span class="math inline">\((u, v)\)</span>. For this process
+to function correctly, the underlying OpenGL depth texture must be
+configured with <code>GL_TEXTURE_COMPARE_MODE</code> set to
+<code>GL_COMPARE_REF_TO_TEXTURE</code>. The comparison operator (such as
+<code>GL_LEQUAL</code> or <code>GL_LESS</code>) is also defined on the
+texture object. The sampler outputs a floating-point value: typically
+<code>1.0</code> if the fragment passes the comparison (illuminated) or
+<code>0.0</code> if it fails (in shadow).</p>
+<p>The primary performance and visual advantage of
+<code>sampler2DShadow</code> is native support for Percentage-Closer
+Filtering (PCF). When the depth texture’s filter mode
+(<code>GL_TEXTURE_MIN_FILTER</code> and
+<code>GL_TEXTURE_MAG_FILTER</code>) is set to <code>GL_LINEAR</code>,
+the hardware does not bilinearly interpolate the depth values
+themselves. Instead, it performs the depth comparison on the four
+neighboring depth texels individually and then bilinearly filters the
+comparison results. This yields an intermediate value between
+<code>0.0</code> and <code>1.0</code>, effectively smoothing out jagged,
+aliased shadow edges with minimal computational overhead in the fragment
+shader.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/role-of-sampler-2-d-shadow-in-open-gl-glsl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

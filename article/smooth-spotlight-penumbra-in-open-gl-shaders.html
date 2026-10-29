@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smooth Spotlight Penumbra in OpenGL Shaders - opengl</title>
+    <meta name="description" content="Creating smooth penumbra transitions along spotlight edges in OpenGL fragment shaders is achieved primarily through cubic Hermite interpolation, implemented via the GLSL smoothstep function. This article explains the mathematics behind simulating realisti">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/smooth-spotlight-penumbra-in-open-gl-shaders">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Smooth Spotlight Penumbra in OpenGL Shaders - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/smooth-spotlight-penumbra-in-open-gl-shaders" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Creating smooth penumbra transitions along spotlight edges in OpenGL fragment shaders is achieved primarily through cubic Hermite interpolation, implemented via the GLSL smoothstep function. This article explains the mathematics behind simulating realisti" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="smooth-spotlight-penumbra-in-opengl-shaders">Smooth Spotlight
+Penumbra in OpenGL Shaders</h1>
+<p>Creating smooth penumbra transitions along spotlight edges in OpenGL
+fragment shaders is achieved primarily through cubic Hermite
+interpolation, implemented via the GLSL <code>smoothstep</code>
+function. This article explains the mathematics behind simulating
+realistic spotlight cones, how angular falloff is modeled using vector
+dot products, and the precise shader calculations required to blend the
+light intensity seamlessly between the inner and outer cutoff
+boundaries.</p>
+<h3 id="the-spotlight-cone-model">The Spotlight Cone Model</h3>
+<p>A basic spotlight model relies on a light direction vector, a light
+position, and a cone cutoff angle. In 3D space, the angle <span
+class="math inline">\(\theta\)</span> between the spotlight's pointing
+direction and the vector pointing from the light to the surface fragment
+determines whether the fragment is illuminated.</p>
+<p>Rather than calculating expensive inverse trigonometric functions
+(<code>acos</code>) to find <span class="math inline">\(\theta\)</span>,
+shaders calculate the cosine of the angle using the dot product of two
+normalized vectors:</p>
+<p><span class="math display">\[\cos(\theta) = \hat{L}_{dir} \cdot
+\hat{D}\]</span></p>
+<ul>
+<li><span class="math inline">\(\hat{L}_{dir}\)</span> is the normalized
+vector from the spotlight position to the fragment.</li>
+<li><span class="math inline">\(\hat{D}\)</span> is the normalized
+spotlight direction vector.</li>
+</ul>
+<p>A binary cutoff compares <span
+class="math inline">\(\cos(\theta)\)</span> against the cosine of the
+cutoff angle (<span class="math inline">\(\cos(\phi)\)</span>). However,
+this creates an unnatural, razor-sharp boundary.</p>
+<h3 id="defining-inner-and-outer-cutoffs">Defining Inner and Outer
+Cutoffs</h3>
+<p>To create a penumbra (the soft transition zone), the spotlight
+defines two distinct angles:</p>
+<ol type="1">
+<li><strong>Inner Cutoff (<span
+class="math inline">\(\phi_{inner}\)</span>):</strong> The core cone
+where the spotlight shines at maximum intensity (<span
+class="math inline">\(1.0\)</span>).</li>
+<li><strong>Outer Cutoff (<span
+class="math inline">\(\phi_{outer}\)</span>):</strong> The boundary
+beyond which no light reaches (<span
+class="math inline">\(0.0\)</span>).</li>
+</ol>
+<p>Because the cosine function decreases as the angle increases from
+<span class="math inline">\(0^\circ\)</span> to <span
+class="math inline">\(90^\circ\)</span>:</p>
+<p><span class="math display">\[\cos(\phi_{inner}) &gt;
+\cos(\phi_{outer})\]</span></p>
+<p>Any fragment whose <span class="math inline">\(\cos(\theta)\)</span>
+falls between <span class="math inline">\(\cos(\phi_{outer})\)</span>
+and <span class="math inline">\(\cos(\phi_{inner})\)</span> lies within
+the penumbra and requires an attenuation factor between <span
+class="math inline">\(0.0\)</span> and <span
+class="math inline">\(1.0\)</span>.</p>
+<h3 id="linear-interpolation-and-its-limitations">Linear Interpolation
+and Its Limitations</h3>
+<p>A basic approach calculates a linear interpolation factor:</p>
+<p><span class="math display">\[\epsilon = \cos(\phi_{inner}) -
+\cos(\phi_{outer})\]</span> <span class="math display">\[I =
+\text{clamp}\left(\frac{\cos(\theta) - \cos(\phi_{outer})}{\epsilon},
+0.0, 1.0\right)\]</span></p>
+<p>While this creates a gradient, linear interpolation exhibits a
+first-derivative discontinuity (<span class="math inline">\(C^0\)</span>
+continuity) at the transition points. This results in visible, harsh
+"mach bands" where the falloff begins and ends.</p>
+<h3 id="smooth-hermite-interpolation-smoothstep">Smooth Hermite
+Interpolation (<code>smoothstep</code>)</h3>
+<p>To eliminate hard edges, OpenGL shaders apply cubic Hermite
+interpolation, commonly represented by the standard GLSL
+<code>smoothstep</code> polynomial:</p>
+<p><span class="math display">\[S(x) = 3x^2 - 2x^3\]</span></p>
+<p>Where <span class="math inline">\(x\)</span> is normalized between
+<span class="math inline">\(0.0\)</span> and <span
+class="math inline">\(1.0\)</span>. The derivative of this function:</p>
+<p><span class="math display">\[S&#39;(x) = 6x - 6x^2\]</span></p>
+<p>evaluates to zero at both <span class="math inline">\(x = 0\)</span>
+and <span class="math inline">\(x = 1\)</span>. This zero-derivative
+boundary (<span class="math inline">\(C^1\)</span> continuity) ensures a
+completely smooth transition into both the full-intensity core and the
+total darkness outside the cone.</p>
+<h3 id="glsl-fragment-shader-implementation">GLSL Fragment Shader
+Implementation</h3>
+<p>In GLSL, the <code>smoothstep</code> function inherently handles both
+normalization and cubic Hermite interpolation. The spotlight intensity
+is computed as follows:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Uniforms passed to the shader</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">vec3</span> lightPos<span class="op">;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">vec3</span> lightDir<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">float</span> innerCutOff<span class="op">;</span> <span class="co">// cos(phi_inner)</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">float</span> outerCutOff<span class="op">;</span> <span class="co">// cos(phi_outer)</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="co">// Fragment calculations</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> lightToFrag <span class="op">=</span> <span class="bu">normalize</span><span class="op">(</span>fragPos <span class="op">-</span> lightPos<span class="op">);</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> theta <span class="op">=</span> <span class="bu">dot</span><span class="op">(</span>lightToFrag<span class="op">,</span> <span class="bu">normalize</span><span class="op">(</span>lightDir<span class="op">));</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="co">// Calculate smooth penumbra factor</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> intensity <span class="op">=</span> <span class="bu">smoothstep</span><span class="op">(</span>outerCutOff<span class="op">,</span> innerCutOff<span class="op">,</span> theta<span class="op">);</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="co">// Apply intensity to final lighting output</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> diffuse <span class="op">=</span> intensity <span class="op">*</span> lightColor <span class="op">*</span> diff<span class="op">;</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> specular <span class="op">=</span> intensity <span class="op">*</span> lightColor <span class="op">*</span> spec<span class="op">;</span></span></code></pre></div>
+<p>Because <code>outerCutOff</code> represents a smaller cosine value
+than <code>innerCutOff</code>, passing <code>outerCutOff</code> as the
+lower edge and <code>innerCutOff</code> as the upper edge maps the
+cosine values correctly from 0.0 (outside) to 1.0 (inside). This
+mathematical method produces physically plausible soft spotlight
+perimeters with minimal computational overhead.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/smooth-spotlight-penumbra-in-open-gl-shaders';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

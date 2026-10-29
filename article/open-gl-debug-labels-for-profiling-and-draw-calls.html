@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Debug Labels for Profiling and Draw Calls - opengl</title>
+    <meta name="description" content="OpenGL provides a dedicated debugging infrastructure—standardized in core OpenGL 4.3 and available via the KHRdebug extension—that allows developers to annotate graphics resources and execution markers with human-readable strings. By labeling objects such">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-debug-labels-for-profiling-and-draw-calls">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Debug Labels for Profiling and Draw Calls - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-debug-labels-for-profiling-and-draw-calls" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="OpenGL provides a dedicated debugging infrastructure—standardized in core OpenGL 4.3 and available via the KHRdebug extension—that allows developers to annotate graphics resources and execution markers with human-readable strings. By labeling objects such" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-debug-labels-for-profiling-and-draw-calls">OpenGL Debug
+Labels for Profiling and Draw Calls</h1>
+<p>OpenGL provides a dedicated debugging infrastructure—standardized in
+core OpenGL 4.3 and available via the <code>KHR_debug</code>
+extension—that allows developers to annotate graphics resources and
+execution markers with human-readable strings. By labeling objects such
+as textures and buffers, and delineating draw calls with hierarchical
+debug groups, developers enable GPU profilers and frame debuggers (like
+RenderDoc, NVIDIA Nsight, and Intel GPA) to replace raw, arbitrary
+numeric identifiers with meaningful context. This significantly
+simplifies diagnosing rendering anomalies, inspecting resource states,
+and analyzing performance bottlenecks across complex rendering
+pipelines.</p>
+<h3 id="object-labeling-with-globjectlabel">Object Labeling with
+<code>glObjectLabel</code></h3>
+<p>OpenGL associates descriptive strings with resources using the
+<code>glObjectLabel</code> function. This command operates across
+various object namespaces, including textures, buffers, framebuffers,
+vertex array objects, and shader programs.</p>
+<p>The function takes four arguments:</p>
+<ol type="1">
+<li><strong>Identifier (<code>identifier</code>):</strong> A token
+specifying the object's namespace category, such as
+<code>GL_BUFFER</code>, <code>GL_TEXTURE</code>,
+<code>GL_FRAMEBUFFER</code>, or <code>GL_PROGRAM</code>.</li>
+<li><strong>Name (<code>name</code>):</strong> The unsigned integer ID
+assigned to the resource during creation (e.g., the ID returned by
+<code>glGenBuffers</code>).</li>
+<li><strong>Length (<code>length</code>):</strong> The string length, or
+a negative value if the string is null-terminated.</li>
+<li><strong>Label (<code>label</code>):</strong> A pointer to the
+character array containing the custom label.</li>
+</ol>
+<p>For example, labeling a vertex buffer and a diffuse texture is
+performed as follows:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>glBindBuffer<span class="op">(</span>GL_ARRAY_BUFFER<span class="op">,</span> vbo<span class="op">);</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>glObjectLabel<span class="op">(</span>GL_BUFFER<span class="op">,</span> vbo<span class="op">,</span> <span class="op">-</span><span class="dv">1</span><span class="op">,</span> <span class="st">&quot;Terrain_VertexBuffer&quot;</span><span class="op">);</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>glBindTexture<span class="op">(</span>GL_TEXTURE_2D<span class="op">,</span> textureId<span class="op">);</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>glObjectLabel<span class="op">(</span>GL_TEXTURE<span class="op">,</span> textureId<span class="op">,</span> <span class="op">-</span><span class="dv">1</span><span class="op">,</span> <span class="st">&quot;Player_Diffuse_Albedo&quot;</span><span class="op">);</span></span></code></pre></div>
+<p>Profiling tools inspect these labels during runtime. Instead of
+presenting a generic list of unnamed textures or buffers, the profiler’s
+resource inspector displays the exact string, making it easy to track
+resource lifetimes, memory allocations, and memory bandwidth usage per
+resource.</p>
+<h3 id="scoping-and-labeling-draw-calls-with-debug-groups">Scoping and
+Labeling Draw Calls with Debug Groups</h3>
+<p>Draw calls do not exist as persistent objects, so they cannot be
+tagged with <code>glObjectLabel</code>. Instead, OpenGL uses a
+stack-based grouping mechanism via <code>glPushDebugGroup</code> and
+<code>glPopDebugGroup</code> to organize draw commands into logical
+passes and sub-passes.</p>
+<ul>
+<li><strong><code>glPushDebugGroup</code>:</strong> Pushes a new labeled
+scope onto the debug group stack. It accepts a source (typically
+<code>GL_DEBUG_SOURCE_APPLICATION</code>), an application-defined ID,
+the string length, and the string message representing the pass
+name.</li>
+<li><strong><code>glPopDebugGroup</code>:</strong> Pops the active group
+off the stack, closing the scope.</li>
+</ul>
+<p>Groups can be nested to reflect multi-stage rendering workflows:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>glPushDebugGroup<span class="op">(</span>GL_DEBUG_SOURCE_APPLICATION<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="op">-</span><span class="dv">1</span><span class="op">,</span> <span class="st">&quot;Shadow Map Pass&quot;</span><span class="op">);</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    glPushDebugGroup<span class="op">(</span>GL_DEBUG_SOURCE_APPLICATION<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> <span class="op">-</span><span class="dv">1</span><span class="op">,</span> <span class="st">&quot;Directional Light&quot;</span><span class="op">);</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>        glDrawElements<span class="op">(</span>GL_TRIANGLES<span class="op">,</span> count<span class="op">,</span> GL_UNSIGNED_INT<span class="op">,</span> <span class="kw">nullptr</span><span class="op">);</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    glPopDebugGroup<span class="op">();</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>glPopDebugGroup<span class="op">();</span></span></code></pre></div>
+<p>When a frame is captured in a profiling tool, these groups appear as
+a collapsible tree view of events. Profilers calculate cumulative GPU
+durations, draw call counts, and state changes for the entire group,
+allowing developers to isolate heavy rendering phases quickly.</p>
+<h3 id="emitting-point-markers-with-gldebugmessageinsert">Emitting Point
+Markers with <code>glDebugMessageInsert</code></h3>
+<p>For discrete events that do not encompass a group of commands—such as
+the completion of a resource upload or a compute dispatch—OpenGL
+provides <code>glDebugMessageInsert</code>.</p>
+<p>This function injects an independent message into the debug stream
+without modifying the group hierarchy:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>glDebugMessageInsert<span class="op">(</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    GL_DEBUG_SOURCE_APPLICATION<span class="op">,</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    GL_DEBUG_TYPE_MARKER<span class="op">,</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    <span class="dv">1</span><span class="op">,</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    GL_DEBUG_SEVERITY_NOTIFICATION<span class="op">,</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    <span class="op">-</span><span class="dv">1</span><span class="op">,</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;Post-Processing Pipeline Started&quot;</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="op">);</span></span></code></pre></div>
+<p>Profilers display these markers as single event flags along the
+timeline, providing synchronization landmarks between distinct execution
+stages.</p>
+<h3 id="how-profilers-ingest-opengl-debug-metadata">How Profilers Ingest
+OpenGL Debug Metadata</h3>
+<p>Graphics profilers intercept the OpenGL API call stream via dynamic
+library hooking. When calls to <code>glObjectLabel</code>,
+<code>glPushDebugGroup</code>, or <code>glDebugMessageInsert</code> pass
+through the driver layer, the capture tool records the string alongside
+the active command stream.</p>
+<p>During capture replay:</p>
+<ul>
+<li>The profiler maps raw OpenGL handles to the specified label across
+all views (e.g., texture viewers, pipeline state inspectors).</li>
+<li>The event browser displays user-defined group hierarchies rather
+than a flat sequence of hundreds or thousands of uncontextualized
+<code>glDraw*</code> calls.</li>
+<li>Performance counters aggregate metrics per debug group, making it
+straightforward to pinpoint which visual effect or mesh hierarchy
+consumes the most GPU time.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/open-gl-debug-labels-for-profiling-and-draw-calls';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

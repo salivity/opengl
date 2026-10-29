@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Immediate Mode: glBegin and glEnd Explained - opengl</title>
+    <meta name="description" content="Immediate mode rendering was the foundational paradigm of early OpenGL, characterized by the direct submission of vertex and attribute data from the CPU to the GPU between pairs of glBegin and glEnd function calls. This article provides a comprehensive ov">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-immediate-mode-gl-begin-and-gl-end-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Immediate Mode: glBegin and glEnd Explained - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-immediate-mode-gl-begin-and-gl-end-explained" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Immediate mode rendering was the foundational paradigm of early OpenGL, characterized by the direct submission of vertex and attribute data from the CPU to the GPU between pairs of glBegin and glEnd function calls. This article provides a comprehensive ov" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-immediate-mode-glbegin-and-glend-explained">OpenGL
+Immediate Mode: glBegin and glEnd Explained</h1>
+<p>Immediate mode rendering was the foundational paradigm of early
+OpenGL, characterized by the direct submission of vertex and attribute
+data from the CPU to the GPU between pairs of <code>glBegin</code> and
+<code>glEnd</code> function calls. This article provides a comprehensive
+overview of how immediate mode functioned, its programming mechanics,
+the severe performance bottlenecks that led to its obsolescence, and how
+modern retained-mode paradigms eventually replaced it.</p>
+<h2 id="the-concept-of-immediate-mode">The Concept of Immediate
+Mode</h2>
+<p>In early graphics programming, "immediate mode" meant that the
+graphics hardware did not retain geometry data across frames. Instead,
+the client application was responsible for transmitting vertex
+coordinates, colors, normals, and texture coordinates to the graphics
+pipeline sequentially every single frame.</p>
+<p>The OpenGL state machine processed these commands immediately upon
+receipt. As soon as the application issued a vertex command, the
+pipeline transformed the vertex, lit it according to current state
+parameters, and readied it for rasterization. The GPU did not store the
+mesh in dedicated video memory (VRAM) between render cycles.</p>
+<h2 id="how-glbegin-and-glend-worked">How <code>glBegin</code> and
+<code>glEnd</code> Worked</h2>
+<p>The <code>glBegin</code> and <code>glEnd</code> delimiters formed the
+core of immediate mode rendering. The <code>glBegin</code> function
+accepted a primitive type token—such as <code>GL_TRIANGLES</code>,
+<code>GL_QUADS</code>, <code>GL_LINES</code>, or
+<code>GL_POLYGON</code>—which told the driver how to interpret the
+sequence of vertices that followed. The <code>glEnd</code> function
+signaled the completion of that primitive group.</p>
+<p>Within the block, developers called a series of state-setting
+commands and vertex definitions:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>glBegin<span class="op">(</span>GL_TRIANGLES<span class="op">);</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    glColor3f<span class="op">(</span><span class="fl">1.0</span><span class="bu">f</span><span class="op">,</span> <span class="fl">0.0</span><span class="bu">f</span><span class="op">,</span> <span class="fl">0.0</span><span class="bu">f</span><span class="op">);</span>   <span class="co">// Sets current color state to red</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    glVertex3f<span class="op">(-</span><span class="fl">0.5</span><span class="bu">f</span><span class="op">,</span> <span class="op">-</span><span class="fl">0.5</span><span class="bu">f</span><span class="op">,</span> <span class="fl">0.0</span><span class="bu">f</span><span class="op">);</span> <span class="co">// Vertex 1</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    glColor3f<span class="op">(</span><span class="fl">0.0</span><span class="bu">f</span><span class="op">,</span> <span class="fl">1.0</span><span class="bu">f</span><span class="op">,</span> <span class="fl">0.0</span><span class="bu">f</span><span class="op">);</span>   <span class="co">// Sets current color state to green</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    glVertex3f<span class="op">(</span><span class="fl">0.5</span><span class="bu">f</span><span class="op">,</span> <span class="op">-</span><span class="fl">0.5</span><span class="bu">f</span><span class="op">,</span> <span class="fl">0.0</span><span class="bu">f</span><span class="op">);</span>  <span class="co">// Vertex 2</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    glColor3f<span class="op">(</span><span class="fl">0.0</span><span class="bu">f</span><span class="op">,</span> <span class="fl">0.0</span><span class="bu">f</span><span class="op">,</span> <span class="fl">1.0</span><span class="bu">f</span><span class="op">);</span>   <span class="co">// Sets current color state to blue</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    glVertex3f<span class="op">(</span><span class="fl">0.0</span><span class="bu">f</span><span class="op">,</span> <span class="fl">0.5</span><span class="bu">f</span><span class="op">,</span> <span class="fl">0.0</span><span class="bu">f</span><span class="op">);</span>   <span class="co">// Vertex 3</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>glEnd<span class="op">();</span></span></code></pre></div>
+<p>Because OpenGL acts as a state machine, any attribute set prior to a
+<code>glVertex</code> call (such as <code>glColor</code>,
+<code>glNormal</code>, or <code>glTexCoord</code>) applied to that
+vertex. Calling <code>glVertex</code> finalized the attribute set and
+pushed the complete vertex down the pipeline.</p>
+<h2 id="architectural-bottlenecks">Architectural Bottlenecks</h2>
+<p>While immediate mode was conceptually simple and easy to learn, it
+became a massive performance bottleneck as 3D scenes grew in
+complexity:</p>
+<ul>
+<li><strong>High Function Call Overhead:</strong> Defining a model with
+100,000 triangles required hundreds of thousands of individual function
+calls per frame across the CPU-GPU boundary. The CPU spent most of its
+time executing function dispatch logic rather than calculating game
+logic.</li>
+<li><strong>Bus Saturation:</strong> Geometry data had to travel across
+the system bus (AGP or PCI Express) on every frame. Because the GPU did
+not cache the geometry in VRAM, the bus bandwidth was easily
+saturated.</li>
+<li><strong>Lack of Parallelism:</strong> Modern GPUs rely on massively
+parallel architectures that process thousands of vertices
+simultaneously. Feeding vertices one by one via procedural function
+calls prevented the GPU from operating at peak efficiency.</li>
+</ul>
+<h2 id="deprecation-and-the-move-to-retained-mode">Deprecation and the
+Move to Retained Mode</h2>
+<p>To solve these hardware mismatches, OpenGL evolved toward retained
+mode rendering. The transition began with client-side Vertex Arrays in
+OpenGL 1.1, which allowed applications to submit arrays of data with a
+single call.</p>
+<p>OpenGL 1.5 introduced Vertex Buffer Objects (VBOs), enabling
+applications to upload vertex data directly into GPU-accessible VRAM
+once and draw it repeatedly with minimal CPU intervention. By the
+release of OpenGL 3.0, the <code>glBegin</code> and <code>glEnd</code>
+immediate mode paradigm was marked deprecated, and it was entirely
+removed from the core profile in OpenGL 3.1. Today, modern graphics
+APIs—including modern OpenGL, Vulkan, and DirectX 12—rely exclusively on
+buffer-backed, retained memory models managed via programmable
+shaders.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/open-gl-immediate-mode-gl-begin-and-gl-end-explained';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

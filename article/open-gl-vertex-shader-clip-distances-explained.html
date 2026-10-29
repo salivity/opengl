@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Vertex Shader Clip Distances Explained - opengl</title>
+    <meta name="description" content="Custom user-defined clip distances in OpenGL provide a hardware-accelerated mechanism for discarding geometry against arbitrary spatial boundaries before fragment shading occurs. By computing signed distances in a vertex shader and writing them to the bui">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-vertex-shader-clip-distances-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Vertex Shader Clip Distances Explained - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-vertex-shader-clip-distances-explained" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Custom user-defined clip distances in OpenGL provide a hardware-accelerated mechanism for discarding geometry against arbitrary spatial boundaries before fragment shading occurs. By computing signed distances in a vertex shader and writing them to the bui" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-vertex-shader-clip-distances-explained">OpenGL Vertex
+Shader Clip Distances Explained</h1>
+<p>Custom user-defined clip distances in OpenGL provide a
+hardware-accelerated mechanism for discarding geometry against arbitrary
+spatial boundaries before fragment shading occurs. By computing signed
+distances in a vertex shader and writing them to the built-in
+<code>gl_ClipDistance[]</code> array, developers can define custom
+clipping planes to slice meshes, render cross-sections, or restrict
+rendering volumes. This article explains how the OpenGL pipeline
+processes these values, how to implement them in shader code, and how to
+configure the OpenGL state machine.</p>
+<h3 id="the-role-of-gl_clipdistance">The Role of
+<code>gl_ClipDistance[]</code></h3>
+<p>In OpenGL, clipping traditionally occurs against the normalized
+device coordinate (NDC) viewing frustum. User-defined clip distances
+extend this behavior by allowing arbitrary clipping planes. The vertex
+shader communicates with the hardware clipping stage using the built-in
+output array:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">float</span> <span class="bu">gl_ClipDistance</span><span class="op">[];</span></span></code></pre></div>
+<p>Each index in the array corresponds to an active clipping condition.
+The value assigned to an element represents the signed distance from the
+vertex to a clipping boundary:</p>
+<ul>
+<li>A <strong>positive value</strong> indicates the vertex is inside the
+valid region and should be preserved.</li>
+<li>A <strong>negative value</strong> indicates the vertex is outside
+the valid region and subject to clipping.</li>
+<li>A <strong>zero value</strong> lies directly on the clipping
+boundary.</li>
+</ul>
+<h3 id="computing-clip-distances-in-glsl">Computing Clip Distances in
+GLSL</h3>
+<p>A standard clipping plane is mathematically defined by the plane
+equation <span class="math inline">\(Ax + By + Cz + D = 0\)</span>,
+represented as a <code>vec4(A, B, C, D)</code>. In the vertex shader,
+the signed distance from a point to this plane is computed using a
+four-component dot product.</p>
+<p>Both the vertex position and the clipping plane must exist in the
+same coordinate space—typically world space or view space:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 330 core</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span> <span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">in</span> <span class="dt">vec3</span> aPos<span class="op">;</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">mat4</span> uModel<span class="op">;</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">mat4</span> uView<span class="op">;</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">mat4</span> uProjection<span class="op">;</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">vec4</span> uClipPlane<span class="op">;</span> <span class="co">// (A, B, C, D) in world space</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> worldPos <span class="op">=</span> uModel <span class="op">*</span> <span class="dt">vec4</span><span class="op">(</span>aPos<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Evaluate signed distance to the plane</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>    <span class="bu">gl_ClipDistance</span><span class="op">[</span><span class="dv">0</span><span class="op">]</span> <span class="op">=</span> <span class="bu">dot</span><span class="op">(</span>worldPos<span class="op">,</span> uClipPlane<span class="op">);</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>    <span class="bu">gl_Position</span> <span class="op">=</span> uProjection <span class="op">*</span> uView <span class="op">*</span> worldPos<span class="op">;</span></span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="hardware-processing-and-primitive-reconstruction">Hardware
+Processing and Primitive Reconstruction</h3>
+<p>Once the vertex shader finishes, the primitive assembly and clipping
+stages evaluate the values:</p>
+<ol type="1">
+<li><strong>Complete Rejection:</strong> If all vertices of a primitive
+(such as a triangle) have negative values for the same clip distance
+index, the entire primitive is discarded before rasterization.</li>
+<li><strong>Complete Acceptance:</strong> If all vertices have positive
+values, the primitive passes unmodified.</li>
+<li><strong>Primitive Slicing:</strong> If a primitive spans across the
+boundary (some vertices are positive and others are negative), the
+hardware clips the polygon along the zero-crossing plane. New vertices
+are generated at the intersection points, interpolating vertex
+attributes and creating new triangles to complete the boundary.</li>
+</ol>
+<p>Because clipping occurs prior to rasterization, fragments behind the
+clipping plane are never generated. This avoids the overhead of
+executing fragment shaders for discarded areas and preserves early
+depth-testing optimizations.</p>
+<h3 id="host-application-configuration">Host Application
+Configuration</h3>
+<p>Assigning values to <code>gl_ClipDistance[]</code> in the shader has
+no effect unless the corresponding hardware clip planes are explicitly
+enabled in the OpenGL host application. Each index must be enabled
+individually:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>glEnable<span class="op">(</span>GL_CLIP_DISTANCE0<span class="op">);</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="co">// Additional distances can be enabled up to hardware limits:</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="co">// glEnable(GL_CLIP_DISTANCE1);</span></span></code></pre></div>
+<p>To determine how many simultaneous clip distances the host hardware
+supports, query the driver using:</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>GLint maxClipDistances<span class="op">;</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>glGetIntegerv<span class="op">(</span>GL_MAX_CLIP_DISTANCES<span class="op">,</span> <span class="op">&amp;</span>maxClipDistances<span class="op">);</span></span></code></pre></div>
+<p>OpenGL core specifications guarantee support for at least eight
+simultaneous clip distances (<code>GL_CLIP_DISTANCE0</code> through
+<code>GL_CLIP_DISTANCE7</code>). If a plane is disabled via
+<code>glDisable(GL_CLIP_DISTANCEi)</code>, the GPU ignores the
+corresponding index in <code>gl_ClipDistance[]</code> during
+clipping.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/open-gl-vertex-shader-clip-distances-explained';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

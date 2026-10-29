@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL ES Context Loss: Effects on GPU Objects - opengl</title>
+    <meta name="description" content="An unexpected context loss event in mobile OpenGL ES abruptly terminates the active rendering context, immediately invalidating all GPU-side resources associated with it. When the operating system triggers a context loss—often due to memory pressure, app">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-es-context-loss-effects-on-gpu-objects">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL ES Context Loss: Effects on GPU Objects - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-es-context-loss-effects-on-gpu-objects" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="An unexpected context loss event in mobile OpenGL ES abruptly terminates the active rendering context, immediately invalidating all GPU-side resources associated with it. When the operating system triggers a context loss—often due to memory pressure, app" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-es-context-loss-effects-on-gpu-objects">OpenGL ES Context
+Loss: Effects on GPU Objects</h1>
+<p>An unexpected context loss event in mobile OpenGL ES abruptly
+terminates the active rendering context, immediately invalidating all
+GPU-side resources associated with it. When the operating system
+triggers a context loss—often due to memory pressure, app backgrounding,
+or driver resets—the underlying graphics memory is reclaimed.
+Consequently, all textures, buffer objects, and compiled program objects
+are destroyed in video memory, leaving existing object handles pointing
+to non-existent resources and requiring a complete reinitialization of
+the rendering pipeline.</p>
+<h3 id="understanding-context-loss">Understanding Context Loss</h3>
+<p>On mobile platforms, the OpenGL ES state machine is managed through
+an interface such as EGL. An unexpected context loss occurs when the
+system forcibly destroys the graphics context (indicated by the
+<code>EGL_CONTEXT_LOST</code> error). When this happens, the virtual
+link between your application's OpenGL resource IDs and the physical
+hardware memory is permanently severed. The driver releases all
+allocations, rendering all previously generated handles useless.</p>
+<h3 id="impact-on-texture-objects">Impact on Texture Objects</h3>
+<p>Texture objects (<code>glGenTextures</code>) store pixel data,
+mipmaps, and sampler parameters directly in GPU memory.</p>
+<ul>
+<li><strong>State and Data Invalidation:</strong> Upon context loss, all
+texture data stored in VRAM is completely wiped. The integer IDs
+representing these textures no longer reference valid GPU memory
+blocks.</li>
+<li><strong>Rendering Consequences:</strong> Attempting to bind or
+sample from these textures results in undefined behavior, missing
+geometry, black surfaces, or immediate driver errors.</li>
+<li><strong>Recovery Requirement:</strong> The application cannot simply
+rebind the previous handles. It must recreate the texture handles,
+reconfigure texture parameters (filtering, wrapping modes), and
+re-upload all pixel data from local storage or system RAM to the GPU
+using <code>glTexImage2D</code> or <code>glTexStorage2D</code>.</li>
+</ul>
+<h3 id="impact-on-buffer-objects">Impact on Buffer Objects</h3>
+<p>Buffer objects—including Vertex Buffer Objects (VBOs), Element Buffer
+Objects (EBOs), and Uniform Buffer Objects (UBOs)—hold raw vertex
+attributes, index arrays, and uniform parameters.</p>
+<ul>
+<li><strong>Loss of Geometry and State:</strong> Context loss frees all
+memory regions allocated via <code>glBufferData</code> or
+<code>glBufferStorage</code>. Vertex attributes, indices, and uniform
+blocks stored on the GPU are lost entirely.</li>
+<li><strong>Vertex Array Object (VAO) Destruction:</strong> If VAOs are
+used to encapsulate vertex attribute pointers and buffer bindings, their
+internal state configurations are also discarded.</li>
+<li><strong>Recovery Requirement:</strong> Developers must generate
+fresh buffer IDs (<code>glGenBuffers</code>), re-bind them to their
+target targets, and re-populate them with mesh data and layout
+definitions before any draw calls can execute successfully.</li>
+</ul>
+<h3 id="impact-on-program-objects">Impact on Program Objects</h3>
+<p>Program objects and their constituent shader objects represent
+compiled GLSL source code, hardware-specific binaries, and active
+uniform locations.</p>
+<ul>
+<li><strong>Loss of Compiled Executables:</strong> Shaders and linked
+program objects reside entirely within driver-managed memory. When the
+context is lost, the compiled shader binaries and the linked GPU program
+state are wiped out.</li>
+<li><strong>Invalidated Uniform Locations:</strong> Any cached uniform
+or attribute locations (retrieved via <code>glGetUniformLocation</code>
+or <code>glGetAttribLocation</code>) become invalid because they
+correspond to a defunct program instance.</li>
+<li><strong>Recovery Requirement:</strong> Programs must be fully
+re-created. The application must invoke <code>glCreateShader</code>,
+supply the GLSL source, compile each stage, attach them to a new program
+(<code>glCreateProgram</code>), and execute <code>glLinkProgram</code>.
+After linking, all uniform locations must be re-queried and their values
+re-set.</li>
+</ul>
+<h3 id="recovery-strategy">Recovery Strategy</h3>
+<p>Because context loss destroys textures, buffers, and programs
+simultaneously, standard error-checking loops cannot salvage the
+existing context. Applications targeting mobile OpenGL ES must detect
+the loss event, tear down the invalid context, build a new one via EGL,
+and run an asset re-instantiation routine that uploads textures,
+buffers, and compiled shaders back into GPU memory from persistent
+storage.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/open-gl-es-context-loss-effects-on-gpu-objects';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

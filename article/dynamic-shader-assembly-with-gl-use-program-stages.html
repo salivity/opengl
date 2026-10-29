@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Shader Assembly with glUseProgramStages - opengl</title>
+    <meta name="description" content="Modern OpenGL uses Separate Shader Objects (SSO) and the glUseProgramStages function to assemble independent vertex and fragment shader stages into a unified rendering state at runtime. By decoupling shaders from the traditional monolithic program pipelin">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/dynamic-shader-assembly-with-gl-use-program-stages">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Dynamic Shader Assembly with glUseProgramStages - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/dynamic-shader-assembly-with-gl-use-program-stages" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Modern OpenGL uses Separate Shader Objects (SSO) and the glUseProgramStages function to assemble independent vertex and fragment shader stages into a unified rendering state at runtime. By decoupling shaders from the traditional monolithic program pipelin" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamic-shader-assembly-with-gluseprogramstages">Dynamic Shader
+Assembly with glUseProgramStages</h1>
+<p>Modern OpenGL uses Separate Shader Objects (SSO) and the
+<code>glUseProgramStages</code> function to assemble independent vertex
+and fragment shader stages into a unified rendering state at runtime. By
+decoupling shaders from the traditional monolithic program pipeline,
+developers can mix and match pre-compiled stages dynamically via a
+Program Pipeline Object (PPO). This approach eliminates the performance
+overhead of recompiling or relinking full shader programs when swapping
+individual stages, providing a modular architecture well-suited for
+complex rendering engines.</p>
+<h3 id="the-monolithic-model-vs-separate-shader-objects">The Monolithic
+Model vs. Separate Shader Objects</h3>
+<p>Traditionally, OpenGL required all programmable stages—such as
+vertex, geometry, and fragment shaders—to be attached to a single
+program object via <code>glAttachShader</code> and linked together using
+<code>glLinkProgram</code>. While this allows the driver to perform
+cross-stage optimizations, it introduces a rigid coupling: changing a
+fragment shader requires a distinct linked program for every compatible
+vertex shader.</p>
+<p>The Separate Shader Object (SSO) workflow, introduced in OpenGL 4.1,
+treats individual stages as self-contained programs. Independent shader
+programs are created, compiled, and linked in isolation, and then
+dynamically bound to a Program Pipeline Object via
+<code>glUseProgramStages</code>.</p>
+<h3 id="creating-separable-programs">Creating Separable Programs</h3>
+<p>Before a program can be bound inside a pipeline, it must be flagged
+as separable. This notifies the driver that the program will not undergo
+traditional whole-pipeline linking and must maintain standardized
+input/output interfaces.</p>
+<p>A separable program can be initialized in two ways:</p>
+<ol type="1">
+<li><p><strong>Using Program Parameters:</strong></p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>GLuint vertProg <span class="op">=</span> glCreateProgram<span class="op">();</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>glProgramParameteri<span class="op">(</span>vertProg<span class="op">,</span> GL_PROGRAM_SEPARABLE<span class="op">,</span> GL_TRUE<span class="op">);</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>glAttachShader<span class="op">(</span>vertProg<span class="op">,</span> vertShader<span class="op">);</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>glLinkProgram<span class="op">(</span>vertProg<span class="op">);</span></span></code></pre></div></li>
+<li><p><strong>Using the Convenience Function:</strong></p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>GLuint fragProg <span class="op">=</span> glCreateShaderProgramv<span class="op">(</span>GL_FRAGMENT_SHADER<span class="op">,</span> <span class="dv">1</span><span class="op">,</span> <span class="op">&amp;</span>fragSource<span class="op">);</span></span></code></pre></div>
+<p><code>glCreateShaderProgramv</code> automatically compiles, marks
+separable, and links a single-stage program in one call.</p></li>
+</ol>
+<h3 id="the-mechanics-of-gluseprogramstages">The Mechanics of
+<code>glUseProgramStages</code></h3>
+<p>The <code>glUseProgramStages</code> function binds a separable
+program to specific execution stages within a pipeline object. Its
+signature is:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> glUseProgramStages<span class="op">(</span>GLuint pipeline<span class="op">,</span> GLbitfield stages<span class="op">,</span> GLuint program<span class="op">);</span></span></code></pre></div>
+<ul>
+<li><strong><code>pipeline</code></strong>: The target Program Pipeline
+Object created via <code>glGenProgramPipelines</code>.</li>
+<li><strong><code>stages</code></strong>: A bitmask indicating which
+execution stages the program should control. Common values include
+<code>GL_VERTEX_SHADER_BIT</code>, <code>GL_FRAGMENT_SHADER_BIT</code>,
+<code>GL_GEOMETRY_SHADER_BIT</code>,
+<code>GL_TESS_CONTROL_SHADER_BIT</code>,
+<code>GL_TESS_EVALUATION_SHADER_BIT</code>,
+<code>GL_COMPUTE_SHADER_BIT</code>, or
+<code>GL_ALL_SHADER_BITS</code>.</li>
+<li><strong><code>program</code></strong>: The ID of the separable
+program providing those stages. Passing <code>0</code> clears the
+specified stages from the pipeline.</li>
+</ul>
+<p>When this call executes, the pipeline updates its internal state
+vector to point the selected pipeline stage references to the designated
+program object.</p>
+<h3 id="dynamic-pipeline-configuration">Dynamic Pipeline
+Configuration</h3>
+<p>To assemble and use independent stages at runtime:</p>
+<ol type="1">
+<li><p><strong>Generate and Bind the Pipeline:</strong></p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode c"><code class="sourceCode c"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>GLuint pipeline<span class="op">;</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>glGenProgramPipelines<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="op">&amp;</span>pipeline<span class="op">);</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>glBindProgramPipeline<span class="op">(</span>pipeline<span class="op">);</span></span></code></pre></div></li>
+<li><p><strong>Attach Stages Dynamically:</strong></p>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode c"><code class="sourceCode c"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Bind vertex logic from vertProg</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>glUseProgramStages<span class="op">(</span>pipeline<span class="op">,</span> GL_VERTEX_SHADER_BIT<span class="op">,</span> vertProg<span class="op">);</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="co">// Bind fragment logic from fragProgA</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>glUseProgramStages<span class="op">(</span>pipeline<span class="op">,</span> GL_FRAGMENT_SHADER_BIT<span class="op">,</span> fragProgA<span class="op">);</span></span></code></pre></div></li>
+<li><p><strong>Swap Stages on Demand:</strong> If a material change
+requires a different fragment shader (<code>fragProgB</code>), the
+vertex stage remains untouched:</p>
+<div class="sourceCode" id="cb6"><pre
+class="sourceCode c"><code class="sourceCode c"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>glUseProgramStages<span class="op">(</span>pipeline<span class="op">,</span> GL_FRAGMENT_SHADER_BIT<span class="op">,</span> fragProgB<span class="op">);</span></span></code></pre></div></li>
+<li><p><strong>Activate Pipeline Execution:</strong> The active pipeline
+only takes effect if the global program binding is cleared:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>glUseProgram<span class="op">(</span><span class="dv">0</span><span class="op">);</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>glBindProgramPipeline<span class="op">(</span>pipeline<span class="op">);</span></span></code></pre></div>
+<p>A non-zero program bound via <code>glUseProgram</code> always
+overrides active program pipelines.</p></li>
+</ol>
+<h3 id="interface-matching-rules">Interface Matching Rules</h3>
+<p>Because stages are linked independently, the GLSL compiler cannot
+verify variable interfaces between stages at link time. Instead, the
+driver matches inputs and outputs dynamically during draw calls.</p>
+<p>To ensure stability and avoid undefined behavior:</p>
+<ul>
+<li><strong>Explicit Locations:</strong> Declare explicit locations
+using layout qualifiers
+(<code>layout(location = 0) out vec3 vColor;</code> in the vertex shader
+matched to <code>layout(location = 0) in vec3 vColor;</code> in the
+fragment shader).</li>
+<li><strong>Interface Blocks:</strong> When passing complex data across
+stages, wrap variables in matching uniform or interface blocks with
+identical instance definitions and matching block layout
+qualifiers.</li>
+<li><strong>Precision Matching:</strong> Ensure data types and precision
+qualifiers match precisely between the producer and consumer
+stages.</li>
+</ul>
+<p>By combining explicit interface locations with
+<code>glUseProgramStages</code>, modern OpenGL provides the flexibility
+to assemble and alter rendering pipelines on the fly without runtime
+recompilation costs.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/dynamic-shader-assembly-with-gl-use-program-stages';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clipping Planes in OpenGL Core Profile - opengl</title>
+    <meta name="description" content="This article provides an overview of the role, mechanics, and practical utility of user clipping planes within modern OpenGL core profiles. Although core OpenGL has deprecated most of the legacy fixed-function pipeline in favor of programmable shaders, de">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/clipping-planes-in-open-gl-core-profile">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Clipping Planes in OpenGL Core Profile - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/clipping-planes-in-open-gl-core-profile" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article provides an overview of the role, mechanics, and practical utility of user clipping planes within modern OpenGL core profiles. Although core OpenGL has deprecated most of the legacy fixed-function pipeline in favor of programmable shaders, de" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="clipping-planes-in-opengl-core-profile">Clipping Planes in
+OpenGL Core Profile</h1>
+<p>This article provides an overview of the role, mechanics, and
+practical utility of user clipping planes within modern OpenGL core
+profiles. Although core OpenGL has deprecated most of the legacy
+fixed-function pipeline in favor of programmable shaders, dedicated
+fixed-function clipping stages remain essential for geometric
+optimization and cross-sectional rendering. Understanding how this
+hardware-accelerated stage operates allows developers to achieve
+efficient geometry culling and precise planar cuts without sacrificing
+rendering performance.</p>
+<h3 id="the-mechanism-in-core-opengl">The Mechanism in Core OpenGL</h3>
+<p>In legacy OpenGL, user-defined clipping was handled via API state
+calls like <code>glClipPlane()</code>, which automatically evaluated
+plane equations against incoming vertices. In modern core profiles
+(OpenGL 3.2 and later), this API interface has been removed, but the
+underlying fixed-function clipping hardware stage remains intact between
+vertex/geometry processing and primitive rasterization.</p>
+<p>Instead of specifying plane equations via CPU-side state, modern core
+profiles require shaders to write scalar distances to the built-in
+output array <code>gl_ClipDistance[]</code>. The application activates
+these clipping stages on the host using
+<code>glEnable(GL_CLIP_DISTANCE0 + i)</code>. The fixed-function
+hardware then tests these interpolated scalar distances against zero to
+determine whether vertices lie inside or outside the clipping
+boundary.</p>
+<h3 id="primary-purposes-and-technical-advantages">Primary Purposes and
+Technical Advantages</h3>
+<h4 id="1-pre-rasterization-geometry-culling">1. Pre-Rasterization
+Geometry Culling</h4>
+<p>Fixed-function clipping occurs before fragments are generated. When
+an entire primitive falls on the negative side of a clip plane, the
+hardware discards it before it ever reaches the rasterizer. This avoids
+executing expensive fragment shaders over invisible pixels,
+significantly conserving memory bandwidth and fill rate.</p>
+<h4 id="2-preserving-early-depth-and-stencil-optimizations">2.
+Preserving Early Depth and Stencil Optimizations</h4>
+<p>A common alternative to clipping planes is manually discarding pixels
+inside the fragment shader using the <code>discard</code> keyword.
+However, using <code>discard</code> forces modern GPUs to disable Early
+Depth/Stencil testing (Early-Z), because the GPU cannot know whether a
+fragment will write to the depth buffer until after the fragment shader
+finishes. By delegating planar cuts to the fixed-function clipping
+hardware, the geometry is physically culled prior to rasterization,
+leaving early depth testing fully operational.</p>
+<h4 id="3-correct-geometric-reconstruction">3. Correct Geometric
+Reconstruction</h4>
+<p>When a primitive intersects a clipping plane, the fixed-function
+hardware clips the polygon and generates new vertices along the boundary
+line. It automatically interpolates all vertex attributes (such as
+texture coordinates, normals, and colors) precisely along the plane's
+intersection. This produces a clean, artifact-free boundary without
+requiring manual tessellation logic inside geometry or compute
+shaders.</p>
+<h3 id="common-use-cases">Common Use Cases</h3>
+<ul>
+<li><strong>Planar Reflections and Portals:</strong> Rendering planar
+water or mirrors requires clipping geometry located on the non-visible
+side of the reflective surface to prevent objects beneath the water from
+bleeding into the reflection texture.</li>
+<li><strong>Architectural and CAD Cross-Sections:</strong> Engineering
+and design software uses clipping planes to generate real-time interior
+cutaway views of complex assemblies and structures.</li>
+<li><strong>Medical Volume Slicing:</strong> Volumetric datasets (such
+as CT or MRI scans) use arbitrary clipping planes to isolate specific
+anatomical slices and view cross-sectional planes interactively.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/clipping-planes-in-open-gl-core-profile';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Per-Object Velocity Motion Blur in OpenGL - opengl</title>
+    <meta name="description" content="This article explains how to implement motion blur in an OpenGL pipeline using per-object velocity vectors. It details the math and transformations required across consecutive frames, the construction of a dedicated velocity buffer using OpenGL Framebuffe">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/per-object-velocity-motion-blur-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Per-Object Velocity Motion Blur in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/per-object-velocity-motion-blur-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how to implement motion blur in an OpenGL pipeline using per-object velocity vectors. It details the math and transformations required across consecutive frames, the construction of a dedicated velocity buffer using OpenGL Framebuffe" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="per-object-velocity-motion-blur-in-opengl">Per-Object Velocity
+Motion Blur in OpenGL</h1>
+<p>This article explains how to implement motion blur in an OpenGL
+pipeline using per-object velocity vectors. It details the math and
+transformations required across consecutive frames, the construction of
+a dedicated velocity buffer using OpenGL Framebuffer Objects (FBOs), the
+execution of vertex and fragment shaders to calculate per-pixel motion
+deltas, and the final post-processing pass that samples the scene color
+buffer along velocity trajectories to simulate realistic camera
+exposure.</p>
+<hr />
+<h3 id="understanding-per-object-velocity-motion-blur">Understanding
+Per-Object Velocity Motion Blur</h3>
+<p>Motion blur simulates the real-world optical effect where objects
+moving faster than a camera's exposure time appear smeared along their
+direction of travel. In real-time rendering, simulating physical shutter
+accumulation per frame is computationally expensive. Instead, modern
+pipelines generate a screen-space velocity vector for every rendered
+pixel and use a 2D post-processing blur pass to sample the scene along
+that vector.</p>
+<p>Per-object velocity accounts for dynamic meshes moving relative to
+the camera, rotating, or deforming, while simultaneously capturing
+overall camera translation and rotation.</p>
+<hr />
+<h3 id="step-1-tracking-transformation-matrices">Step 1: Tracking
+Transformation Matrices</h3>
+<p>To determine how far a vertex moved since the last frame, you must
+track two sets of transformations for every dynamic mesh:</p>
+<ol type="1">
+<li><strong>Current Frame State:</strong>
+<ul>
+<li>Model Matrix (<span
+class="math inline">\(M_{\text{current}}\)</span>)</li>
+<li>View-Projection Matrix (<span
+class="math inline">\(VP_{\text{current}}\)</span>)</li>
+</ul></li>
+<li><strong>Previous Frame State:</strong>
+<ul>
+<li>Model Matrix (<span
+class="math inline">\(M_{\text{previous}}\)</span>)</li>
+<li>View-Projection Matrix (<span
+class="math inline">\(VP_{\text{previous}}\)</span>)</li>
+</ul></li>
+</ol>
+<p>At the end of each frame render loop, copy the current frame matrices
+into the previous frame matrix uniform variables before updating them
+with the new simulation step.</p>
+<hr />
+<h3 id="step-2-the-velocity-vector-shader-pass">Step 2: The Velocity
+Vector Shader Pass</h3>
+<p>Velocity is measured in screen-space (Normalized Device Coordinates,
+or NDC). The calculation takes place within the geometry rendering
+stage, often as a render target in a deferred rendering G-buffer or a
+dedicated pre-pass in forward rendering.</p>
+<h4 id="vertex-shader">Vertex Shader</h4>
+<p>The vertex shader calculates both current and previous clip-space
+positions for the vertex:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 330 core</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">in</span> <span class="dt">vec3</span> aPos<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">mat4</span> uCurrentMVP<span class="op">;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">mat4</span> uPreviousMVP<span class="op">;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec4</span> vCurrentPos<span class="op">;</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec4</span> vPreviousPos<span class="op">;</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    vCurrentPos <span class="op">=</span> uCurrentMVP <span class="op">*</span> <span class="dt">vec4</span><span class="op">(</span>aPos<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>    vPreviousPos <span class="op">=</span> uPreviousMVP <span class="op">*</span> <span class="dt">vec4</span><span class="op">(</span>aPos<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    <span class="bu">gl_Position</span> <span class="op">=</span> vCurrentPos<span class="op">;</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h4 id="fragment-shader">Fragment Shader</h4>
+<p>In the fragment shader, clip coordinates are mapped to NDC by
+performing the perspective divide (<span class="math inline">\(xy /
+w\)</span>). The difference between the two coordinates yields the 2D
+velocity vector.</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 330 core</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="dt">in</span> <span class="dt">vec4</span> vCurrentPos<span class="op">;</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="dt">in</span> <span class="dt">vec4</span> vPreviousPos<span class="op">;</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">out</span> <span class="dt">vec2</span> FragVelocity<span class="op">;</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Convert clip coordinates to NDC [-1, 1]</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec2</span> currentNDC <span class="op">=</span> vCurrentPos<span class="op">.</span><span class="fu">xy</span> <span class="op">/</span> vCurrentPos<span class="op">.</span><span class="fu">w</span><span class="op">;</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec2</span> previousNDC <span class="op">=</span> vPreviousPos<span class="op">.</span><span class="fu">xy</span> <span class="op">/</span> vPreviousPos<span class="op">.</span><span class="fu">w</span><span class="op">;</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Calculate motion vector and map to UV scale [-0.5, 0.5]</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec2</span> velocity <span class="op">=</span> <span class="op">(</span>currentNDC <span class="op">-</span> previousNDC<span class="op">)</span> <span class="op">*</span> <span class="fl">0.5</span><span class="op">;</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>    FragVelocity <span class="op">=</span> velocity<span class="op">;</span></span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<hr />
+<h3 id="step-3-opengl-framebuffer-configuration">Step 3: OpenGL
+Framebuffer Configuration</h3>
+<p>The velocity vector requires precision and the ability to store
+negative numbers. Set up an OpenGL Framebuffer Object (FBO) with a
+floating-point texture attachment:</p>
+<ul>
+<li><strong>Format:</strong> <code>GL_RG16F</code> or
+<code>GL_RG32F</code> (two-channel 16-bit or 32-bit floating
+point).</li>
+<li><strong>Wrap Mode:</strong> <code>GL_CLAMP_TO_EDGE</code> (to avoid
+sampling artifacts at screen borders).</li>
+<li><strong>Filter Mode:</strong> <code>GL_NEAREST</code> or
+<code>GL_LINEAR</code>.</li>
+</ul>
+<div class="sourceCode" id="cb3"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>GLuint velocityTex<span class="op">;</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>glGenTextures<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="op">&amp;</span>velocityTex<span class="op">);</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>glBindTexture<span class="op">(</span>GL_TEXTURE_2D<span class="op">,</span> velocityTex<span class="op">);</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>glTexImage2D<span class="op">(</span>GL_TEXTURE_2D<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> GL_RG16F<span class="op">,</span> screenWidth<span class="op">,</span> screenHeight<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> GL_RG<span class="op">,</span> GL_FLOAT<span class="op">,</span> NULL<span class="op">);</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_2D<span class="op">,</span> GL_TEXTURE_MIN_FILTER<span class="op">,</span> GL_NEAREST<span class="op">);</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_2D<span class="op">,</span> GL_TEXTURE_MAG_FILTER<span class="op">,</span> GL_NEAREST<span class="op">);</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_2D<span class="op">,</span> GL_TEXTURE_WRAP_S<span class="op">,</span> GL_CLAMP_TO_EDGE<span class="op">);</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>glTexParameteri<span class="op">(</span>GL_TEXTURE_2D<span class="op">,</span> GL_TEXTURE_WRAP_T<span class="op">,</span> GL_CLAMP_TO_EDGE<span class="op">);</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>glFramebufferTexture2D<span class="op">(</span>GL_FRAMEBUFFER<span class="op">,</span> GL_COLOR_ATTACHMENT1<span class="op">,</span> GL_TEXTURE_2D<span class="op">,</span> velocityTex<span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span></code></pre></div>
+<hr />
+<h3 id="step-4-the-post-processing-blur-pass">Step 4: The
+Post-Processing Blur Pass</h3>
+<p>The final stage renders a full-screen quad. The fragment shader reads
+the rendered scene color and samples along the direction of the velocity
+vector retrieved from the velocity texture.</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 330 core</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec4</span> FragColor<span class="op">;</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="dt">in</span> <span class="dt">vec2</span> TexCoords<span class="op">;</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">sampler2D</span> uColorTexture<span class="op">;</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">sampler2D</span> uVelocityTexture<span class="op">;</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">int</span> uNumSamples<span class="op">;</span>      <span class="co">// Typically 8 to 16</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">float</span> uBlurScale<span class="op">;</span>     <span class="co">// Controls simulated shutter speed</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec2</span> velocity <span class="op">=</span> <span class="bu">texture</span><span class="op">(</span>uVelocityTexture<span class="op">,</span> TexCoords<span class="op">).</span><span class="fu">rg</span> <span class="op">*</span> uBlurScale<span class="op">;</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Prevent excessive blur from extreme movements</span></span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> maxVelocity <span class="op">=</span> <span class="fl">0.05</span><span class="op">;</span></span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>    velocity <span class="op">=</span> <span class="bu">clamp</span><span class="op">(</span>velocity<span class="op">,</span> <span class="op">-</span>maxVelocity<span class="op">,</span> maxVelocity<span class="op">);</span></span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec4</span> color <span class="op">=</span> <span class="bu">texture</span><span class="op">(</span>uColorTexture<span class="op">,</span> TexCoords<span class="op">);</span></span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec2</span> stepUV <span class="op">=</span> velocity <span class="op">/</span> <span class="dt">float</span><span class="op">(</span>uNumSamples<span class="op">);</span></span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec2</span> currentUV <span class="op">=</span> TexCoords<span class="op">;</span></span>
+<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a>    <span class="kw">for</span> <span class="op">(</span><span class="dt">int</span> i <span class="op">=</span> <span class="dv">1</span><span class="op">;</span> i <span class="op">&lt;</span> uNumSamples<span class="op">;</span> <span class="op">++</span>i<span class="op">)</span></span>
+<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a>    <span class="op">{</span></span>
+<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a>        currentUV <span class="op">+=</span> stepUV<span class="op">;</span></span>
+<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a>        color <span class="op">+=</span> <span class="bu">texture</span><span class="op">(</span>uColorTexture<span class="op">,</span> currentUV<span class="op">);</span></span>
+<span id="cb4-28"><a href="#cb4-28" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb4-29"><a href="#cb4-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-30"><a href="#cb4-30" aria-hidden="true" tabindex="-1"></a>    FragColor <span class="op">=</span> color <span class="op">/</span> <span class="dt">float</span><span class="op">(</span>uNumSamples<span class="op">);</span></span>
+<span id="cb4-31"><a href="#cb4-31" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<hr />
+<h3 id="considerations-for-dynamic-and-skinned-meshes">Considerations
+for Dynamic and Skinned Meshes</h3>
+<ol type="1">
+<li><strong>Static Objects:</strong> For environments that do not move,
+<span class="math inline">\(M_{\text{previous}} =
+M_{\text{current}}\)</span>. The velocity vector solely reflects the
+camera's translation and rotation.</li>
+<li><strong>Skinned Meshes:</strong> For animated characters,
+calculating accurate per-vertex velocity requires storing and uploading
+the previous frame's bone transform matrices in addition to current bone
+transforms.</li>
+<li><strong>Depth Discontinuities:</strong> Simple post-processing blur
+can cause the background to bleed over foreground silhouettes. Comparing
+the depth values of neighboring samples prevents background pixels from
+gathering velocity data belonging to foreground objects.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/per-object-velocity-motion-blur-in-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Polygon Offset in OpenGL: How to Prevent Z-Fighting - opengl</title>
+    <meta name="description" content="This article provides an overview of how OpenGL&#39;s rasterizer state manages polygon offset to eliminate z-fighting between coplanar surfaces. By modifying the depth values of fragments during the rasterization stage, developers can enforce a deterministic">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/polygon-offset-in-open-gl-how-to-prevent-z-fighting">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Polygon Offset in OpenGL: How to Prevent Z-Fighting - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/polygon-offset-in-open-gl-how-to-prevent-z-fighting" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article provides an overview of how OpenGL&#39;s rasterizer state manages polygon offset to eliminate z-fighting between coplanar surfaces. By modifying the depth values of fragments during the rasterization stage, developers can enforce a deterministic" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="polygon-offset-in-opengl-how-to-prevent-z-fighting">Polygon
+Offset in OpenGL: How to Prevent Z-Fighting</h1>
+<p>This article provides an overview of how OpenGL's rasterizer state
+manages polygon offset to eliminate z-fighting between coplanar
+surfaces. By modifying the depth values of fragments during the
+rasterization stage, developers can enforce a deterministic rendering
+order for overlapping geometry without altering world-space coordinates.
+Understanding how to configure rasterizer states and calculate depth
+offsets is essential for rendering decals, outlines, and shadow maps
+cleanly.</p>
+<h3 id="the-mechanism-of-z-fighting">The Mechanism of Z-Fighting</h3>
+<p>Z-fighting occurs when two or more primitives share the same or
+nearly identical depth values in screen space. Because depth buffers
+possess finite floating-point or fixed-point precision, mathematical
+rounding errors during projection and rasterization cause the GPU to
+alternate unpredictably between fragments. This produces a flickering,
+stitched visual artifact where coplanar surfaces compete for
+visibility.</p>
+<h3 id="the-rasterizers-role-in-depth-modification">The Rasterizer’s
+Role in Depth Modification</h3>
+<p>The rasterizer is the fixed-function stage of the graphics pipeline
+that converts geometric primitives (triangles, lines, and points) into
+two-dimensional fragments. As it interpolates attributes across a
+primitive, it calculates a window-space depth value (<span
+class="math inline">\(z\)</span>) for each fragment.</p>
+<p>When polygon offset is enabled in the rasterizer state, the hardware
+intercepts this calculated depth value and applies an offset calculation
+before running the depth test. Because this modification occurs entirely
+within the rasterizer state:</p>
+<ul>
+<li>Original mesh geometry remains untouched in vertex buffers and
+transformation matrices.</li>
+<li>The offset is applied dynamically per-fragment based on the
+orientation of the surface relative to the viewpoint.</li>
+<li>Depth modifications occur before the fragment reaches the depth and
+stencil tests, ensuring the fragment either reliably passes or fails the
+depth comparison against existing buffer values.</li>
+</ul>
+<h3 id="configuring-the-rasterizer-state">Configuring the Rasterizer
+State</h3>
+<p>OpenGL requires two steps to apply this bias: enabling the
+appropriate rasterizer capability and supplying the offset
+parameters.</p>
+<p>To activate the state, call <code>glEnable</code> with the token
+matching the primitive’s rasterization mode:</p>
+<ul>
+<li><code>GL_POLYGON_OFFSET_FILL</code> for solid surfaces</li>
+<li><code>GL_POLYGON_OFFSET_LINE</code> for wireframe rendering</li>
+<li><code>GL_POLYGON_OFFSET_POINT</code> for point primitives</li>
+</ul>
+<p>The offset amount is configured using the
+<code>glPolygonOffset(GLfloat factor, GLfloat units)</code> command. The
+rasterizer calculates the total depth offset using the following
+formula:</p>
+<p><span class="math display">\[\text{Offset} = (m \times \text{factor})
++ (r \times \text{units})\]</span></p>
+<ul>
+<li><strong><span class="math inline">\(m\)</span> (Maximum Depth
+Slope):</strong> The maximum rate of change in depth relative to
+screen-space coordinates across the primitive. Polygons viewed at
+grazing angles have steep slopes, requiring larger depth offsets to
+separate them reliably. The <code>factor</code> scales with this slope
+to automatically provide more separation for angled geometry.</li>
+<li><strong><span class="math inline">\(r\)</span> (Minimum Resolvable
+Difference):</strong> The smallest measurable difference in depth that
+the current depth buffer format can represent. The <code>units</code>
+parameter multiplies this value to create a constant baseline offset,
+ensuring separation even when polygons are parallel to the view
+plane.</li>
+</ul>
+<h3 id="common-implementation-patterns">Common Implementation
+Patterns</h3>
+<p>To draw an overlay or decal cleanly onto an existing surface:</p>
+<ol type="1">
+<li>Render the base geometry normally with <code>glPolygonOffset</code>
+disabled or set to neutral values.</li>
+<li>Enable <code>GL_POLYGON_OFFSET_FILL</code>.</li>
+<li>Set <code>glPolygonOffset</code> with small positive or negative
+values (commonly between <code>1.0</code> and <code>2.0</code> depending
+on whether using a standard depth test of <code>GL_LESS</code> or
+reverse-z).</li>
+<li>Render the overlay geometry.</li>
+<li>Disable <code>GL_POLYGON_OFFSET_FILL</code> to prevent subsequent
+scene objects from shifting in the depth buffer.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/polygon-offset-in-open-gl-how-to-prevent-z-fighting';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

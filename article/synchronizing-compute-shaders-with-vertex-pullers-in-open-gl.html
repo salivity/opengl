@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Synchronizing Compute Shaders with Vertex Pullers in OpenGL - opengl</title>
+    <meta name="description" content="In modern OpenGL, compute shaders frequently generate or modify geometry data directly on the GPU, requiring explicit synchronization before that data can be safely consumed by the fixed-function vertex puller. Because compute shader writes bypass traditi">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/synchronizing-compute-shaders-with-vertex-pullers-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Synchronizing Compute Shaders with Vertex Pullers in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/synchronizing-compute-shaders-with-vertex-pullers-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In modern OpenGL, compute shaders frequently generate or modify geometry data directly on the GPU, requiring explicit synchronization before that data can be safely consumed by the fixed-function vertex puller. Because compute shader writes bypass traditi" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="synchronizing-compute-shaders-with-vertex-pullers-in-opengl">Synchronizing
+Compute Shaders with Vertex Pullers in OpenGL</h1>
+<p>In modern OpenGL, compute shaders frequently generate or modify
+geometry data directly on the GPU, requiring explicit synchronization
+before that data can be safely consumed by the fixed-function vertex
+puller. Because compute shader writes bypass traditional pipeline stages
+via incoherent memory access, developers must insert a memory barrier
+using <code>glMemoryBarrier</code> with the
+<code>GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT</code> flag. This ensures all
+pending memory writes to buffer objects are fully flushed, visible, and
+coherent before the vertex fetching hardware initiates subsequent draw
+commands, effectively eliminating read-after-write hazards.</p>
+<h3 id="the-memory-coherency-problem">The Memory Coherency Problem</h3>
+<p>Compute shaders typically write vertex data into Shader Storage
+Buffer Objects (SSBOs). In modern graphics pipelines, this data is
+cached in L1/L2 caches that are not automatically coherent with the
+specialized cache hierarchies utilized by the fixed-function vertex
+fetch hardware (the vertex puller).</p>
+<p>If a draw call such as <code>glDrawArrays</code> or
+<code>glDrawElements</code> is dispatched immediately after a compute
+dispatch without synchronization, a read-after-write (RAW) hazard
+occurs. The vertex puller may read stale, partially written, or
+out-of-order data, leading to flickering, missing primitives, or GPU
+memory faults.</p>
+<h3 id="using-glmemorybarrier">Using <code>glMemoryBarrier</code></h3>
+<p>To resolve this hazard, OpenGL provides the
+<code>glMemoryBarrier(GLbitfield barriers)</code> API. This command
+forces memory transactions issued before the barrier to complete and
+become visible to subsequent commands that access memory through the
+specified pipeline stages.</p>
+<p>To synchronize compute shader writes with the vertex attribute fetch
+stage:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>glMemoryBarrier<span class="op">(</span>GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT<span class="op">);</span></span></code></pre></div>
+<p>The <code>GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT</code> guarantees that
+any memory stores initiated prior to the barrier (such as image stores
+or SSBO writes) are reflected in data read by the vertex puller via
+vertex attribute arrays (<code>glVertexAttribPointer</code> or
+<code>glVertexArrayVertexBuffer</code>).</p>
+<h3 id="handling-element-and-draw-indirect-buffers">Handling Element and
+Draw Indirect Buffers</h3>
+<p>If the compute shader generates indices or indirect drawing
+parameters in addition to vertex attributes, additional barrier bits
+must be combined with a bitwise OR:</p>
+<ul>
+<li><strong>Index Buffers:</strong> If generating or modifying indices
+consumed by <code>glDrawElements</code>, include
+<code>GL_ELEMENT_ARRAY_BARRIER_BIT</code>.</li>
+<li><strong>Indirect Draw Arguments:</strong> If populating draw command
+arguments for <code>glDrawArraysIndirect</code> or
+<code>glDrawElementsIndirect</code>, include
+<code>GL_COMMAND_BARRIER_BIT</code>.</li>
+</ul>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Example: Synchronizing attributes, indices, and indirect draw buffers</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>glMemoryBarrier<span class="op">(</span>GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT <span class="op">|</span> </span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>                GL_ELEMENT_ARRAY_BARRIER_BIT <span class="op">|</span> </span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>                GL_COMMAND_BARRIER_BIT<span class="op">);</span></span></code></pre></div>
+<h3 id="complete-synchronization-workflow">Complete Synchronization
+Workflow</h3>
+<p>A standard procedural generation or GPU-culling loop follows these
+discrete steps:</p>
+<ol type="1">
+<li><strong>Bind Resources:</strong> Bind the target buffer as an SSBO
+(<code>GL_SHADER_STORAGE_BUFFER</code>) for the compute pass.</li>
+<li><strong>Execute Compute:</strong> Dispatch the compute shader using
+<code>glDispatchCompute(numGroupsX, numGroupsY, numGroupsZ)</code>.</li>
+<li><strong>Insert the Barrier:</strong> Invoke
+<code>glMemoryBarrier(GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT)</code>
+immediately after the dispatch.</li>
+<li><strong>Bind Vertex Arrays:</strong> Bind the Vertex Array Object
+(VAO) that references the modified buffer as a
+<code>GL_ARRAY_BUFFER</code>.</li>
+<li><strong>Issue Draw Call:</strong> Execute <code>glDrawArrays</code>
+or <code>glDrawElements</code>. The vertex puller is guaranteed to read
+the final, coherent data produced by the compute shader.</li>
+</ol>
+<h3 id="optimization-and-ordering">Optimization and Ordering</h3>
+<p>A common mistake is placing the memory barrier immediately before the
+draw call instead of directly after the compute dispatch, or vice versa,
+without considering intervening CPU-side operations. The barrier only
+dictates order between commands issued <em>before</em> it and commands
+issued <em>after</em> it in the OpenGL command stream. Placing the
+barrier immediately prior to the draw call allows other non-dependent
+GPU work to overlap with compute execution, maximizing pipeline
+utilization while maintaining correctness.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/synchronizing-compute-shaders-with-vertex-pullers-in-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

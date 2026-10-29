@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How OpenGL 2.0 Established Programmable Pipelines - opengl</title>
+    <meta name="description" content="The release of OpenGL 2.0 in September 2004 marked a transformative milestone in computer graphics by replacing rigid, hardcoded hardware rendering with fully programmable pipelines. By standardizing the OpenGL Shading Language (GLSL) directly into the co">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-open-gl-2-0-established-programmable-pipelines">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How OpenGL 2.0 Established Programmable Pipelines - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-open-gl-2-0-established-programmable-pipelines" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The release of OpenGL 2.0 in September 2004 marked a transformative milestone in computer graphics by replacing rigid, hardcoded hardware rendering with fully programmable pipelines. By standardizing the OpenGL Shading Language (GLSL) directly into the co" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-opengl-20-established-programmable-pipelines">How OpenGL 2.0
+Established Programmable Pipelines</h1>
+<p>The release of OpenGL 2.0 in September 2004 marked a transformative
+milestone in computer graphics by replacing rigid, hardcoded hardware
+rendering with fully programmable pipelines. By standardizing the OpenGL
+Shading Language (GLSL) directly into the core specification, the
+Khronos Group empowered developers to write custom software executed
+directly on the graphics processing unit (GPU). This article examines
+the shift from the fixed-function architecture to programmable vertex
+and fragment pipelines, the mechanisms introduced to achieve this
+transition, and the architectural legacy it established for modern
+graphics rendering.</p>
+<p>Prior to OpenGL 2.0, the rendering pipeline operated largely on a
+fixed-function model. In this paradigm, operations such as coordinate
+transformations, surface lighting, texture combination, and fog
+application relied on predefined mathematical formulas built directly
+into graphics hardware. Developers could toggle features on or off or
+configure limited mathematical stages using complex extensions like
+<code>ARB_vertex_program</code> or register combiners. However, creating
+non-standard visual effects required complex multi-pass rendering
+techniques or vendor-specific workarounds that were difficult to
+maintain and lacked cross-platform portability.</p>
+<p>OpenGL 2.0 eliminated these limitations by formally integrating GLSL
+1.10 as an inherent part of the graphics standard. This integration
+allowed developers to write high-level, C-like code compiled directly by
+the graphics driver at runtime. Instead of relying on low-level,
+assembly-style hardware instructions, developers could author algorithms
+using control flow, matrix operations, vectors, and native mathematical
+functions.</p>
+<p>The programmable vertex pipeline replaced the legacy transform and
+lighting (T&amp;L) stage. With vertex shaders, developers gained full
+control over vertex attributes before rasterization. Rather than
+depending on static modelview and projection matrices, a vertex shader
+could implement custom coordinate transformations, calculate per-vertex
+data, process skeletal mesh skinning, generate procedural wave geometry,
+or compute dynamic texture coordinates. The resulting vertex data was
+then passed down the pipeline through user-defined varying variables to
+be interpolated across primitives.</p>
+<p>Following rasterization, the programmable fragment pipeline
+supplanted the fixed texture-blending and per-pixel operations. In
+legacy versions, blending textures and colors was constrained to a
+series of fixed formula stages using texture environment configurations
+(<code>glTexEnv</code>). The fragment shader in OpenGL 2.0 gave
+developers per-pixel execution autonomy. Developers could dynamically
+calculate complex illumination models—such as Blinn-Phong,
+Cook-Torrance, or subsurface scattering—directly per-pixel, evaluate
+multi-texture samplers programmatically, and implement techniques like
+normal mapping, shadow mapping, and procedural surface texturing before
+fragments reached the framebuffer tests.</p>
+<p>To manage these programmable stages, OpenGL 2.0 established
+standardized pipeline management functions that became foundational to
+graphics programming. It introduced dedicated API calls to manage the
+shader lifecycle:</p>
+<ul>
+<li><code>glCreateShader</code> and <code>glShaderSource</code> to
+instantiate and load shader source code.</li>
+<li><code>glCompileShader</code> to trigger the vendor driver's internal
+compilation of GLSL code.</li>
+<li><code>glCreateProgram</code> and <code>glAttachShader</code> to bind
+compiled vertex and fragment units together.</li>
+<li><code>glLinkProgram</code> to ensure that data interfaces between
+the vertex and fragment stages aligned correctly.</li>
+<li><code>glUseProgram</code> to activate the custom pipeline on the
+hardware execution context.</li>
+</ul>
+<p>This lifecycle decoupled visual processing logic from fixed driver
+pathways, granting the application direct execution control over GPU
+compute resources.</p>
+<p>By standardizing these pipelines into the core specification without
+requiring proprietary extensions, OpenGL 2.0 democratized advanced
+visual algorithms across varied consumer hardware. It proved that a
+high-level shading language could deliver hardware-accelerated
+efficiency without sacrificing platform neutrality. Ultimately, OpenGL
+2.0 altered the course of real-time computer graphics, creating the
+technical foundation that led to the complete deprecation of the
+fixed-function pipeline in OpenGL 3.0 and shaping the programmable
+architectures found in modern rendering engines today.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/how-open-gl-2-0-established-programmable-pipelines';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

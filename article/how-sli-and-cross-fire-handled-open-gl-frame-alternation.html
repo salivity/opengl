@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How SLI and CrossFire Handled OpenGL Frame Alternation - opengl</title>
+    <meta name="description" content="Legacy multi-GPU configurations, such as NVIDIA SLI and AMD CrossFire, relied heavily on Alternate Frame Rendering (AFR) to boost performance by assigning consecutive frames to alternating GPUs. Implementing automatic AFR within legacy OpenGL environments">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-sli-and-cross-fire-handled-open-gl-frame-alternation">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How SLI and CrossFire Handled OpenGL Frame Alternation - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-sli-and-cross-fire-handled-open-gl-frame-alternation" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Legacy multi-GPU configurations, such as NVIDIA SLI and AMD CrossFire, relied heavily on Alternate Frame Rendering (AFR) to boost performance by assigning consecutive frames to alternating GPUs. Implementing automatic AFR within legacy OpenGL environments" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-sli-and-crossfire-handled-opengl-frame-alternation">How SLI
+and CrossFire Handled OpenGL Frame Alternation</h1>
+<p>Legacy multi-GPU configurations, such as NVIDIA SLI and AMD
+CrossFire, relied heavily on Alternate Frame Rendering (AFR) to boost
+performance by assigning consecutive frames to alternating GPUs.
+Implementing automatic AFR within legacy OpenGL environments presented
+unique challenges due to the API's global state machine architecture and
+hidden inter-frame dependencies. This article explains how graphics
+drivers intercepted API calls, synchronized state machines, tracked
+resource dependencies, and managed frame-swapping routines to automate
+frame alternation in legacy OpenGL applications.</p>
+<h3 id="the-role-of-driver-level-api-interception">The Role of
+Driver-Level API Interception</h3>
+<p>Legacy OpenGL applications were entirely unaware of multiple physical
+GPUs because the API lacked native multi-adapter abstractions. To
+coordinate AFR automatically, NVIDIA and AMD integrated custom
+orchestration layers directly into their OpenGL Installable Client
+Drivers (ICDs).</p>
+<p>The driver acted as a proxy between the application and the hardware.
+It continuously monitored the OpenGL command stream for frame
+delimiters, primarily looking for swap calls such as
+<code>wglSwapBuffers</code> on Windows or <code>glXSwapBuffers</code> on
+Linux. When a swap call was detected, the driver marked the completion
+of a logical frame and toggled the active hardware context to the
+alternate GPU for the subsequent draw commands.</p>
+<h3 id="synchronizing-the-opengl-state-machine">Synchronizing the OpenGL
+State Machine</h3>
+<p>OpenGL operates as a persistent state machine where previously set
+states—such as bound shaders, blending modes, depth tests, and active
+textures—persist indefinitely until explicitly overwritten. This model
+is inherently hostile to AFR, where GPU 1 executes frame <span
+class="math inline">\(N\)</span> and GPU 2 concurrently executes frame
+<span class="math inline">\(N+1\)</span>.</p>
+<p>To resolve this, drivers maintained dual state trackers:</p>
+<ol type="1">
+<li><strong>State Shadowing and Duplication:</strong> The driver
+intercepted and mirrored non-drawing state commands (like
+<code>glEnable</code>, <code>glBindTexture</code>, or
+<code>glUseProgram</code>) across all participating GPUs. If a state
+changed during frame <span class="math inline">\(N\)</span>, the driver
+ensured the same state was broadcast to the alternate GPU so it could
+correctly render frame <span class="math inline">\(N+1\)</span>.</li>
+<li><strong>Context Virtualization:</strong> Drivers virtualized the
+main OpenGL rendering context into multiple hardware-specific contexts.
+The driver maintained a ghost state for each GPU, applying differential
+state updates before dispatching rendering passes to prevent state
+divergence between alternate frames.</li>
+</ol>
+<h3 id="resolving-inter-frame-resource-dependencies">Resolving
+Inter-Frame Resource Dependencies</h3>
+<p>The primary bottleneck for automatic AFR in OpenGL was handling
+resources modified in one frame and consumed in the next. Examples
+include render-to-texture targets, Framebuffer Objects (FBOs), motion
+blur accumulation buffers, and dynamic shadow maps.</p>
+<p>If GPU 1 generated an FBO in frame <span
+class="math inline">\(N\)</span> that GPU 2 required to compute frame
+<span class="math inline">\(N+1\)</span>, automatic AFR would cause
+severe visual artifacts if executed without synchronization. Drivers
+resolved this through automatic dependency detection:</p>
+<ul>
+<li><strong>Resource Dirty-Flagging:</strong> Drivers tagged textures
+and buffers with generation IDs and "dirty" flags. When an application
+bound an FBO as a texture input on GPU 2, the driver checked whether
+that resource was written to by GPU 1 in a preceding frame.</li>
+<li><strong>Peer-to-Peer Interconnect Transfers:</strong> Upon detecting
+a dirty dependency, the driver stalled execution on the target GPU until
+the source GPU finished the render pass. The data was then transferred
+across the high-speed proprietary interconnect (the physical SLI or
+CrossFire bridge) or through peer-to-peer PCIe transactions.</li>
+</ul>
+<h3 id="fallback-modes-and-application-profiles">Fallback Modes and
+Application Profiles</h3>
+<p>Because fully automated dependency tracking introduced CPU overhead
+and latency, drivers could not rely on pure runtime heuristics alone.
+NVIDIA (via ForceWare/GeForce drivers) and AMD (via Catalyst) utilized
+tailored application profiles.</p>
+<p>These profiles contained pre-analyzed rules for specific OpenGL
+executable binaries:</p>
+<ul>
+<li><strong>Frame Throttling:</strong> Regulating the presentation queue
+to prevent micro-stutter caused by uneven frame completion times.</li>
+<li><strong>Selective Synchronization:</strong> Whitelisting safe
+buffers that did not require cross-GPU synchronization to save bridge
+bandwidth.</li>
+<li><strong>Mode Fallbacks:</strong> If an OpenGL title relied too
+heavily on persistent frame-to-frame feedback loops, AFR broke down and
+created bus-saturating sync penalties. Under these conditions, the
+driver automatically disabled AFR and fell back to Split Frame Rendering
+(SFR / Scissor mode), dividing individual frames into horizontal
+sections distributed across both GPUs.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/how-sli-and-cross-fire-handled-open-gl-frame-alternation';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

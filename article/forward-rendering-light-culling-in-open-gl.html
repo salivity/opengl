@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Forward+ Rendering Light Culling in OpenGL - opengl</title>
+    <meta name="description" content="Forward+ rendering optimizes the traditional forward rendering pipeline by decoupling light evaluation from geometric complexity through a screen-space tile-culling phase. This article details how OpenGL compute shaders are leveraged to perform light tile">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/forward-rendering-light-culling-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Forward+ Rendering Light Culling in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/forward-rendering-light-culling-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Forward+ rendering optimizes the traditional forward rendering pipeline by decoupling light evaluation from geometric complexity through a screen-space tile-culling phase. This article details how OpenGL compute shaders are leveraged to perform light tile" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="forward-rendering-light-culling-in-opengl">Forward+ Rendering
+Light Culling in OpenGL</h1>
+<p>Forward+ rendering optimizes the traditional forward rendering
+pipeline by decoupling light evaluation from geometric complexity
+through a screen-space tile-culling phase. This article details how
+OpenGL compute shaders are leveraged to perform light tile assignment,
+covering the partitioning of the screen into discrete tiles, the
+calculation of tile-specific frustums, the parallel intersection testing
+of light volumes against those frustums, and the storage of per-tile
+light indices in Shader Storage Buffer Objects (SSBOs) for the final
+shading pass.</p>
+<h3 id="the-forward-pipeline-context">The Forward+ Pipeline Context</h3>
+<p>Traditional forward rendering forces every fragment to test against
+every active light in the scene, scaling poorly at <span
+class="math inline">\(O(\text{geometry} \times \text{lights})\)</span>.
+Forward+ introduces a three-phase pipeline to resolve this:</p>
+<ol type="1">
+<li><strong>Depth Pre-pass:</strong> Renders the scene's geometry to
+generate a depth buffer.</li>
+<li><strong>Light Culling (Compute Shader):</strong> Uses the depth
+buffer to determine which lights affect specific screen-space tiles and
+assigns those lights to tile-specific lists.</li>
+<li><strong>Forward Shading Pass:</strong> Standard forward rendering,
+but fragments only calculate lighting from the lights assigned to their
+specific screen tile.</li>
+</ol>
+<h3 id="tile-division-and-compute-workgroup-mapping">Tile Division and
+Compute Workgroup Mapping</h3>
+<p>The screen is divided into a uniform two-dimensional grid of tiles,
+commonly sized at <span class="math inline">\(16 \times 16\)</span>
+pixels. In OpenGL, an execution of a compute shader is dispatched to
+process this grid:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">// In GLSL Compute Shader</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span>local_size_x <span class="op">=</span> <span class="dv">16</span><span class="op">,</span> local_size_y <span class="op">=</span> <span class="dv">16</span><span class="op">,</span> local_size_z <span class="op">=</span> <span class="dv">1</span><span class="op">)</span> <span class="dt">in</span><span class="op">;</span></span></code></pre></div>
+<p>Each workgroup corresponds to a single tile. The built-in variable
+<code>gl_WorkGroupID.xy</code> identifies the coordinate of the tile on
+screen, while <code>gl_LocalInvocationIndex</code> (ranging from 0 to
+255) identifies the specific thread within that workgroup.</p>
+<h3 id="depth-reduction-and-frustum-generation">Depth Reduction and
+Frustum Generation</h3>
+<p>To cull lights accurately along the Z-axis, the compute shader must
+know the minimum and maximum depth within each tile.</p>
+<ol type="1">
+<li>Each thread samples the depth texture at its corresponding pixel
+coordinate using <code>texelFetch</code>.</li>
+<li>The depths are linearized and converted into view space.</li>
+<li>The workgroup uses parallel reduction (or atomic operations using
+shared memory) to calculate the tile’s absolute minimum and maximum
+depth values.</li>
+<li>Using the four corner coordinates of the screen-space tile combined
+with the tile’s min/max depth bounds, the shader constructs six
+view-space planes that define the tile's bounding frustum.</li>
+</ol>
+<h3 id="parallel-light-culling">Parallel Light Culling</h3>
+<p>Once the tile's frustum is defined, all lights in the scene are
+tested against it. Because scenes can contain thousands of lights, the
+compute shader distributes this work evenly among the 256 threads in the
+workgroup.</p>
+<ul>
+<li>Lights are stored linearly in a global Shader Storage Buffer Object
+(SSBO) containing positions, radii, and colors.</li>
+<li>Threads iterate through the global light buffer in parallel strides.
+For example, thread 0 tests light 0, thread 1 tests light 1, up to light
+255, looping until all scene lights are evaluated.</li>
+<li>The intersection test evaluates whether a light's bounding volume
+(typically a sphere for point lights) intersects the six planes of the
+tile frustum. A point light is within the tile if the signed distance
+from its center to any of the six planes is greater than the negative
+radius of the light.</li>
+</ul>
+<h3 id="shared-memory-and-light-index-accumulation">Shared Memory and
+Light Index Accumulation</h3>
+<p>To avoid expensive global memory writes during intersection testing,
+threads write to fast on-chip shared memory:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="dt">shared</span> <span class="dt">uint</span> tileLightCount<span class="op">;</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="dt">shared</span> <span class="dt">uint</span> tileLightIndices<span class="op">[</span>MAX_LIGHTS_PER_TILE<span class="op">];</span></span></code></pre></div>
+<ol type="1">
+<li><p>At the beginning of the shader, <code>tileLightCount</code> is
+initialized to zero by a single thread
+(<code>gl_LocalInvocationIndex == 0</code>), followed by a
+<code>barrier()</code> to synchronize the workgroup.</p></li>
+<li><p>When a thread confirms a light intersects the tile frustum, it
+atomically increments the shared counter:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="dt">uint</span> slot <span class="op">=</span> <span class="bu">atomicAdd</span><span class="op">(</span>tileLightCount<span class="op">,</span> <span class="dv">1</span><span class="op">);</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="kw">if</span> <span class="op">(</span>slot <span class="op">&lt;</span> MAX_LIGHTS_PER_TILE<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    tileLightIndices<span class="op">[</span>slot<span class="op">]</span> <span class="op">=</span> lightIndex<span class="op">;</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div></li>
+<li><p>A second <code>barrier()</code> ensures all threads have finished
+testing and writing before moving forward.</p></li>
+</ol>
+<h3 id="writing-to-global-buffers">Writing to Global Buffers</h3>
+<p>Once all lights have been culled, the compute shader flushes the
+shared memory data into global SSBOs visible to subsequent render
+passes. This generally uses a contiguous light index list paired with a
+grid buffer:</p>
+<ul>
+<li><strong>Light Grid Buffer:</strong> A 2D buffer mapping each tile
+coordinate to an offset and a count in the global index array.</li>
+<li><strong>Global Light Index List:</strong> A flat buffer storing the
+packed light IDs.</li>
+</ul>
+<p>A single thread in the workgroup fetches a global offset using a
+global atomic counter, updates the light grid entry for the current
+tile, and copies the light indices from <code>tileLightIndices</code>
+into the global light index list.</p>
+<h3 id="consumption-in-the-fragment-shader">Consumption in the Fragment
+Shader</h3>
+<p>In the final forward shading pass, fragments determine their
+screen-space tile using <code>gl_FragCoord.xy / 16.0</code>. The
+fragment shader reads the tile’s offset and count from the Light Grid
+Buffer SSBO, iterates strictly over the light indices stored for that
+specific tile in the Global Light Index List, and applies standard
+lighting equations. This restricts light evaluation to only the lights
+that realistically contribute to that fragment.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/forward-rendering-light-culling-in-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

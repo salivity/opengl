@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How textureGrad Restores Anisotropic Filtering in OpenGL - opengl</title>
+    <meta name="description" content="Gradient texture sampling using the textureGrad function in OpenGL enables developers to manually supply directional derivatives for texture lookups instead of relying on automatic hardware evaluations. In standard rendering pipelines, non-uniform coordin">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-texture-grad-restores-anisotropic-filtering-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How textureGrad Restores Anisotropic Filtering in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-texture-grad-restores-anisotropic-filtering-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Gradient texture sampling using the textureGrad function in OpenGL enables developers to manually supply directional derivatives for texture lookups instead of relying on automatic hardware evaluations. In standard rendering pipelines, non-uniform coordin" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-texturegrad-restores-anisotropic-filtering-in-opengl">How
+textureGrad Restores Anisotropic Filtering in OpenGL</h1>
+<p>Gradient texture sampling using the <code>textureGrad</code> function
+in OpenGL enables developers to manually supply directional derivatives
+for texture lookups instead of relying on automatic hardware
+evaluations. In standard rendering pipelines, non-uniform coordinate
+operations—such as texture atlasing, cubic mapping, and wrapped
+procedural coordinates—disrupt the GPU's automatic screen-space
+derivative calculations, resulting in mipmapping artifacts or the
+complete loss of anisotropic filtering. By explicitly defining the rate
+of change of texture coordinates along the screen’s horizontal and
+vertical axes, <code>textureGrad</code> eliminates derivative
+discontinuities and restores hardware-accelerated anisotropic filtering
+to its full fidelity.</p>
+<h3 id="the-mechanics-of-automatic-texture-sampling">The Mechanics of
+Automatic Texture Sampling</h3>
+<p>Under standard conditions, calling <code>texture(sampler, uv)</code>
+delegates mipmap selection and anisotropic footprint calculation
+entirely to the GPU hardware. Graphics hardware evaluates fragments in
+<span class="math inline">\(2 \times 2\)</span> pixel blocks (quads). To
+determine the appropriate Level of Detail (LOD) and sampling shape, the
+GPU automatically calculates implicit screen-space partial
+derivatives:</p>
+<ul>
+<li><code>dFdx(uv)</code>: Rate of change of texture coordinates across
+adjacent horizontal pixels.</li>
+<li><code>dFdy(uv)</code>: Rate of change of texture coordinates across
+adjacent vertical pixels.</li>
+</ul>
+<p>These derivative vectors define a parallelogram in texture space
+representing the projection of a single screen pixel. When the
+projection is elongated, anisotropic filtering samples multiple points
+along the major axis of this footprint to preserve high-frequency
+details at oblique viewing angles.</p>
+<h3 id="the-problem-derivative-discontinuities">The Problem: Derivative
+Discontinuities</h3>
+<p>Automatic derivative calculation fails when texture coordinates
+change discontinuously across adjacent pixels in a quad. Common
+scenarios include:</p>
+<ol type="1">
+<li><strong>Coordinate Wrapping:</strong> When UV coordinates wrap from
+<code>1.0</code> back to <code>0.0</code>, the difference across two
+adjacent pixels in a quad is near <code>1.0</code> rather than a minute
+fraction.</li>
+<li><strong>Texture Atlases:</strong> Clamping or repeating sub-textures
+within an atlas creates sharp coordinate borders.</li>
+<li><strong>Non-Uniform Control Flow:</strong> Sampling inside dynamic
+loops or divergent conditional branches makes cross-quad finite
+differences undefined or illegal.</li>
+</ol>
+<p>When a derivative spike occurs, the GPU interprets the large delta as
+an indicator that the surface is extremely far away. Consequently, the
+hardware selects the lowest-resolution mipmap, creating a prominent
+blurry line or seam along the boundary.</p>
+<h3 id="the-limitation-of-texturelod">The Limitation of
+<code>textureLod</code></h3>
+<p>A standard workaround for seam artifacts is
+<code>textureLod(sampler, uv, lod)</code>. While <code>textureLod</code>
+avoids derivative evaluation by forcing an explicit scalar mipmap level,
+it discards directional footprint information. Without independent
+horizontal and vertical derivative vectors, the GPU cannot determine the
+degree of surface slant. Consequently, <code>textureLod</code>
+completely disables anisotropic filtering, leaving slanted surfaces
+blurry even if the seam artifact is removed.</p>
+<h3 id="how-texturegrad-restores-anisotropic-filtering">How
+<code>textureGrad</code> Restores Anisotropic Filtering</h3>
+<p><code>textureGrad</code> resolves both derivative spikes and
+anisotropic degradation by accepting explicit gradient vectors:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">vec4</span> <span class="bu">textureGrad</span><span class="op">(</span><span class="dt">sampler2D</span> <span class="dt">sampler</span><span class="op">,</span> <span class="dt">vec2</span> P<span class="op">,</span> <span class="dt">vec2</span> dPdx<span class="op">,</span> <span class="dt">vec2</span> dPdy<span class="op">);</span></span></code></pre></div>
+<p>Instead of letting hardware compute finite differences across
+discontinuities, the shader explicitly provides:</p>
+<ul>
+<li><code>dPdx</code>: The rate of change of the coordinates in the
+screen-space X direction.</li>
+<li><code>dPdy</code>: The rate of change of the coordinates in the
+screen-space Y direction.</li>
+</ul>
+<p>Because these gradients are directional vectors rather than a single
+scalar LOD, they fully describe the shape, size, and orientation of the
+pixel's projection on the texture.</p>
+<p>To restore anisotropic filtering without seam artifacts:</p>
+<ol type="1">
+<li><strong>Calculate Continuous Derivatives:</strong> Compute
+derivatives on uninterrupted coordinates prior to wrapping or projection
+modifications (for example, using <code>dFdx(raw_uv)</code> and
+<code>dFdy(raw_uv)</code> before applying a <code>fract()</code>
+operation).</li>
+<li><strong>Pass Filtered Footprints:</strong> Supply the continuous
+gradient vectors directly to <code>textureGrad</code>.</li>
+</ol>
+<p>By receiving valid, continuous vectors, the texture unit correctly
+constructs the anisotropic sampling ellipse. The hardware samples the
+appropriate number of texels along the anisotropic line of projection,
+maintaining sharp, perspective-correct textures across seams and
+high-angle surfaces.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/how-texture-grad-restores-anisotropic-filtering-in-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

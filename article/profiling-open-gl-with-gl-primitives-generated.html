@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profiling OpenGL with GL_PRIMITIVES_GENERATED - opengl</title>
+    <meta name="description" content="The GLPRIMITIVESGENERATED query in OpenGL is an essential hardware profiling metric used to measure the exact number of geometric primitives emitted by the pipeline before rasterization and clipping occur. This article explores how this query functions, w">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/profiling-open-gl-with-gl-primitives-generated">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Profiling OpenGL with GL_PRIMITIVES_GENERATED - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/profiling-open-gl-with-gl-primitives-generated" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The GLPRIMITIVESGENERATED query in OpenGL is an essential hardware profiling metric used to measure the exact number of geometric primitives emitted by the pipeline before rasterization and clipping occur. This article explores how this query functions, w" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="profiling-opengl-with-gl_primitives_generated">Profiling OpenGL
+with GL_PRIMITIVES_GENERATED</h1>
+<p>The <code>GL_PRIMITIVES_GENERATED</code> query in OpenGL is an
+essential hardware profiling metric used to measure the exact number of
+geometric primitives emitted by the pipeline before rasterization and
+clipping occur. This article explores how this query functions, where it
+fits within the modern graphics pipeline, and why it is indispensable
+for diagnosing geometry bottlenecks, validating algorithmic
+amplification, and optimizing Level of Detail (LOD) systems.</p>
+<h3 id="understanding-gl_primitives_generated">Understanding
+GL_PRIMITIVES_GENERATED</h3>
+<p>When profiling OpenGL applications, developers often struggle to
+pinpoint whether performance drops stem from heavy vertex processing,
+excessive rasterization, or fill-rate limitations. The
+<code>GL_PRIMITIVES_GENERATED</code> query counter increments every time
+a primitive—such as a point, line, or triangle—is successfully produced
+by the geometry processing stages.</p>
+<p>Specifically, this query records primitives output by:</p>
+<ul>
+<li>The Vertex Shader (when Geometry and Tessellation stages are
+omitted).</li>
+<li>The Tessellation Evaluation Shader (when the Geometry Shader is
+omitted).</li>
+<li>The Geometry Shader (when present).</li>
+</ul>
+<p>Because the counter is evaluated immediately after these programmable
+stages, it captures geometry prior to viewport clipping, frustum
+culling, and back-face culling performed by the fixed-function
+hardware.</p>
+<h3 id="diagnostic-significance-in-gpu-profiling">Diagnostic
+Significance in GPU Profiling</h3>
+<p>Using <code>GL_PRIMITIVES_GENERATED</code> provides actionable data
+across several optimization scenarios:</p>
+<h4 id="1-measuring-geometry-shader-and-tessellation-amplification">1.
+Measuring Geometry Shader and Tessellation Amplification</h4>
+<p>Geometry shaders and tessellation stages can dynamically generate new
+primitives from incoming data. An unoptimized shader might inadvertently
+generate millions of micro-triangles, saturating memory bandwidth and
+stalling execution units. By wrapping draw calls inside a
+<code>GL_PRIMITIVES_GENERATED</code> query, developers can calculate the
+precise amplification factor (output primitives divided by input
+primitives) and tune shader parameters to prevent geometry
+explosions.</p>
+<h4 id="2-evaluating-culling-and-level-of-detail-lod-efficiency">2.
+Evaluating Culling and Level of Detail (LOD) Efficiency</h4>
+<p>Effective rendering engines employ CPU-side or compute-based frustum
+and occlusion culling to reduce the workload sent to the rendering
+pipeline. By tracking <code>GL_PRIMITIVES_GENERATED</code>, you can
+verify whether your LOD transitions properly reduce geometric complexity
+at distance and confirm that culled objects are not being submitted to
+the GPU.</p>
+<h4 id="3-comparing-against-written-primitives">3. Comparing Against
+Written Primitives</h4>
+<p>A common optimization technique pairs
+<code>GL_PRIMITIVES_GENERATED</code> with
+<code>GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN</code>. If transform
+feedback buffer sizes are insufficient or buffer-overflow conditions
+occur, comparing these two query results immediately highlights data
+truncation issues, as <code>GL_PRIMITIVES_GENERATED</code> reports what
+was intended to be output, while the transform feedback query reports
+what successfully fit into memory.</p>
+<h3 id="basic-query-implementation">Basic Query Implementation</h3>
+<p>To integrate the query into a render loop, instantiate a query object
+and bracket the relevant draw calls:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>GLuint queryId<span class="op">;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>glGenQueries<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="op">&amp;</span>queryId<span class="op">);</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="co">// Begin recording primitive generation</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>glBeginQuery<span class="op">(</span>GL_PRIMITIVES_GENERATED<span class="op">,</span> queryId<span class="op">);</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="co">// Execute draw calls</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>glDrawElements<span class="op">(</span>GL_TRIANGLES<span class="op">,</span> indexCount<span class="op">,</span> GL_UNSIGNED_INT<span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="co">// End recording</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>glEndQuery<span class="op">(</span>GL_PRIMITIVES_GENERATED<span class="op">);</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="co">// Retrieve results asynchronously to prevent CPU stalls</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>GLuint64 primitivesCount <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>glGetQueryObjectui64v<span class="op">(</span>queryId<span class="op">,</span> GL_QUERY_RESULT<span class="op">,</span> <span class="op">&amp;</span>primitivesCount<span class="op">);</span></span></code></pre></div>
+<p>To avoid stalling the CPU while waiting for the GPU to finish
+execution, query results should typically be fetched one or two frames
+later using asynchronous buffering patterns.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/profiling-open-gl-with-gl-primitives-generated';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

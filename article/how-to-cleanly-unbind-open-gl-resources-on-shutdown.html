@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How to Cleanly Unbind OpenGL Resources on Shutdown - opengl</title>
+    <meta name="description" content="Proper resource teardown in OpenGL prevents memory leaks, dangling GPU states, and driver crashes during application exit. This article outlines the essential sequence for safely unbinding active textures, shader programs, Vertex Array Objects (VAOs), and">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-to-cleanly-unbind-open-gl-resources-on-shutdown">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How to Cleanly Unbind OpenGL Resources on Shutdown - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-to-cleanly-unbind-open-gl-resources-on-shutdown" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Proper resource teardown in OpenGL prevents memory leaks, dangling GPU states, and driver crashes during application exit. This article outlines the essential sequence for safely unbinding active textures, shader programs, Vertex Array Objects (VAOs), and" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-to-cleanly-unbind-opengl-resources-on-shutdown">How to
+Cleanly Unbind OpenGL Resources on Shutdown</h1>
+<p>Proper resource teardown in OpenGL prevents memory leaks, dangling
+GPU states, and driver crashes during application exit. This article
+outlines the essential sequence for safely unbinding active textures,
+shader programs, Vertex Array Objects (VAOs), and buffer objects
+(VBOs/EBOs), followed by the explicit deletion of these GPU resources
+before the rendering context is destroyed.</p>
+<h3 id="1-unbind-active-shader-programs">1. Unbind Active Shader
+Programs</h3>
+<p>To ensure the GPU pipeline is not attempting to execute a shader
+during context destruction, reset the current program pipeline by
+binding to program ID <code>0</code>:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>glUseProgram<span class="op">(</span><span class="dv">0</span><span class="op">);</span></span></code></pre></div>
+<p>If you are using separable shader programs with pipeline objects
+(<code>glGenProgramPipelines</code>), unbind the program pipeline object
+as well:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>glBindProgramPipeline<span class="op">(</span><span class="dv">0</span><span class="op">);</span></span></code></pre></div>
+<h3 id="2-unbind-vertex-array-objects-vaos">2. Unbind Vertex Array
+Objects (VAOs)</h3>
+<p>VAOs store the state and bindings of associated vertex and element
+buffers. You must unbind the current VAO before touching individual
+buffer bindings to prevent inadvertently modifying the VAO state:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>glBindVertexArray<span class="op">(</span><span class="dv">0</span><span class="op">);</span></span></code></pre></div>
+<h3 id="3-unbind-vertex-and-index-buffers">3. Unbind Vertex and Index
+Buffers</h3>
+<p>Once the VAO is unbound, clear the general buffer binding targets.
+Reset common targets such as <code>GL_ARRAY_BUFFER</code> and
+<code>GL_ELEMENT_ARRAY_BUFFER</code>:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>glBindBuffer<span class="op">(</span>GL_ARRAY_BUFFER<span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>glBindBuffer<span class="op">(</span>GL_ELEMENT_ARRAY_BUFFER<span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>glBindBuffer<span class="op">(</span>GL_UNIFORM_BUFFER<span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span></code></pre></div>
+<h3 id="4-unbind-textures-across-active-texture-units">4. Unbind
+Textures Across Active Texture Units</h3>
+<p>Textures must be unbound from their respective texture units. If your
+application uses multiple texture units, iterate through the active
+units and unbind the corresponding texture target:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>GLint maxUnits <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>glGetIntegerv<span class="op">(</span>GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS<span class="op">,</span> <span class="op">&amp;</span>maxUnits<span class="op">);</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="op">(</span>GLint i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> maxUnits<span class="op">;</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    glActiveTexture<span class="op">(</span>GL_TEXTURE0 <span class="op">+</span> i<span class="op">);</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    glBindTexture<span class="op">(</span>GL_TEXTURE_2D<span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>    glBindTexture<span class="op">(</span>GL_TEXTURE_CUBE_MAP<span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Unbind other targets if used (e.g., GL_TEXTURE_3D, GL_TEXTURE_2D_ARRAY)</span></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a><span class="co">// Reset active texture unit back to unit 0</span></span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>glActiveTexture<span class="op">(</span>GL_TEXTURE0<span class="op">);</span></span></code></pre></div>
+<h3 id="5-unbind-framebuffers-and-renderbuffers">5. Unbind Framebuffers
+and Renderbuffers</h3>
+<p>If offscreen rendering or custom framebuffers were utilized, restore
+the default framebuffer target:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>glBindFramebuffer<span class="op">(</span>GL_FRAMEBUFFER<span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>glBindRenderbuffer<span class="op">(</span>GL_RENDERBUFFER<span class="op">,</span> <span class="dv">0</span><span class="op">);</span></span></code></pre></div>
+<h3 id="6-delete-gpu-resources-explicitly">6. Delete GPU Resources
+Explicitly</h3>
+<p>Unbinding only detaches objects from the pipeline; it does not free
+GPU memory. After unbinding, explicitly deallocate all generated
+resources while the OpenGL context is still valid:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>glDeleteTextures<span class="op">(</span>textureCount<span class="op">,</span> textureIDs<span class="op">);</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>glDeleteBuffers<span class="op">(</span>bufferCount<span class="op">,</span> bufferIDs<span class="op">);</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>glDeleteVertexArrays<span class="op">(</span>vaoCount<span class="op">,</span> vaoIDs<span class="op">);</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>glDeleteProgram<span class="op">(</span>shaderProgramID<span class="op">);</span></span></code></pre></div>
+<h3 id="7-release-and-destroy-the-context">7. Release and Destroy the
+Context</h3>
+<p>After all objects are unbound and deleted, invoke the
+platform-specific calls (such as GLFW, SDL, WGL, or GLX) to detach the
+context from the current thread and destroy it:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Example using GLFW</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>glfwMakeContextCurrent<span class="op">(</span>NULL<span class="op">);</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>glfwDestroyWindow<span class="op">(</span>window<span class="op">);</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>glfwTerminate<span class="op">();</span></span></code></pre></div></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/how-to-cleanly-unbind-open-gl-resources-on-shutdown';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

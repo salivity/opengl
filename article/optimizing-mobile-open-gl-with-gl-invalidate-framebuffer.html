@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Optimizing Mobile OpenGL with glInvalidateFramebuffer - opengl</title>
+    <meta name="description" content="In mobile OpenGL ES development, discarding depth attachments using glInvalidateFramebuffer is a critical performance optimization that eliminates redundant memory bandwidth usage. Mobile GPUs rely heavily on tile-based architectures, and signaling to the">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/optimizing-mobile-open-gl-with-gl-invalidate-framebuffer">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Optimizing Mobile OpenGL with glInvalidateFramebuffer - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/optimizing-mobile-open-gl-with-gl-invalidate-framebuffer" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In mobile OpenGL ES development, discarding depth attachments using glInvalidateFramebuffer is a critical performance optimization that eliminates redundant memory bandwidth usage. Mobile GPUs rely heavily on tile-based architectures, and signaling to the" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="optimizing-mobile-opengl-with-glinvalidateframebuffer">Optimizing
+Mobile OpenGL with glInvalidateFramebuffer</h1>
+<p>In mobile OpenGL ES development, discarding depth attachments using
+<code>glInvalidateFramebuffer</code> is a critical performance
+optimization that eliminates redundant memory bandwidth usage. Mobile
+GPUs rely heavily on tile-based architectures, and signaling to the
+driver that depth information is no longer needed after rendering
+prevents the hardware from writing transient depth data from fast
+on-chip memory back to the device's system RAM, dramatically reducing
+power consumption and frame rendering times.</p>
+<h3 id="tile-based-architectures-and-memory-hierarchy">Tile-Based
+Architectures and Memory Hierarchy</h3>
+<p>Unlike desktop GPUs that typically use immediate-mode rendering,
+mobile GPUs (such as ARM Mali, Qualcomm Adreno, and Imagination PowerVR)
+utilize Tile-Based Rendering (TBR) or Tile-Based Deferred Rendering
+(TBDR). In these architectures, the screen is subdivided into small
+grids called tiles (commonly 16x16 or 32x32 pixels).</p>
+<p>Each tile is processed sequentially inside an extremely fast,
+low-latency, on-chip tile buffer. All color blending, depth testing, and
+stencil evaluations occur entirely within this local cache without
+accessing main system memory (DRAM).</p>
+<h3 id="the-bottleneck-unnecessary-memory-write-back">The Bottleneck:
+Unnecessary Memory Write-Back</h3>
+<p>Once the GPU finishes rendering primitives for a specific tile, it
+must resolve and flush the results out of the on-chip memory into main
+DRAM so the final image can be displayed or used in later passes.</p>
+<p>By default, the OpenGL ES driver assumes that every attachment—color,
+depth, and stencil—might be read later by the application. Consequently,
+the driver writes the depth buffer contents to system RAM alongside the
+color buffer. For a standard 1080p or 1440p frame, writing a 24-bit or
+32-bit depth buffer to DRAM requires tens of megabytes of bandwidth per
+frame.</p>
+<p>Because mobile devices share memory bandwidth between the CPU and
+GPU, and because mobile memory buses operate under strict power and
+thermal budgets, this write-back step introduces high latency, thermal
+throttling, and battery drain.</p>
+<h3 id="how-glinvalidateframebuffer-solves-the-problem">How
+<code>glInvalidateFramebuffer</code> Solves the Problem</h3>
+<p>In the vast majority of rendering pipelines, the depth buffer is only
+required to determine visibility <em>during</em> the drawing of opaque
+and transparent geometry within that specific frame. Once the color
+image is resolved, the depth data becomes completely obsolete.</p>
+<p>Calling <code>glInvalidateFramebuffer</code> (or
+<code>glDiscardFramebufferEXT</code> in OpenGL ES 2.0) before unbinding
+the framebuffer or presenting to the screen explicitly notifies the GPU
+driver that the specified attachments are no longer required:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>GLenum attachments<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span> GL_DEPTH_ATTACHMENT<span class="op">,</span> GL_STENCIL_ATTACHMENT <span class="op">};</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>glInvalidateFramebuffer<span class="op">(</span>GL_FRAMEBUFFER<span class="op">,</span> <span class="dv">2</span><span class="op">,</span> attachments<span class="op">);</span></span></code></pre></div>
+<p>When this command is issued before the tile resolve step:</p>
+<ol type="1">
+<li><strong>Avoids Write-Back:</strong> The hardware simply discards the
+depth data directly from the on-chip tile memory instead of streaming it
+out to external RAM.</li>
+<li><strong>Saves System Bandwidth:</strong> Memory bandwidth
+consumption is cut significantly, often by 30% to 50% for standard
+render passes.</li>
+<li><strong>Reduces Thermal Output:</strong> Limiting external bus
+transactions keeps GPU temperatures lower, preventing automatic
+clock-rate throttling during sustained gaming or intensive
+workloads.</li>
+<li><strong>Improves Frame Rates:</strong> Eliminating the memory
+transfer decreases GPU idle wait times, smoothing out frame pacing.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/optimizing-mobile-open-gl-with-gl-invalidate-framebuffer';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

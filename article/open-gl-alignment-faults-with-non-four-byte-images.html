@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Alignment Faults with Non-Four-Byte Images - opengl</title>
+    <meta name="description" content="This article examines why alignment faults and memory access violations occur when uploading unpadded image buffers into OpenGL. When transferring image data such as tightly packed 24-bit RGB textures to the GPU, developers frequently encounter segmentati">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-alignment-faults-with-non-four-byte-images">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Alignment Faults with Non-Four-Byte Images - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-alignment-faults-with-non-four-byte-images" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article examines why alignment faults and memory access violations occur when uploading unpadded image buffers into OpenGL. When transferring image data such as tightly packed 24-bit RGB textures to the GPU, developers frequently encounter segmentati" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-alignment-faults-with-non-four-byte-images">OpenGL
+Alignment Faults with Non-Four-Byte Images</h1>
+<p>This article examines why alignment faults and memory access
+violations occur when uploading unpadded image buffers into OpenGL. When
+transferring image data such as tightly packed 24-bit RGB textures to
+the GPU, developers frequently encounter segmentation faults or
+distorted textures. Below is an explanation of the underlying mechanism
+involving OpenGL's pixel unpacking defaults and the direct method to
+resolve the issue.</p>
+<h3 id="the-root-cause-gl_unpack_alignment">The Root Cause:
+<code>GL_UNPACK_ALIGNMENT</code></h3>
+<p>The primary cause of alignment faults when copying image data into
+OpenGL is the default value of the <code>GL_UNPACK_ALIGNMENT</code>
+parameter. By default, OpenGL assumes that every row of image data
+provided from client memory is aligned to a four-byte boundary.</p>
+<p>When you pass a pointer to a function such as
+<code>glTexImage2D</code> or <code>glTexSubImage2D</code>, OpenGL
+calculates the byte offset for each successive row of pixels using the
+following formula:</p>
+<p><span class="math display">\[\text{Row Length in Bytes} = \text{Row
+Bytes Rounded Up to Nearest Multiple of }
+\text{GL\_UNPACK\_ALIGNMENT}\]</span></p>
+<p>If an image format uses an uneven number of bytes per pixel—such as
+standard 24-bit RGB, which uses 3 bytes per pixel—and the image width is
+not an exact multiple of 4, the raw row size will not align to a 4-byte
+boundary.</p>
+<p>For example, an RGB image with a width of 5 pixels requires 15 bytes
+per row (<span class="math inline">\(5 \times 3\)</span>). Because
+OpenGL defaults to a 4-byte alignment, it assumes each row contains 16
+bytes (15 data bytes plus 1 padding byte). Over multiple rows, OpenGL
+reads past the actual buffer end or pulls data from incorrect offsets.
+If OpenGL reads beyond the allocated memory page of the buffer, an
+operating system-level segmentation fault or hardware alignment fault is
+triggered.</p>
+<h3 id="symptoms-of-the-issue">Symptoms of the Issue</h3>
+<p>When non-four-byte padded images are uploaded without adjusting
+alignment settings, two common issues occur:</p>
+<ol type="1">
+<li><strong>Memory Access Violation (Crash):</strong> The driver
+attempts to read padding bytes past the end of the allocated memory
+array for the final row, immediately causing an access violation or
+segmentation fault.</li>
+<li><strong>Image Skewing and Artifacts:</strong> If the buffer has
+extra memory allocated past the end, preventing a crash, the resulting
+texture appears diagonally skewed with color banding because the driver
+miscalculates where each new row begins.</li>
+</ol>
+<h3 id="the-solution">The Solution</h3>
+<p>To prevent alignment faults, you must instruct OpenGL to read tightly
+packed data byte-by-byte rather than expecting 4-byte padding at the end
+of every row. This is accomplished using <code>glPixelStorei</code>:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>glPixelStorei<span class="op">(</span>GL_UNPACK_ALIGNMENT<span class="op">,</span> <span class="dv">1</span><span class="op">);</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>glTexImage2D<span class="op">(</span>GL_TEXTURE_2D<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> GL_RGB<span class="op">,</span> width<span class="op">,</span> height<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> GL_RGB<span class="op">,</span> GL_UNSIGNED_BYTE<span class="op">,</span> data<span class="op">);</span></span></code></pre></div>
+<p>Setting <code>GL_UNPACK_ALIGNMENT</code> to <code>1</code> ensures
+that OpenGL expects row starts on single-byte boundaries, matching
+tightly packed 1-byte, 3-byte (RGB), or custom non-padded data
+structures. After performing the transfer, you can restore
+<code>GL_UNPACK_ALIGNMENT</code> back to <code>4</code> if subsequent
+operations with standard 32-bit RGBA formats require default hardware
+optimization.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/open-gl-alignment-faults-with-non-four-byte-images';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

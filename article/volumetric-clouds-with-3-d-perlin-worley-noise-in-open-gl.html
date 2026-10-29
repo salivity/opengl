@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Volumetric Clouds with 3D Perlin-Worley Noise in OpenGL - opengl</title>
+    <meta name="description" content="This article details how to generate real-time volumetric cloud layers using OpenGL compute shaders driven by 3D Perlin-Worley noise textures. You will learn how to synthesize structural noise, configure 3D texture storage, build the raymarching compute p">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/volumetric-clouds-with-3-d-perlin-worley-noise-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Volumetric Clouds with 3D Perlin-Worley Noise in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/volumetric-clouds-with-3-d-perlin-worley-noise-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article details how to generate real-time volumetric cloud layers using OpenGL compute shaders driven by 3D Perlin-Worley noise textures. You will learn how to synthesize structural noise, configure 3D texture storage, build the raymarching compute p" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="volumetric-clouds-with-3d-perlin-worley-noise-in-opengl">Volumetric
+Clouds with 3D Perlin-Worley Noise in OpenGL</h1>
+<p>This article details how to generate real-time volumetric cloud
+layers using OpenGL compute shaders driven by 3D Perlin-Worley noise
+textures. You will learn how to synthesize structural noise, configure
+3D texture storage, build the raymarching compute pipeline, calculate
+realistic atmospheric scattering, and optimize sample evaluations for
+dynamic rendering.</p>
+<h2 id="1-generating-3d-perlin-worley-noise-textures">1. Generating 3D
+Perlin-Worley Noise Textures</h2>
+<p>Real-time volumetric clouds rely on layered procedural noise to
+capture both broad shapes and wispy edge details. A base shape texture
+combines low-frequency Perlin noise with Worley (cellular) noise, while
+a secondary detail texture uses pure high-frequency Worley noise for
+erosion.</p>
+<p>Compute shaders generate these textures directly on the GPU into 3D
+texture objects (<code>GL_TEXTURE_3D</code>):</p>
+<ol type="1">
+<li><strong>Perlin-Worley Hybrid</strong>: Map Perlin noise to the broad
+cloud mass and invert Worley noise to carve hollows, producing a puffy
+cumulus appearance.</li>
+<li><strong>Multi-Octave Worley</strong>: Store three octaves of Worley
+noise in separate color channels (G, B, A) across varying frequencies to
+use for detail erosion.</li>
+</ol>
+<p>In your compute shader, bind a 3D image with
+<code>layout(rgba8, binding = 0) writeonly uniform image3D u_NoiseTexture;</code>.
+Compute fractional coordinates using
+<code>gl_GlobalInvocationID / texture_size</code>, evaluate the noise
+equations, and write the output with <code>imageStore()</code>.</p>
+<h2 id="2-defining-the-cloud-layer-geometry">2. Defining the Cloud Layer
+Geometry</h2>
+<p>Clouds exist within a distinct altitude envelope. Model this boundary
+as a spherical shell between an inner radius (cloud base, e.g., 1,500m)
+and an outer radius (cloud top, e.g., 4,000m) around the planet
+center.</p>
+<p>For every primary view ray:</p>
+<ul>
+<li>Intersect the camera ray with the inner and outer spheres.</li>
+<li>Discard rays pointing away from the boundary volume.</li>
+<li>Clamp the ray start to the camera position if the camera is already
+inside the cloud layer.</li>
+<li>Set the total ray length to the distance between the entry and exit
+points.</li>
+</ul>
+<h2 id="3-raymarching-the-density-field">3. Raymarching the Density
+Field</h2>
+<p>A screen-space compute shader executes the raymarching process across
+the screen grid. Step through the cloud volume from the entry point
+along the view direction:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> samplePos <span class="op">=</span> rayStart<span class="op">;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> stepSize <span class="op">=</span> <span class="op">(</span>rayEnd <span class="op">-</span> rayStart<span class="op">)</span> <span class="op">/</span> <span class="dt">float</span><span class="op">(</span>SAMPLE_COUNT<span class="op">);</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="dt">float</span> totalTransmittance <span class="op">=</span> <span class="fl">1.0</span><span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="dt">vec3</span> totalLight <span class="op">=</span> <span class="dt">vec3</span><span class="op">(</span><span class="fl">0.0</span><span class="op">);</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="kw">for</span><span class="op">(</span><span class="dt">int</span> i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> SAMPLE_COUNT<span class="op">;</span> i<span class="op">++)</span> <span class="op">{</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> <span class="op">(</span>totalTransmittance <span class="op">&lt;</span> <span class="fl">0.01</span><span class="op">)</span> <span class="kw">break</span><span class="op">;</span> <span class="co">// Early ray termination</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">float</span> density <span class="op">=</span> <span class="fu">SampleCloudDensity</span><span class="op">(</span>samplePos<span class="op">);</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> <span class="op">(</span>density <span class="op">&gt;</span> <span class="fl">0.0</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>        <span class="dt">float</span> lightEnergy <span class="op">=</span> <span class="fu">SampleLight</span><span class="op">(</span>samplePos<span class="op">);</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>        <span class="dt">float</span> stepOpticalDepth <span class="op">=</span> density <span class="op">*</span> stepSize <span class="op">*</span> DENSITY_SCALE<span class="op">;</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>        <span class="dt">float</span> stepTransmittance <span class="op">=</span> <span class="bu">exp</span><span class="op">(-</span>stepOpticalDepth<span class="op">);</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>        </span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>        totalLight <span class="op">+=</span> lightEnergy <span class="op">*</span> totalTransmittance <span class="op">*</span> <span class="op">(</span><span class="fl">1.0</span> <span class="op">-</span> stepTransmittance<span class="op">);</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>        totalTransmittance <span class="op">*=</span> stepTransmittance<span class="op">;</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    samplePos <span class="op">+=</span> rayDir <span class="op">*</span> stepSize<span class="op">;</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h2 id="4-sampling-density-and-weather">4. Sampling Density and
+Weather</h2>
+<p><code>SampleCloudDensity()</code> maps the world-space coordinate to
+the cloud layer:</p>
+<ol type="1">
+<li><strong>Height Gradient</strong>: Attenuate the density using
+vertical remap functions to enforce flat cloud bases and rounded
+tops.</li>
+<li><strong>Weather Map</strong>: Sample a 2D weather texture containing
+coverage, precipitation, and cloud-type attributes.</li>
+<li><strong>Base Noise Sampling</strong>: Sample the primary 3D
+Perlin-Worley texture using low coordinates (tiling across
+kilometers).</li>
+<li><strong>Erosion</strong>: Sample the secondary Worley noise texture,
+scaled up by frequency, to erode the edges of the base shape based on
+wind vectors and time.</li>
+</ol>
+<h2 id="5-volumetric-lighting-and-phase-functions">5. Volumetric
+Lighting and Phase Functions</h2>
+<p>To illuminate the clouds:</p>
+<ul>
+<li><strong>Secondary Raymarching</strong>: When a density sample
+exceeds zero, march a short ray toward the sun (usually 4 to 6 steps) to
+integrate optical thickness toward the light source.</li>
+<li><strong>Beer's Law</strong>: Calculate solar attenuation using <span
+class="math inline">\(T = \exp(-d)\)</span>, where <span
+class="math inline">\(d\)</span> is the integrated light-path
+density.</li>
+<li><strong>Henyey-Greenstein Phase Function</strong>: Apply directional
+scattering based on the angle <span
+class="math inline">\(\theta\)</span> between the view ray and the sun
+ray: <span class="math display">\[P(\theta) = \frac{1 - g^2}{4\pi (1 +
+g^2 - 2g\cos\theta)^{1.5}}\]</span> Combine a forward-scattering lobe
+(<span class="math inline">\(g \approx 0.8\)</span>) with a mild
+backward-scattering lobe (<span class="math inline">\(g \approx
+-0.2\)</span>) for edge highlights and silver linings.</li>
+</ul>
+<h2 id="6-performance-optimization-techniques">6. Performance
+Optimization Techniques</h2>
+<p>Raymarching volumetric textures is computationally intensive.
+Implement the following strategies to maintain frame rates:</p>
+<ul>
+<li><strong>Quarter-Resolution Raymarching</strong>: Execute the compute
+shader at half or quarter display resolution, storing the cloud color
+and depth.</li>
+<li><strong>Bilateral Upsampling</strong>: Upscale the raymarched result
+to full resolution using a depth-aware bilateral filter to prevent edge
+bleeding against terrain.</li>
+<li><strong>Temporal Reprojection</strong>: Jitter ray step offsets per
+frame using a 2D blue noise pattern, then reconstruct history frames
+using camera motion vectors.</li>
+<li><strong>Adaptive Stepping</strong>: Double the ray step size when
+traversing empty air, and drop back to fine steps immediately upon
+encountering non-zero density.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/volumetric-clouds-with-3-d-perlin-worley-noise-in-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

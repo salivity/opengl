@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenGL Atomic Counters in Compute Shaders - opengl</title>
+    <meta name="description" content="This article provides a comprehensive overview of OpenGL atomic counters and their implementation within compute shaders. It explores the definition of atomic counters, their underlying hardware mechanisms, and how they solve race conditions in massively">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/open-gl-atomic-counters-in-compute-shaders">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="OpenGL Atomic Counters in Compute Shaders - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/open-gl-atomic-counters-in-compute-shaders" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article provides a comprehensive overview of OpenGL atomic counters and their implementation within compute shaders. It explores the definition of atomic counters, their underlying hardware mechanisms, and how they solve race conditions in massively" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="opengl-atomic-counters-in-compute-shaders">OpenGL Atomic
+Counters in Compute Shaders</h1>
+<p>This article provides a comprehensive overview of OpenGL atomic
+counters and their implementation within compute shaders. It explores
+the definition of atomic counters, their underlying hardware mechanisms,
+and how they solve race conditions in massively parallel environments.
+Readers will learn the essential GLSL functions, host-side API
+configuration, synchronization requirements, and practical use cases
+such as stream compaction and dynamic memory allocation.</p>
+<h2 id="what-are-opengl-atomic-counters">What Are OpenGL Atomic
+Counters?</h2>
+<p>OpenGL atomic counters are specialized, hardware-accelerated integer
+variables stored in GPU memory that allow multiple shader invocations to
+read and modify a shared scalar value concurrently without race
+conditions. In a standard shader execution, parallel threads reading and
+writing to the same memory location simultaneously produce undefined
+results due to memory hazards. Atomic counters solve this by serializing
+read-modify-write operations at the hardware level, ensuring that each
+thread executes its operation completely before the next thread accesses
+the counter.</p>
+<p>Atomic counters are backed by a dedicated buffer object known as an
+Atomic Counter Buffer Object (ACBO), or mapped to standard Uniform
+Buffer Objects (UBO) or Shader Storage Buffer Objects (SSBO). In GLSL,
+they are represented by the <code>atomic_uint</code> opaque data type
+and are restricted to 32-bit unsigned integers.</p>
+<h2 id="implementation-in-glsl-compute-shaders">Implementation in GLSL
+Compute Shaders</h2>
+<p>Compute shaders operate in work-groups across a multi-threaded grid.
+To use an atomic counter, you declare it as a uniform variable bound to
+a specific buffer binding point using the <code>layout</code>
+qualifier:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 430 core</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span>local_size_x <span class="op">=</span> <span class="dv">256</span><span class="op">)</span> <span class="dt">in</span><span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="co">// Declare the atomic counter at binding point 0</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">binding</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="kw">uniform</span> <span class="dt">atomic_uint</span> globalCounter<span class="op">;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Atomically increment the counter and retrieve the previous value</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint</span> <span class="dt">index</span> <span class="op">=</span> <span class="bu">atomicCounterIncrement</span><span class="op">(</span>globalCounter<span class="op">);</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Use the unique index for writing to an output array</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="core-built-in-glsl-functions">Core Built-in GLSL Functions</h3>
+<p>GLSL provides several built-in functions to interact with
+<code>atomic_uint</code> variables:</p>
+<ul>
+<li><strong><code>atomicCounterIncrement(atomic_uint c)</code></strong>:
+Atomically increments the counter by 1 and returns the value
+<em>before</em> the increment.</li>
+<li><strong><code>atomicCounterDecrement(atomic_uint c)</code></strong>:
+Atomically decrements the counter by 1 and returns the value
+<em>after</em> the decrement.</li>
+<li><strong><code>atomicCounter(atomic_uint c)</code></strong>: Reads
+and returns the current value of the counter without modifying it.</li>
+<li><strong><code>atomicCounterAdd(atomic_uint c, uint data)</code></strong>
+(via extensions or GLSL 4.6): Adds an arbitrary unsigned integer value
+to the counter.</li>
+<li><strong><code>atomicCounterSubtract(atomic_uint c, uint data)</code></strong>:
+Subtracts an arbitrary unsigned integer value from the counter.</li>
+</ul>
+<h2 id="host-side-setup-in-opengl">Host-Side Setup in OpenGL</h2>
+<p>To supply data to the atomic counter in a compute shader, an
+application must allocate, initialize, and bind an OpenGL buffer on the
+CPU side:</p>
+<ol type="1">
+<li><p><strong>Generate and Allocate the Buffer:</strong></p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>GLuint counterBuffer<span class="op">;</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>glGenBuffers<span class="op">(</span><span class="dv">1</span><span class="op">,</span> <span class="op">&amp;</span>counterBuffer<span class="op">);</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>glBindBuffer<span class="op">(</span>GL_ATOMIC_COUNTER_BUFFER<span class="op">,</span> counterBuffer<span class="op">);</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="co">// Allocate 4 bytes for a single 32-bit unsigned integer initialized to 0</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>GLuint initialValue <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>glBufferData<span class="op">(</span>GL_ATOMIC_COUNTER_BUFFER<span class="op">,</span> <span class="kw">sizeof</span><span class="op">(</span>GLuint<span class="op">),</span> <span class="op">&amp;</span>initialValue<span class="op">,</span> GL_DYNAMIC_DRAW<span class="op">);</span></span></code></pre></div></li>
+<li><p><strong>Bind to the Indexed Binding Point:</strong></p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode c"><code class="sourceCode c"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Bind to index 0, matching layout(binding = 0) in the shader</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>glBindBufferBase<span class="op">(</span>GL_ATOMIC_COUNTER_BUFFER<span class="op">,</span> <span class="dv">0</span><span class="op">,</span> counterBuffer<span class="op">);</span></span></code></pre></div></li>
+<li><p><strong>Resetting the Counter:</strong> Counters do not reset
+automatically between dispatch calls. Resetting requires re-uploading
+data using <code>glBufferSubData</code> or clearing the buffer with
+<code>glClearBufferData</code>.</p></li>
+</ol>
+<h2 id="synchronization-and-memory-barriers">Synchronization and Memory
+Barriers</h2>
+<p>Because atomic counters involve asynchronous execution across
+distinct work-groups, accessing the final result requires proper memory
+synchronization.</p>
+<p>If a subsequent shader pass, draw call, or the CPU needs to read from
+the counter or the data written using the counter's indices, you must
+invoke a memory barrier:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>glMemoryBarrier<span class="op">(</span>GL_ATOMIC_COUNTER_BARRIER_BIT <span class="op">|</span> GL_SHADER_STORAGE_BARRIER_BIT<span class="op">);</span></span></code></pre></div>
+<p>Within a compute shader, invocations in the same work-group can
+coordinate using the <code>memoryBarrierAtomicCounter()</code> function
+alongside <code>barrier()</code> to enforce ordering between counter
+updates and shared memory writes.</p>
+<h2 id="common-use-cases">Common Use Cases</h2>
+<ul>
+<li><strong>Stream Compaction:</strong> When filtering an input dataset
+(such as culling invisible geometry), compute threads increment an
+atomic counter only if their element meets a condition. The returned
+index serves as the output write location, packing valid items densely
+into an array.</li>
+<li><strong>Histogram Generation:</strong> Counting the frequency of
+values (such as pixel luminance) across massive datasets by incrementing
+indexed counter bins.</li>
+<li><strong>Dynamic Work Allocation:</strong> Serving as a global work
+queue index where idle compute threads atomically pull tasks from a
+shared list.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/open-gl-atomic-counters-in-compute-shaders';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

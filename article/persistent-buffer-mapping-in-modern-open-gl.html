@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Persistent Buffer Mapping in Modern OpenGL - opengl</title>
+    <meta name="description" content="Persistent buffer mapping, introduced via the ARBbufferstorage extension and core in OpenGL 4.4, is an advanced memory management technique that allows the CPU and GPU to share access to a memory buffer simultaneously over the entire lifetime of the buffe">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/persistent-buffer-mapping-in-modern-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Persistent Buffer Mapping in Modern OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/persistent-buffer-mapping-in-modern-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Persistent buffer mapping, introduced via the ARBbufferstorage extension and core in OpenGL 4.4, is an advanced memory management technique that allows the CPU and GPU to share access to a memory buffer simultaneously over the entire lifetime of the buffe" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="persistent-buffer-mapping-in-modern-opengl">Persistent Buffer
+Mapping in Modern OpenGL</h1>
+<p>Persistent buffer mapping, introduced via the
+<code>ARB_buffer_storage</code> extension and core in OpenGL 4.4, is an
+advanced memory management technique that allows the CPU and GPU to
+share access to a memory buffer simultaneously over the entire lifetime
+of the buffer. By mapping a buffer once and retaining the pointer
+indefinitely, applications eliminate the performance overhead of
+repeatedly mapping, unmapping, or reallocating memory with standard API
+calls. This article explains how persistent buffer mapping works, how to
+configure immutable buffer storage, manage memory coherency, and
+implement synchronization to prevent data races.</p>
+<h3 id="the-limits-of-traditional-buffer-streaming">The Limits of
+Traditional Buffer Streaming</h3>
+<p>In legacy OpenGL, streaming dynamic data (such as vertex data,
+matrices, or particle states) to the GPU typically relies on
+<code>glBufferData</code> for buffer orphaning or
+<code>glMapBufferRange</code> followed by <code>glUnmapBuffer</code>
+before issuing a draw call. These approaches introduce driver overhead
+and potential CPU stalls:</p>
+<ul>
+<li><strong>Buffer Orphaning:</strong> Calling <code>glBufferData</code>
+with a null pointer forces the driver to allocate new backing memory
+behind the scenes if the GPU is still reading the previous data.</li>
+<li><strong>Map/Unmap Cycles:</strong> Continuously calling
+<code>glMapBufferRange</code> and <code>glUnmapBuffer</code> causes
+CPU-side driver validation overhead and cache management overhead on
+every frame.</li>
+</ul>
+<p>Persistent mapping eliminates these issues by creating a single,
+stable pointer in CPU virtual memory that remains valid until the buffer
+is deleted.</p>
+<h3 id="immutable-storage-and-persistent-flags">Immutable Storage and
+Persistent Flags</h3>
+<p>Persistent buffers require immutable storage, which is allocated
+using <code>glBufferStorage</code> instead of <code>glBufferData</code>.
+Once allocated, the buffer’s size and storage flags cannot be
+modified.</p>
+<p>To configure persistent mapping, specific flags must be passed to
+both <code>glBufferStorage</code> and <code>glMapBufferRange</code>:</p>
+<ol type="1">
+<li><code>GL_MAP_PERSISTENT_BIT</code>: Informs the driver that the
+buffer will remain mapped during rendering operations and subsequent
+draw calls.</li>
+<li><code>GL_MAP_WRITE_BIT</code> / <code>GL_MAP_READ_BIT</code>:
+Defines the intended access mode (typically write-only for streaming
+vertex or uniform data).</li>
+<li><code>GL_MAP_COHERENT_BIT</code>: Controls how CPU writes become
+visible to the GPU (optional, but critical for architecture
+design).</li>
+</ol>
+<p>After initializing the buffer with <code>glBufferStorage</code>, the
+application calls <code>glMapBufferRange</code> once during setup. The
+returned pointer can be stored and used directly at any point in the
+application lifecycle.</p>
+<h3 id="memory-coherency-coherent-vs-non-coherent">Memory Coherency:
+Coherent vs. Non-Coherent</h3>
+<p>When the CPU writes to a persistent buffer, the data resides in CPU
+caches before being written to system memory or VRAM. Developers must
+decide between coherent and non-coherent mapping to ensure the GPU reads
+the updated data:</p>
+<ul>
+<li><strong>Coherent Mapping
+(<code>GL_MAP_COHERENT_BIT</code>):</strong> When this flag is supplied,
+the driver and hardware guarantee that CPU writes are automatically made
+visible to the GPU without manual flushing. While easier to implement,
+it can incur minor hardware performance overhead depending on the
+system's memory architecture.</li>
+<li><strong>Non-Coherent Mapping:</strong> If
+<code>GL_MAP_COHERENT_BIT</code> is omitted, the developer must
+explicitly notify the driver of updated memory regions by calling
+<code>glFlushMappedBufferRange</code> after writing data. Additionally,
+a memory barrier
+(<code>glMemoryBarrier(GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT)</code>) may
+be required before the GPU executes draw calls reading from that buffer.
+This provides fine-grained control and can be faster on certain
+architectures.</li>
+</ul>
+<h3 id="synchronization-with-sync-objects">Synchronization with Sync
+Objects</h3>
+<p>Because both the CPU and GPU access the same memory concurrently
+without driver-enforced locks, the application is responsible for
+preventing race conditions. Writing data that the GPU is currently
+reading results in visual artifacts or rendering corruptions.</p>
+<p>The standard approach to managing synchronization in persistent
+buffers involves:</p>
+<ol type="1">
+<li><strong>Ring Buffering (N-Buffering):</strong> The persistent buffer
+is divided into multiple equal sections (typically double or triple the
+size needed for a single frame). Each frame writes to a dedicated
+section of the buffer.</li>
+<li><strong>Fence Syncs:</strong> After issuing draw calls that read
+from a specific section of the buffer, an OpenGL fence sync is inserted
+into the command stream using <code>glFenceSync</code>.</li>
+<li><strong>CPU Waiting:</strong> Before the CPU writes to that section
+in a subsequent frame, it checks the fence using
+<code>glClientWaitSync</code>. If the GPU has not finished executing the
+commands associated with that fence, the CPU waits until the GPU
+releases the memory.</li>
+</ol>
+<p>By combining immutable storage, single-call mapping, and explicit
+fence synchronization, persistent buffer mapping provides a
+low-overhead, high-throughput pipeline for streaming data in modern
+OpenGL applications.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/persistent-buffer-mapping-in-modern-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

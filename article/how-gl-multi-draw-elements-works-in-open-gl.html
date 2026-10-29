@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How glMultiDrawElements Works in OpenGL - opengl</title>
+    <meta name="description" content="This article examines how the glMultiDrawElements function batches and executes multiple index-driven primitive lists within a single OpenGL draw call. It covers the API&#39;s signature and parameter structures, analyzes its conceptual execution loop, explain">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-gl-multi-draw-elements-works-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How glMultiDrawElements Works in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-gl-multi-draw-elements-works-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article examines how the glMultiDrawElements function batches and executes multiple index-driven primitive lists within a single OpenGL draw call. It covers the API&#39;s signature and parameter structures, analyzes its conceptual execution loop, explain" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-glmultidrawelements-works-in-opengl">How glMultiDrawElements
+Works in OpenGL</h1>
+<p>This article examines how the <code>glMultiDrawElements</code>
+function batches and executes multiple index-driven primitive lists
+within a single OpenGL draw call. It covers the API's signature and
+parameter structures, analyzes its conceptual execution loop, explains
+how graphics drivers process these grouped commands across hardware
+pipelines, and highlights the performance benefits over issuing
+individual draw commands.</p>
+<h3 id="api-signature-and-parameter-mechanics">API Signature and
+Parameter Mechanics</h3>
+<p>The <code>glMultiDrawElements</code> function is defined with the
+following signature:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> glMultiDrawElements<span class="op">(</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    GLenum mode<span class="op">,</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">const</span> GLsizei <span class="op">*</span>count<span class="op">,</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    GLenum type<span class="op">,</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">const</span> <span class="dt">void</span> <span class="op">*</span><span class="dt">const</span> <span class="op">*</span>indices<span class="op">,</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    GLsizei drawcount</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="op">);</span></span></code></pre></div>
+<p>Rather than receiving scalar values representing a single mesh
+element, the function accepts arrays of parameters:</p>
+<ul>
+<li><strong><code>mode</code></strong>: Specifies the primitive type to
+render (such as <code>GL_TRIANGLES</code>, <code>GL_LINES</code>, or
+<code>GL_TRIANGLE_STRIP</code>). This primitive type applies uniformly
+across every sub-draw.</li>
+<li><strong><code>count</code></strong>: An array of integers where each
+entry <code>count[i]</code> denotes the number of elements to transfer
+for the <em>i</em>-th draw call.</li>
+<li><strong><code>type</code></strong>: The data type of the indices
+(<code>GL_UNSIGNED_BYTE</code>, <code>GL_UNSIGNED_SHORT</code>, or
+<code>GL_UNSIGNED_INT</code>). This type remains constant across all
+sub-draws.</li>
+<li><strong><code>indices</code></strong>: An array of pointers or byte
+offsets into the currently bound element array buffer
+(<code>GL_ELEMENT_ARRAY_BUFFER</code>), indicating the starting index
+for each sub-draw.</li>
+<li><strong><code>drawcount</code></strong>: The total number of
+individual draw operations stored in the <code>count</code> and
+<code>indices</code> arrays.</li>
+</ul>
+<h3 id="conceptual-execution-model">Conceptual Execution Model</h3>
+<p>Logically, calling <code>glMultiDrawElements</code> is identical to
+executing a standard <code>glDrawElements</code> call inside an
+iteration loop:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode c"><code class="sourceCode c"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="op">(</span>GLsizei i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> drawcount<span class="op">;</span> i<span class="op">++)</span> <span class="op">{</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span>count<span class="op">[</span>i<span class="op">]</span> <span class="op">&gt;</span> <span class="dv">0</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>        glDrawElements<span class="op">(</span>mode<span class="op">,</span> count<span class="op">[</span>i<span class="op">],</span> type<span class="op">,</span> indices<span class="op">[</span>i<span class="op">]);</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>While the logical output matches this loop, the physical execution
+differs significantly at the driver and hardware levels.</p>
+<h3 id="driver-and-hardware-dispatch">Driver and Hardware Dispatch</h3>
+<p>When invoking individual <code>glDrawElements</code> calls
+sequentially, the CPU must repeatedly validate OpenGL context state,
+marshal command parameters, and write separate command packets to the
+command buffer. Each individual call incurs driver overhead, CPU
+instruction costs, and kernel-user space transitions.</p>
+<p><code>glMultiDrawElements</code> eliminates this repetitive CPU
+overhead through the following mechanisms:</p>
+<ol type="1">
+<li><strong>Single Entry Point Validation</strong>: The OpenGL driver
+performs state validation, pipeline verification, and capability checks
+only once for the entire batch rather than repeating these checks
+<code>drawcount</code> times.</li>
+<li><strong>Bulk Command Buffer Generation</strong>: The graphics driver
+translates the arrays into a contiguous sequence of GPU commands or a
+specialized multi-draw hardware command. This generation occurs within
+optimized internal loops, often using SIMD or low-overhead linear writes
+to GPU-mapped memory.</li>
+<li><strong>Continuous GPU Workload Processing</strong>: Because
+primitive topology, vertex formats, shader programs, and descriptor
+bindings remain immutable throughout the invocation, the GPU's Command
+Processor reads index lists sequentially without context switches or
+state-induced pipeline flushes.</li>
+</ol>
+<h3 id="buffer-object-integration">Buffer Object Integration</h3>
+<p>In modern OpenGL (Core Profile), indices are stored in server-side
+buffer objects. When an element array buffer is bound, each entry in the
+<code>indices</code> array is not a client-memory memory address, but a
+byte offset into the GPU buffer cast to <code>const void*</code>.</p>
+<p>During execution, the GPU reads the offset from
+<code>indices[i]</code>, fetches <code>count[i]</code> indices
+sequentially from the bound element array buffer, and feeds the
+resulting vertex indices into the vertex puller hardware. Once the
+primitive assembly finishes for batch <em>i</em>, the hardware index
+reader immediately jumps to the offset specified by
+<code>indices[i + 1]</code> without waiting for CPU synchronization.</p>
+<h3 id="pipeline-considerations">Pipeline Considerations</h3>
+<p>While <code>glMultiDrawElements</code> significantly reduces CPU-side
+draw call overhead, it enforces rigid state uniformity. All sub-draws
+share identical shader uniform variables, texture bindings, and vertex
+buffer bindings. To differentiate sub-draws, applications typically use
+the built-in shader variable <code>gl_DrawID</code> (available via
+extension or core OpenGL 4.3+) to index into uniform buffer arrays,
+storage buffers, or texture arrays for per-mesh transformations and
+material parameters.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/how-gl-multi-draw-elements-works-in-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

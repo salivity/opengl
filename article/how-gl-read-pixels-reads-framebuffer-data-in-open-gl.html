@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How glReadPixels Reads Framebuffer Data in OpenGL - opengl</title>
+    <meta name="description" content="This article explains how the glReadPixels function transfers pixel data from an OpenGL framebuffer back to client application memory. It outlines the internal pipeline operations, the synchronization process between the GPU and CPU, pixel formatting and">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-gl-read-pixels-reads-framebuffer-data-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How glReadPixels Reads Framebuffer Data in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-gl-read-pixels-reads-framebuffer-data-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how the glReadPixels function transfers pixel data from an OpenGL framebuffer back to client application memory. It outlines the internal pipeline operations, the synchronization process between the GPU and CPU, pixel formatting and" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-glreadpixels-reads-framebuffer-data-in-opengl">How
+glReadPixels Reads Framebuffer Data in OpenGL</h1>
+<p>This article explains how the <code>glReadPixels</code> function
+transfers pixel data from an OpenGL framebuffer back to client
+application memory. It outlines the internal pipeline operations, the
+synchronization process between the GPU and CPU, pixel formatting and
+pack operations, and the path data takes over the hardware bus into
+system RAM.</p>
+<h3 id="buffer-selection-and-pipeline-synchronization">Buffer Selection
+and Pipeline Synchronization</h3>
+<p>When <code>glReadPixels</code> is invoked, OpenGL first determines
+the source of the pixel data based on the current context state. By
+default, it reads from the framebuffer bound to
+<code>GL_READ_FRAMEBUFFER</code> (or <code>GL_FRAMEBUFFER</code>),
+specifically targeting the color buffer selected by
+<code>glReadBuffer</code> (such as <code>GL_BACK</code>,
+<code>GL_FRONT</code>, or a specific attachment like
+<code>GL_COLOR_ATTACHMENT0</code>).</p>
+<p>Because OpenGL commands execute asynchronously, the GPU is typically
+several frames ahead or behind the CPU instructions. Calling
+<code>glReadPixels</code> acts as an implicit synchronization barrier.
+The OpenGL driver stalls the CPU execution and forces the GPU pipeline
+to flush and complete all pending drawing commands that affect the
+selected read buffer. The CPU remains blocked until the GPU finishes
+rendering the requested region.</p>
+<h3 id="pixel-processing-and-format-conversion">Pixel Processing and
+Format Conversion</h3>
+<p>Once rendering operations are complete, the GPU’s internal hardware
+reads the raw texel/pixel values from the specified rectangular region
+<code>(x, y, width, height)</code> in video memory (VRAM). Because
+internal framebuffer storage often differs from the requested client
+format, the driver or GPU memory controller performs pixel transfer
+operations:</p>
+<ol type="1">
+<li><strong>Component Mapping:</strong> The data is converted from the
+internal storage format to the client-requested <code>format</code>
+(e.g., <code>GL_RGBA</code>, <code>GL_RGB</code>,
+<code>GL_RED</code>).</li>
+<li><strong>Type Conversion:</strong> The component values are converted
+into the destination <code>type</code> (e.g.,
+<code>GL_UNSIGNED_BYTE</code>, <code>GL_FLOAT</code>). This may involve
+clamping values between 0.0 and 1.0 or applying bit-depth scaling.</li>
+<li><strong>Pixel Storage Modes:</strong> The driver applies
+byte-packing rules specified by <code>glPixelStorei</code>, such as
+<code>GL_PACK_ALIGNMENT</code> (typically 4 bytes), row lengths, and
+skip parameters, ensuring the output matches the layout expected by the
+receiving buffer.</li>
+</ol>
+<h3 id="transfer-across-the-bus-to-client-memory">Transfer Across the
+Bus to Client Memory</h3>
+<p>After format processing, the data must travel from the GPU to host
+system memory. In standard operation (without Pixel Buffer Objects
+bound):</p>
+<ul>
+<li>The driver coordinates a Direct Memory Access (DMA) transfer over
+the PCI Express (PCIe) bus.</li>
+<li>The data moves from GPU VRAM across the bus into a driver-managed
+staging area in system RAM, or directly into the memory location pointed
+to by the <code>data</code> pointer provided by the application.</li>
+<li>Once the memory copy completes, the driver unblocks the calling
+thread, returning execution back to the client application with the
+pixels immediately accessible in CPU memory.</li>
+</ul>
+<h3 id="asynchronous-alternative-pixel-buffer-objects-pbos">Asynchronous
+Alternative: Pixel Buffer Objects (PBOs)</h3>
+<p>If a buffer is bound to the <code>GL_PIXEL_PACK_BUFFER</code> target,
+<code>glReadPixels</code> alters its behavior. Instead of copying data
+directly to CPU memory and blocking the application, the
+<code>data</code> argument is treated as an offset into the bound
+buffer. The GPU performs a memory-to-memory copy directly within VRAM
+(or via asynchronous DMA into pinned memory) without stalling the CPU,
+allowing the application to map or read the pixel data asynchronously at
+a later time.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/how-gl-read-pixels-reads-framebuffer-data-in-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

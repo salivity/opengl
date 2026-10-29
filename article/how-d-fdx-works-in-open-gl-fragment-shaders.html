@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How dFdx Works in OpenGL Fragment Shaders - opengl</title>
+    <meta name="description" content="This article explains how the built-in dFdx function calculates screen-space derivatives in OpenGL fragment shaders. It covers the underlying hardware architecture of $2 \times 2$ pixel quads, the discrete mathematical formulas used to approximate partial">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-d-fdx-works-in-open-gl-fragment-shaders">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How dFdx Works in OpenGL Fragment Shaders - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-d-fdx-works-in-open-gl-fragment-shaders" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how the built-in dFdx function calculates screen-space derivatives in OpenGL fragment shaders. It covers the underlying hardware architecture of $2 \times 2$ pixel quads, the discrete mathematical formulas used to approximate partial" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dfdx-works-in-opengl-fragment-shaders">How dFdx Works in
+OpenGL Fragment Shaders</h1>
+<p>This article explains how the built-in <code>dFdx</code> function
+calculates screen-space derivatives in OpenGL fragment shaders. It
+covers the underlying hardware architecture of <span
+class="math inline">\(2 \times 2\)</span> pixel quads, the discrete
+mathematical formulas used to approximate partial derivatives, and how
+the GPU evaluates these calculations across adjacent fragments.</p>
+<h3 id="the-fragment-quad-architecture">The Fragment Quad
+Architecture</h3>
+<p>GPUs do not process screen fragments in complete isolation. Instead,
+modern graphics hardware executes fragment shaders concurrently in
+groups of four organized into <span class="math inline">\(2 \times
+2\)</span> pixel grids known as "quads."</p>
+<p>Within a quad, the four fragment coordinates are arranged along the
+window space:</p>
+<ul>
+<li>Top-left: <span class="math inline">\((x_0, y_0)\)</span></li>
+<li>Top-right: <span class="math inline">\((x_0 + 1, y_0)\)</span></li>
+<li>Bottom-left: <span class="math inline">\((x_0, y_0 +
+1)\)</span></li>
+<li>Bottom-right: <span class="math inline">\((x_0 + 1, y_0 +
+1)\)</span></li>
+</ul>
+<p>Even if a primitive covers only one pixel in a quad, the GPU executes
+the shader for all four pixels to maintain lockstep SIMD (Single
+Instruction, Multiple Data) execution and to ensure derivative data is
+available. Uncovered fragments are executed as helper invocations and
+discarded before the write stage.</p>
+<h3 id="mathematical-formulation-of-dfdx">Mathematical Formulation of
+dFdx</h3>
+<p>Mathematically, the derivative of a function <span
+class="math inline">\(f(x)\)</span> with respect to <span
+class="math inline">\(x\)</span> is defined as the limit of the
+difference quotient:</p>
+<p><span class="math display">\[\frac{\partial f}{\partial x} =
+\lim_{\Delta x \to 0} \frac{f(x + \Delta x) - f(x)}{\Delta
+x}\]</span></p>
+<p>Inside a rasterized pipeline, continuous values are sampled at
+discrete pixel intervals. Therefore, the GPU replaces the infinitesimal
+limit with a discrete finite difference. Because adjacent pixels in
+screen space are spaced exactly one pixel apart, <span
+class="math inline">\(\Delta x = 1\)</span>.</p>
+<p>Substituting <span class="math inline">\(\Delta x = 1\)</span>
+simplifies the difference quotient directly to:</p>
+<p><span class="math display">\[\frac{\partial f}{\partial x} \approx
+\frac{f(x + 1) - f(x)}{1} = f(x + 1) - f(x)\]</span></p>
+<h3 id="evaluation-across-the-quad">Evaluation Across the Quad</h3>
+<p>When <code>dFdx(p)</code> is called on an arbitrary variable or
+expression <span class="math inline">\(p\)</span>, the GPU evaluates
+<span class="math inline">\(p\)</span> across horizontal neighbors
+within the quad using internal cross-lane register sharing.</p>
+<p>Let the evaluated values of <span class="math inline">\(p\)</span>
+within a <span class="math inline">\(2 \times 2\)</span> quad be:</p>
+<ul>
+<li><span class="math inline">\(p_{00} = p(x_0, y_0)\)</span></li>
+<li><span class="math inline">\(p_{10} = p(x_0 + 1, y_0)\)</span></li>
+<li><span class="math inline">\(p_{01} = p(x_0, y_0 + 1)\)</span></li>
+<li><span class="math inline">\(p_{11} = p(x_0 + 1, y_0 +
+1)\)</span></li>
+</ul>
+<p>Depending on hardware and OpenGL specifications (specifically
+starting with OpenGL 4.5 or <code>GL_ARB_derivative_control</code>),
+<code>dFdx</code> operates in one of two modes:</p>
+<h4 id="1-coarse-derivatives-dfdxcoarse">1. Coarse Derivatives
+(<code>dFdxCoarse</code>)</h4>
+<p>Most standard implementations evaluate a single horizontal delta per
+quad row or per quad. The difference between the right and left pixels
+of the top row is calculated:</p>
+<p><span class="math display">\[\Delta p_{\text{row0}} = p_{10} -
+p_{00}\]</span></p>
+<p>This single value is typically shared across both horizontal
+fragments in that row, or across all four fragments in the quad:</p>
+<p><span class="math display">\[\text{dFdx}(p) = p_{10} -
+p_{00}\]</span></p>
+<h4 id="2-fine-derivatives-dfdxfine">2. Fine Derivatives
+(<code>dFdxFine</code>)</h4>
+<p>Fine derivatives calculate independent differences for each
+horizontal pair in the quad:</p>
+<ul>
+<li>For fragments in the top row: <span
+class="math inline">\(\text{dFdx}(p) = p_{10} - p_{00}\)</span></li>
+<li>For fragments in the bottom row: <span
+class="math inline">\(\text{dFdx}(p) = p_{11} - p_{01}\)</span></li>
+</ul>
+<p>In standard GLSL, <code>dFdx</code> can map to either coarse or fine
+approximations depending on the vendor driver, though coarse
+calculations are common to optimize instruction cache and register
+usage.</p>
+<h3 id="practical-implications">Practical Implications</h3>
+<p>Because <code>dFdx</code> depends on inter-fragment communication
+within a quad:</p>
+<ul>
+<li><strong>Uniform Control Flow:</strong> If <code>dFdx</code> is used
+inside divergent branching (such as non-uniform <code>if</code>
+conditions), fragments within the quad may execute different execution
+paths, making neighbor values undefined and yielding graphical
+artifacts.</li>
+<li><strong>Piecewise Flatness:</strong> Because <span
+class="math inline">\(\Delta x = 1\)</span> over the span of the quad,
+<code>dFdx</code> returns a constant rate of change across the quad's
+horizontal span, producing piecewise-constant derivative values on
+screen.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/how-d-fdx-works-in-open-gl-fragment-shaders';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

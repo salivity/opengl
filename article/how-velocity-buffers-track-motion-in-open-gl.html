@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How Velocity Buffers Track Motion in OpenGL - opengl</title>
+    <meta name="description" content="A velocity buffer, or motion vector buffer, stores the per-pixel screen-space displacement of geometry between the previous frame and the current frame. In OpenGL, this is achieved by supplying both current and historical transformation matrices to the sh">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/how-velocity-buffers-track-motion-in-open-gl">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How Velocity Buffers Track Motion in OpenGL - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/how-velocity-buffers-track-motion-in-open-gl" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="A velocity buffer, or motion vector buffer, stores the per-pixel screen-space displacement of geometry between the previous frame and the current frame. In OpenGL, this is achieved by supplying both current and historical transformation matrices to the sh" />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-velocity-buffers-track-motion-in-opengl">How Velocity
+Buffers Track Motion in OpenGL</h1>
+<p>A velocity buffer, or motion vector buffer, stores the per-pixel
+screen-space displacement of geometry between the previous frame and the
+current frame. In OpenGL, this is achieved by supplying both current and
+historical transformation matrices to the shader pipeline, calculating
+the clip-space positions of vertices across both frames, and computing
+their difference after perspective division. This data is written into
+an off-screen render target—typically a floating-point texture—to drive
+temporal post-processing techniques such as Temporal Anti-Aliasing
+(TAA), motion blur, and temporal upscaling.</p>
+<h3 id="storing-historical-transformation-data">Storing Historical
+Transformation Data</h3>
+<p>To compute displacement, the application must retain transformation
+data from the previous frame alongside the current frame's data:</p>
+<ul>
+<li><strong>View-Projection Matrices:</strong> The CPU-side application
+maintains the previous frame’s view-projection matrix (<span
+class="math inline">\(VP_{prev}\)</span>) and uploads it alongside the
+current view-projection matrix (<span
+class="math inline">\(VP_{curr}\)</span>), commonly via a Uniform Buffer
+Object (UBO).</li>
+<li><strong>Model Matrices:</strong> For dynamic objects, the
+application must track the object’s model transform from the prior frame
+(<span class="math inline">\(M_{prev}\)</span>) as well as its current
+transform (<span class="math inline">\(M_{curr}\)</span>). For skinned
+meshes, this requires maintaining the previous frame’s bone transform
+matrices.</li>
+</ul>
+<h3 id="vertex-shader-transformation">Vertex Shader Transformation</h3>
+<p>The vertex shader is responsible for projecting the mesh vertex into
+clip space for both points in time.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 450 core</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">in</span> <span class="dt">vec3</span> aPos<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">std140</span><span class="op">,</span> <span class="dt">binding</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="kw">uniform</span> FrameData <span class="op">{</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">mat4</span> uCurrViewProj<span class="op">;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">mat4</span> uPrevViewProj<span class="op">;</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">mat4</span> uCurrModel<span class="op">;</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="kw">uniform</span> <span class="dt">mat4</span> uPrevModel<span class="op">;</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec4</span> vCurrClipPos<span class="op">;</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="dt">out</span> <span class="dt">vec4</span> vPrevClipPos<span class="op">;</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>    vCurrClipPos <span class="op">=</span> uCurrViewProj <span class="op">*</span> uCurrModel <span class="op">*</span> <span class="dt">vec4</span><span class="op">(</span>aPos<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    vPrevClipPos <span class="op">=</span> uPrevViewProj <span class="op">*</span> uPrevModel <span class="op">*</span> <span class="dt">vec4</span><span class="op">(</span>aPos<span class="op">,</span> <span class="fl">1.0</span><span class="op">);</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>    <span class="bu">gl_Position</span> <span class="op">=</span> vCurrClipPos<span class="op">;</span></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>The shader produces two clip-space coordinates.
+<code>gl_Position</code> uses the current transform so rasterization
+occurs in the object's correct current screen location.</p>
+<h3 id="fragment-shader-velocity-calculation">Fragment Shader Velocity
+Calculation</h3>
+<p>Once interpolated by the rasterizer, the fragment shader performs the
+perspective divide on both coordinates to bring them into Normalized
+Device Coordinates (NDC), where values range from <span
+class="math inline">\([-1, 1]\)</span>.</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode glsl"><code class="sourceCode glsl"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#version 450 core</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="dt">in</span> <span class="dt">vec4</span> vCurrClipPos<span class="op">;</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="dt">in</span> <span class="dt">vec4</span> vPrevClipPos<span class="op">;</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="kw">layout</span><span class="op">(</span><span class="dt">location</span> <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="dt">out</span> <span class="dt">vec2</span> outVelocity<span class="op">;</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> <span class="fu">main</span><span class="op">()</span> <span class="op">{</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec2</span> currNDC <span class="op">=</span> vCurrClipPos<span class="op">.</span><span class="fu">xy</span> <span class="op">/</span> vCurrClipPos<span class="op">.</span><span class="fu">w</span><span class="op">;</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec2</span> prevNDC <span class="op">=</span> vPrevClipPos<span class="op">.</span><span class="fu">xy</span> <span class="op">/</span> vPrevClipPos<span class="op">.</span><span class="fu">w</span><span class="op">;</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Calculate screen-space delta</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>    <span class="dt">vec2</span> velocity <span class="op">=</span> currNDC <span class="op">-</span> prevNDC<span class="op">;</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>    <span class="co">// Optional: Convert NDC delta [-2, 2] to UV space delta [-1, 1]</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>    velocity <span class="op">*=</span> <span class="fl">0.5</span><span class="op">;</span></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>    outVelocity <span class="op">=</span> velocity<span class="op">;</span></span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>Because camera jitter is often added to the projection matrix during
+Temporal Anti-Aliasing, the current and previous jitter offsets must be
+subtracted from the respective NDC coordinates before computing the
+delta to ensure only real motion is recorded.</p>
+<h3 id="framebuffer-setup-in-opengl">Framebuffer Setup in OpenGL</h3>
+<p>Velocity buffers require negative and positive precision without
+clamping:</p>
+<ol type="1">
+<li><strong>Texture Format:</strong> Use a two-channel, 16-bit
+floating-point texture (<code>GL_RG16F</code>) or 32-bit floating-point
+texture (<code>GL_RG32F</code>).</li>
+<li><strong>MRT Integration:</strong> In deferred rendering pipelines,
+velocity is often written to an additional color attachment
+(<code>GL_COLOR_ATTACHMENT1</code> or higher) within the primary
+G-Buffer pass using <code>glDrawBuffers</code>.</li>
+<li><strong>Double Buffering Matrix State:</strong> At the end of the
+CPU frame render loop, current matrices are copied into the storage
+variables designated for the previous frame's uniforms before being
+updated for the next frame.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/how-velocity-buffers-track-motion-in-open-gl';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

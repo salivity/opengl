@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>glCompressedTexImage2D Texture Layout Requirements - opengl</title>
+    <meta name="description" content="This article provides a technical overview of the format layout requirements when uploading raw compressed textures to OpenGL using the glCompressedTexImage2D function. It details the structural alignment, memory packing, block-based sizing calculations,">
+    <link rel="canonical" href="https://salivity.github.io/opengl/article/gl-compressed-tex-image-2-d-texture-layout-requirements">
+    <link rel="search" type="application/opensearchdescription+xml" title="opengl" href="/opengl/opensearch.xml">
+    <link rel="icon" href="/opengl/favicon.ico">
+    <link rel="stylesheet" href="/opengl/css/style.css">
+    <link media="print" rel="stylesheet" href="/opengl/css/print.css">
+    <script src="/opengl/js/fuse.min.js"></script>
+    <script src="/opengl/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="glCompressedTexImage2D Texture Layout Requirements - opengl" />
+    <meta property="og:url" content="https://salivity.github.io/opengl/article/gl-compressed-tex-image-2-d-texture-layout-requirements" />
+    <meta property="og:image" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/opengl/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article provides a technical overview of the format layout requirements when uploading raw compressed textures to OpenGL using the glCompressedTexImage2D function. It details the structural alignment, memory packing, block-based sizing calculations," />
+    <link rel="manifest" href="/opengl/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/opengl/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>opengl</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/opengl/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="glcompressedteximage2d-texture-layout-requirements">glCompressedTexImage2D
+Texture Layout Requirements</h1>
+<p>This article provides a technical overview of the format layout
+requirements when uploading raw compressed textures to OpenGL using the
+<code>glCompressedTexImage2D</code> function. It details the structural
+alignment, memory packing, block-based sizing calculations, and driver
+expectations necessary to prevent hardware validation errors and ensure
+proper texture decompression on modern GPUs.</p>
+<h3 id="block-based-memory-structure">Block-Based Memory Structure</h3>
+<p>Unlike uncompressed texture uploads that operate on individual
+texels, <code>glCompressedTexImage2D</code> expects data organized into
+discrete, rectangular blocks of texels defined by the compression
+standard (such as S3TC/DXT, ETC2, or ASTC). Most common formats
+(BC1–BC7, ETC2) use fixed <span class="math inline">\(4 \times
+4\)</span> texel blocks, while ASTC supports variable dimensions from
+<span class="math inline">\(4 \times 4\)</span> up to <span
+class="math inline">\(12 \times 12\)</span>.</p>
+<p>The raw byte array passed to the <code>data</code> pointer must be a
+linear sequence of these encoded blocks. The blocks must be ordered in
+row-major order starting from the bottom-left of the image up to the
+top-right, adhering to OpenGL's standard texture coordinate origin <span
+class="math inline">\((0, 0)\)</span>.</p>
+<h3 id="dimension-padding-and-non-power-of-two-textures">Dimension
+Padding and Non-Power-of-Two Textures</h3>
+<p>If a texture's width or height is not an exact multiple of the
+compression block footprint (common at lower mipmap levels or with
+arbitrary non-power-of-two dimensions), the dimensions must be rounded
+up to the nearest whole block for memory allocation purposes:</p>
+<ul>
+<li><strong>Block Columns:</strong> <span class="math inline">\(\lceil
+\text{width} / \text{block\_width} \rceil\)</span></li>
+<li><strong>Block Rows:</strong> <span class="math inline">\(\lceil
+\text{height} / \text{block\_height} \rceil\)</span></li>
+</ul>
+<p>Even if a mip level has nominal dimensions of <span
+class="math inline">\(2 \times 2\)</span> or <span
+class="math inline">\(1 \times 1\)</span>, the underlying payload must
+provide the byte data for a complete <span class="math inline">\(4
+\times 4\)</span> block (or the appropriate ASTC block size). Passing
+partial block data will cause memory access violations or texture
+corruption.</p>
+<h3 id="data-size-calculation-imagesize">Data Size Calculation
+(<code>imageSize</code>)</h3>
+<p>The <code>imageSize</code> parameter must explicitly match the total
+byte size of all required blocks. For standard formats:</p>
+<ul>
+<li><strong>BC1 (DXT1) / ETC2 RGB (8 bytes per <span
+class="math inline">\(4 \times 4\)</span> block):</strong> <span
+class="math display">\[\text{imageSize} = \max(1, \lfloor(\text{width} +
+3) / 4\rfloor) \times \max(1, \lfloor(\text{height} + 3) / 4\rfloor)
+\times 8\]</span></li>
+<li><strong>BC3 (DXT5) / BC7 / ETC2 RGBA (16 bytes per <span
+class="math inline">\(4 \times 4\)</span> block):</strong> <span
+class="math display">\[\text{imageSize} = \max(1, \lfloor(\text{width} +
+3) / 4\rfloor) \times \max(1, \lfloor(\text{height} + 3) / 4\rfloor)
+\times 16\]</span></li>
+</ul>
+<p>If <code>imageSize</code> does not match the driver's calculated
+requirement for the specified <code>internalformat</code>,
+<code>width</code>, and <code>height</code>, the call will fail and
+trigger a <code>GL_INVALID_VALUE</code> error.</p>
+<h3 id="pixel-storage-modes-and-memory-packing">Pixel Storage Modes and
+Memory Packing</h3>
+<p>For compressed texture uploads, standard pixel unpack parameters like
+<code>GL_UNPACK_ALIGNMENT</code>, <code>GL_UNPACK_ROW_LENGTH</code>, and
+<code>GL_UNPACK_SKIP_PIXELS</code> are ignored by core OpenGL unless the
+<code>GL_ARB_compressed_texture_pixel_storage</code> extension is
+supported and enabled.</p>
+<p>Consequently, the input buffer must be tightly packed:</p>
+<ul>
+<li>No padding bytes are permitted between consecutive blocks in a
+row.</li>
+<li>No padding bytes are permitted between consecutive rows of
+blocks.</li>
+<li>Data must immediately follow in contiguous memory for the entire
+surface.</li>
+</ul>
+<h3 id="api-parameters-constraints">API Parameters Constraints</h3>
+<ul>
+<li><strong><code>border</code></strong>: Must be set to <code>0</code>.
+Any other value will generate a <code>GL_INVALID_VALUE</code> error, as
+borders are not supported on compressed textures.</li>
+<li><strong><code>internalformat</code></strong>: Must be an explicitly
+sized, hardware-supported compressed format constant (e.g.,
+<code>GL_COMPRESSED_RGBA_S3TC_DXT5_EXT</code>,
+<code>GL_COMPRESSED_RGB8_ETC2</code>). Generic formats like
+<code>GL_COMPRESSED_RGBA</code> are invalid inputs for raw compressed
+uploads.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/opengl/article/gl-compressed-tex-image-2-d-texture-layout-requirements';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/opengl/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/opengl/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>
